@@ -59,17 +59,19 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 			},
 		});
 
+		const startContainer = () =>
+			this.runDockerCommand({
+				preState: "starting",
+				action: () => this.docker.start(),
+				postState: "running",
+				successMsg: "PKM container started.",
+				failurePrefix: "Failed to start container",
+			});
+
 		this.addCommand({
 			id: "pkm-start-container",
 			name: "PKM: Start Container",
-			callback: () =>
-				this.runDockerCommand({
-					preState: "starting",
-					action: () => this.docker.start(),
-					postState: "running",
-					successMsg: "PKM container started.",
-					failurePrefix: "Failed to start container",
-				}),
+			callback: startContainer,
 		});
 
 		this.addCommand({
@@ -104,13 +106,7 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 		});
 
 		if (this.settings.autoStartContainer) {
-			void this.runDockerCommand({
-				preState: "starting",
-				action: () => this.docker.start(),
-				postState: "running",
-				successMsg: "PKM container started.",
-				failurePrefix: "Failed to start container",
-			});
+			void startContainer();
 		}
 	}
 

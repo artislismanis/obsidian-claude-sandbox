@@ -51,9 +51,8 @@ export class DockerManager {
 				);
 			}
 			if (combined.includes("No such distribution")) {
-				const { wslDistro: distro } = this.getSettings();
 				throw new Error(
-					`WSL distribution '${distro}' not found. Please check your settings.`,
+					`WSL distribution '${wslDistro}' not found. Please check your settings.`,
 				);
 			}
 			throw new Error(`Docker command failed: ${err.stderr || err.message}`);
