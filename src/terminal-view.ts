@@ -15,6 +15,13 @@ const MAX_RETRIES = 30;
 const RETRY_DELAY_MS = 1000;
 const FETCH_TIMEOUT_MS = 5000;
 
+// ttyd WebSocket binary protocol message types
+const TTYD_OUTPUT = 0;
+const TTYD_INPUT = "0";
+const TTYD_RESIZE = "1";
+
+const textEncoder = new TextEncoder();
+
 export class TerminalView extends ItemView {
 	private settings: TerminalViewSettings;
 	private destroyed = false;
@@ -23,6 +30,7 @@ export class TerminalView extends ItemView {
 	private fitAddon: FitAddon | null = null;
 	private ws: WebSocket | null = null;
 	private resizeObserver: ResizeObserver | null = null;
+	private resizeRafId: number | null = null;
 
 	constructor(leaf: WorkspaceLeaf, settings: TerminalViewSettings) {
 		super(leaf);
@@ -75,12 +83,12 @@ export class TerminalView extends ItemView {
 						`http://localhost:${this.settings.ttydPort}`,
 						{ signal: controller.signal }
 					);
-					if (resp.ok) {
+					if (resp.ok || resp.status === 401) {
 						connected = true;
 						break;
 					}
 				} catch {
-					// ttyd not ready yet
+					// Not ready yet
 				} finally {
 					clearTimeout(timeout);
 				}
@@ -168,13 +176,12 @@ export class TerminalView extends ItemView {
 		this.term = term;
 		this.fitAddon = fitAddon;
 
-		// Authenticate and connect WebSocket
 		let wsUrl = `ws://localhost:${this.settings.ttydPort}/ws`;
 		try {
 			const token = await this.getAuthToken();
 			wsUrl += `?token=${token}`;
 		} catch {
-			// No auth required or auth failed — try without token
+			// ttyd may not require auth — connect without token
 		}
 
 		if (this.destroyed) return;
@@ -185,9 +192,8 @@ export class TerminalView extends ItemView {
 
 		ws.onmessage = (event) => {
 			const data = new Uint8Array(event.data as ArrayBuffer);
-			const type = data[0];
-			if (type === 0) {
-				term.write(data.slice(1));
+			if (data[0] === TTYD_OUTPUT) {
+				term.write(data.subarray(1));
 			}
 		};
 
@@ -205,30 +211,34 @@ export class TerminalView extends ItemView {
 
 		term.onData((input) => {
 			if (ws.readyState === WebSocket.OPEN) {
-				const encoder = new TextEncoder();
-				const payload = encoder.encode("0" + input);
-				ws.send(payload);
+				ws.send(textEncoder.encode(TTYD_INPUT + input));
 			}
 		});
 
 		term.onResize(({ cols, rows }) => {
 			if (ws.readyState === WebSocket.OPEN) {
-				const encoder = new TextEncoder();
-				const msg = "1" + JSON.stringify({ columns: cols, rows: rows });
-				ws.send(encoder.encode(msg));
+				const msg = TTYD_RESIZE + JSON.stringify({ columns: cols, rows: rows });
+				ws.send(textEncoder.encode(msg));
 			}
 		});
 
-		// Observe container resizes to refit the terminal
 		this.resizeObserver = new ResizeObserver(() => {
-			if (this.fitAddon) {
-				this.fitAddon.fit();
-			}
+			if (this.resizeRafId != null) return;
+			this.resizeRafId = requestAnimationFrame(() => {
+				this.resizeRafId = null;
+				if (this.fitAddon) {
+					this.fitAddon.fit();
+				}
+			});
 		});
 		this.resizeObserver.observe(wrapper);
 	}
 
 	private dispose(): void {
+		if (this.resizeRafId != null) {
+			cancelAnimationFrame(this.resizeRafId);
+			this.resizeRafId = null;
+		}
 		if (this.ws) {
 			this.ws.close();
 			this.ws = null;
