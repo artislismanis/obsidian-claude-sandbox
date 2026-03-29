@@ -115,11 +115,7 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 		this.app.workspace.detachLeavesOfType(VIEW_TYPE_TERMINAL);
 
 		if (this.settings.autoStopContainer) {
-			try {
-				this.docker.stop();
-			} catch {
-				// Best effort on unload
-			}
+			this.docker.stop().catch(() => {});
 		}
 	}
 

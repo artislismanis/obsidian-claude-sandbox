@@ -119,6 +119,10 @@ describe("buildWsUrl", () => {
 		expect(buildWsUrl(7681, "abc123")).toBe("ws://localhost:7681/ws?token=abc123");
 	});
 
+	it("encodes special characters in token", () => {
+		expect(buildWsUrl(7681, "a&b=c")).toBe("ws://localhost:7681/ws?token=a%26b%3Dc");
+	});
+
 	it("uses custom port", () => {
 		expect(buildWsUrl(8080)).toBe("ws://localhost:8080/ws");
 	});

@@ -59,5 +59,5 @@ export async function fetchAuthToken(
 
 export function buildWsUrl(port: number, token?: string): string {
 	const base = `ws://localhost:${port}/ws`;
-	return token ? `${base}?token=${token}` : base;
+	return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
