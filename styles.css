@@ -1,1 +1,56 @@
 /* PKM Claude Terminal plugin styles */
+
+.pkm-terminal-container {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+}
+
+.pkm-terminal-container .xterm {
+	flex: 1;
+	padding: 4px;
+}
+
+.pkm-terminal-loading {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	height: 100%;
+	color: var(--text-muted);
+	font-size: var(--font-ui-medium);
+}
+
+.pkm-terminal-error {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	height: 100%;
+	gap: 12px;
+	color: var(--text-error);
+	font-size: var(--font-ui-medium);
+}
+
+.pkm-terminal-error p {
+	margin: 0;
+	text-align: center;
+	max-width: 400px;
+}
+
+.pkm-terminal-error button {
+	padding: 6px 16px;
+	border-radius: var(--radius-s);
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border: none;
+	cursor: pointer;
+	font-size: var(--font-ui-small);
+}
+
+.pkm-terminal-error button:hover {
+	background-color: var(--interactive-accent-hover);
+}
