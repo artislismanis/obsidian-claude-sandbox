@@ -1,4 +1,5 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import type { App } from "obsidian";
+import { PluginSettingTab, Setting } from "obsidian";
 import type PkmClaudeTerminalPlugin from "./main";
 
 export interface PkmClaudeTerminalSettings {
@@ -36,7 +37,7 @@ export class PkmClaudeTerminalSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Docker Compose file path")
 			.setDesc(
-				"Absolute WSL path to the docker-compose.yml file (e.g. /home/user/claude-terminal/docker-compose.yml)."
+				"Absolute WSL path to the docker-compose.yml file (e.g. /home/user/claude-terminal/docker-compose.yml).",
 			)
 			.addText((text) =>
 				text
@@ -45,50 +46,40 @@ export class PkmClaudeTerminalSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						this.plugin.settings.dockerComposeFilePath = value;
 						this.plugin.saveSettings();
-					})
+					}),
 			);
 
 		new Setting(containerEl)
 			.setName("WSL distro name")
-			.setDesc(
-				"The name of the WSL distribution to use for running Docker commands."
-			)
+			.setDesc("The name of the WSL distribution to use for running Docker commands.")
 			.addText((text) =>
-				text
-					.setValue(this.plugin.settings.wslDistroName)
-					.onChange(async (value) => {
-						this.plugin.settings.wslDistroName = value;
-						this.plugin.saveSettings();
-					})
+				text.setValue(this.plugin.settings.wslDistroName).onChange(async (value) => {
+					this.plugin.settings.wslDistroName = value;
+					this.plugin.saveSettings();
+				}),
 			);
 
 		new Setting(containerEl)
 			.setName("ttyd port")
-			.setDesc(
-				"The port on which ttyd exposes the terminal (default: 7681)."
-			)
+			.setDesc("The port on which ttyd exposes the terminal (default: 7681).")
 			.addText((text) =>
-				text
-					.setValue(String(this.plugin.settings.ttydPort))
-					.onChange(async (value) => {
-						const port = parseInt(value, 10);
-						if (!isNaN(port) && port > 0 && port <= 65535) {
-							this.plugin.settings.ttydPort = port;
-							this.plugin.saveSettings();
-						}
-					})
+				text.setValue(String(this.plugin.settings.ttydPort)).onChange(async (value) => {
+					const port = parseInt(value, 10);
+					if (!isNaN(port) && port > 0 && port <= 65535) {
+						this.plugin.settings.ttydPort = port;
+						this.plugin.saveSettings();
+					}
+				}),
 			);
 
 		new Setting(containerEl)
 			.setName("ttyd username")
 			.setDesc("Username for ttyd basic authentication.")
 			.addText((text) =>
-				text
-					.setValue(this.plugin.settings.ttydUsername)
-					.onChange(async (value) => {
-						this.plugin.settings.ttydUsername = value;
-						this.plugin.saveSettings();
-					})
+				text.setValue(this.plugin.settings.ttydUsername).onChange(async (value) => {
+					this.plugin.settings.ttydUsername = value;
+					this.plugin.saveSettings();
+				}),
 			);
 
 		new Setting(containerEl)
@@ -96,40 +87,30 @@ export class PkmClaudeTerminalSettingTab extends PluginSettingTab {
 			.setDesc("Password for ttyd basic authentication. Stored in plaintext in the vault.")
 			.addText((text) => {
 				text.inputEl.type = "password";
-				text.setValue(this.plugin.settings.ttydPassword).onChange(
-					async (value) => {
-						this.plugin.settings.ttydPassword = value;
-						this.plugin.saveSettings();
-					}
-				);
+				text.setValue(this.plugin.settings.ttydPassword).onChange(async (value) => {
+					this.plugin.settings.ttydPassword = value;
+					this.plugin.saveSettings();
+				});
 			});
 
 		new Setting(containerEl)
 			.setName("Auto-start container on plugin load")
-			.setDesc(
-				"Automatically start the Docker container when the plugin is loaded."
-			)
+			.setDesc("Automatically start the Docker container when the plugin is loaded.")
 			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.autoStartContainer)
-					.onChange(async (value) => {
-						this.plugin.settings.autoStartContainer = value;
-						this.plugin.saveSettings();
-					})
+				toggle.setValue(this.plugin.settings.autoStartContainer).onChange(async (value) => {
+					this.plugin.settings.autoStartContainer = value;
+					this.plugin.saveSettings();
+				}),
 			);
 
 		new Setting(containerEl)
 			.setName("Auto-stop container on plugin unload")
-			.setDesc(
-				"Automatically stop the Docker container when the plugin is unloaded."
-			)
+			.setDesc("Automatically stop the Docker container when the plugin is unloaded.")
 			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.autoStopContainer)
-					.onChange(async (value) => {
-						this.plugin.settings.autoStopContainer = value;
-						this.plugin.saveSettings();
-					})
+				toggle.setValue(this.plugin.settings.autoStopContainer).onChange(async (value) => {
+					this.plugin.settings.autoStopContainer = value;
+					this.plugin.saveSettings();
+				}),
 			);
 	}
 }

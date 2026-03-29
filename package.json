@@ -5,21 +5,47 @@
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
-		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
+		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"lint": "eslint src/",
+		"lint:fix": "eslint src/ --fix",
+		"format": "prettier --write src/ styles.css",
+		"format:check": "prettier --check src/ styles.css",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"check": "npm run lint && npm run format:check && tsc -noEmit -skipLibCheck && npm run test",
+		"prepare": "husky"
 	},
 	"keywords": [],
 	"author": "artislismanis",
 	"license": "MIT",
 	"dependencies": {
-		"@xterm/xterm": "^5.5.0",
-		"@xterm/addon-fit": "^0.10.0"
+		"@xterm/addon-fit": "^0.10.0",
+		"@xterm/xterm": "^5.5.0"
 	},
 	"devDependencies": {
+		"@eslint/js": "^10.0.1",
 		"@types/node": "^20.11.0",
+		"@typescript-eslint/eslint-plugin": "^8.57.2",
+		"@typescript-eslint/parser": "^8.57.2",
 		"builtin-modules": "^3.3.0",
 		"esbuild": "0.20.0",
+		"eslint": "^10.1.0",
+		"husky": "^9.1.7",
+		"lint-staged": "^16.4.0",
 		"obsidian": "latest",
+		"prettier": "^3.8.1",
 		"tslib": "2.6.2",
-		"typescript": "5.3.3"
+		"typescript": "5.3.3",
+		"typescript-eslint": "^8.57.2",
+		"vitest": "^4.1.2"
+	},
+	"lint-staged": {
+		"src/**/*.ts": [
+			"eslint --fix",
+			"prettier --write"
+		],
+		"*.css": [
+			"prettier --write"
+		]
 	}
 }

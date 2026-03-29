@@ -1,4 +1,5 @@
-import { ItemView, WorkspaceLeaf } from "obsidian";
+import type { WorkspaceLeaf } from "obsidian";
+import { ItemView } from "obsidian";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 
@@ -80,10 +81,9 @@ export class TerminalView extends ItemView {
 				const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
 				try {
-					const resp = await fetch(
-						`http://localhost:${this.settings.ttydPort}`,
-						{ signal: controller.signal }
-					);
+					const resp = await fetch(`http://localhost:${this.settings.ttydPort}`, {
+						signal: controller.signal,
+					});
 					if (resp.ok || resp.status === 401) {
 						connected = true;
 						break;
@@ -106,7 +106,10 @@ export class TerminalView extends ItemView {
 			if (connected) {
 				await this.initTerminal(container, gen);
 			} else {
-				this.showError(container, "Could not connect to ttyd. Make sure the container is running.");
+				this.showError(
+					container,
+					"Could not connect to ttyd. Make sure the container is running.",
+				);
 			}
 		} finally {
 			this.connecting = false;
@@ -171,7 +174,11 @@ export class TerminalView extends ItemView {
 		const fitAddon = new FitAddon();
 		term.loadAddon(fitAddon);
 		term.open(wrapper);
-		try { fitAddon.fit(); } catch { /* container may not be visible yet */ }
+		try {
+			fitAddon.fit();
+		} catch {
+			/* container may not be visible yet */
+		}
 
 		this.term = term;
 		this.fitAddon = fitAddon;
@@ -227,7 +234,11 @@ export class TerminalView extends ItemView {
 			this.resizeRafId = requestAnimationFrame(() => {
 				this.resizeRafId = null;
 				if (this.fitAddon) {
-					try { this.fitAddon.fit(); } catch { /* pane not visible */ }
+					try {
+						this.fitAddon.fit();
+					} catch {
+						/* pane not visible */
+					}
 				}
 			});
 		});
