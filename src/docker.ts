@@ -23,7 +23,7 @@ export class DockerManager {
 	private buildCommand(dockerCmd: string): string {
 		if (!VALID_DISTRO_NAME.test(this.wslDistro)) {
 			throw new Error(
-				`Invalid WSL distribution name '${this.wslDistro}'. Only alphanumeric characters, hyphens, underscores, and dots are allowed.`
+				`Invalid WSL distribution name '${this.wslDistro}'. Only alphanumeric characters, hyphens, underscores, and dots are allowed.`,
 			);
 		}
 		// Escape single quotes for bash, then escape double quotes for cmd.exe
@@ -44,22 +44,20 @@ export class DockerManager {
 
 			if (combined.includes("is not recognized")) {
 				throw new Error(
-					"WSL is not available. Please ensure WSL is installed and configured."
+					"WSL is not available. Please ensure WSL is installed and configured.",
 				);
 			}
 			if (combined.includes("Cannot connect to the Docker daemon")) {
 				throw new Error(
-					"Docker is not running. Please start Docker Desktop or the Docker daemon."
+					"Docker is not running. Please start Docker Desktop or the Docker daemon.",
 				);
 			}
 			if (combined.includes("No such distribution")) {
 				throw new Error(
-					`WSL distribution '${this.wslDistro}' not found. Please check your settings.`
+					`WSL distribution '${this.wslDistro}' not found. Please check your settings.`,
 				);
 			}
-			throw new Error(
-				`Docker command failed: ${err.stderr || err.message}`
-			);
+			throw new Error(`Docker command failed: ${err.stderr || err.message}`);
 		}
 	}
 

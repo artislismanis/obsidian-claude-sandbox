@@ -1,4 +1,5 @@
-import { Notice, Plugin, WorkspaceLeaf, debounce } from "obsidian";
+import type { WorkspaceLeaf } from "obsidian";
+import { Notice, Plugin, debounce } from "obsidian";
 import {
 	type PkmClaudeTerminalSettings,
 	DEFAULT_SETTINGS,
@@ -22,7 +23,7 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 			await this.saveData(this.settings);
 		},
 		500,
-		true
+		true,
 	);
 
 	async onload() {
@@ -100,11 +101,7 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			await this.loadData()
-		);
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
 	}
 
 	saveSettings() {
@@ -112,8 +109,7 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 	}
 
 	async activateTerminalView(): Promise<void> {
-		const existing =
-			this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL);
+		const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL);
 
 		if (existing.length > 0) {
 			this.app.workspace.revealLeaf(existing[0]);
@@ -156,9 +152,7 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 	private async containerStatus(): Promise<void> {
 		try {
 			const output = await this.docker.status();
-			this.statusBar.setState(
-				DockerManager.parseIsRunning(output) ? "running" : "stopped"
-			);
+			this.statusBar.setState(DockerManager.parseIsRunning(output) ? "running" : "stopped");
 			new Notice(`Container status:\n${output || "No containers found."}`);
 		} catch (error: unknown) {
 			this.statusBar.setState("error");
