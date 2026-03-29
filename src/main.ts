@@ -8,7 +8,7 @@ import {
 const DEFAULT_TERMINAL_SETTINGS: TerminalViewSettings = {
 	ttydPort: 7681,
 	ttydUser: "user",
-	ttydPassword: "changeme",
+	ttydPassword: "",
 };
 
 export default class PkmClaudeTerminalPlugin extends Plugin {
@@ -32,7 +32,9 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 		});
 	}
 
-	async onunload() {}
+	onunload() {
+		this.app.workspace.detachLeavesOfType(VIEW_TYPE_TERMINAL);
+	}
 
 	async activateTerminalView(): Promise<void> {
 		const existing =

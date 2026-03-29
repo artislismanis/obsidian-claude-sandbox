@@ -92,6 +92,7 @@ export class TerminalView extends ItemView {
 			} finally {
 				clearTimeout(timeoutId);
 			}
+			if (this.destroyed) return false;
 			if (i < maxRetries - 1) {
 				await new Promise((resolve) => setTimeout(resolve, delayMs));
 			}
@@ -108,7 +109,6 @@ export class TerminalView extends ItemView {
 			cls: "pkm-terminal-iframe",
 			attr: {
 				src: url,
-				sandbox: "allow-scripts allow-same-origin allow-forms",
 			},
 		});
 	}
