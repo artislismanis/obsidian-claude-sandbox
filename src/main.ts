@@ -6,6 +6,7 @@ import {
 	PkmClaudeTerminalSettingTab,
 } from "./settings";
 import { DockerManager } from "./docker";
+import type { ContainerState } from "./status-bar";
 import { StatusBarManager } from "./status-bar";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./terminal-view";
 
@@ -30,20 +31,20 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 		await this.loadSettings();
 		this.addSettingTab(new PkmClaudeTerminalSettingTab(this.app, this));
 
-		this.docker = new DockerManager({
+		this.docker = new DockerManager(() => ({
 			composePath: this.settings.dockerComposeFilePath,
 			wslDistro: this.settings.wslDistroName,
-		});
+		}));
 
 		const statusBarEl = this.addStatusBarItem();
 		this.statusBar = new StatusBarManager(statusBarEl);
 
 		this.registerView(VIEW_TYPE_TERMINAL, (leaf: WorkspaceLeaf) => {
-			return new TerminalView(leaf, {
+			return new TerminalView(leaf, () => ({
 				ttydPort: this.settings.ttydPort,
-				ttydUser: this.settings.ttydUsername,
+				ttydUsername: this.settings.ttydUsername,
 				ttydPassword: this.settings.ttydPassword,
-			});
+			}));
 		});
 
 		this.addRibbonIcon("terminal", "Open Claude Terminal", () => {
@@ -58,16 +59,31 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 			},
 		});
 
+		const startContainer = () =>
+			this.runDockerCommand({
+				preState: "starting",
+				action: () => this.docker.start(),
+				postState: "running",
+				successMsg: "PKM container started.",
+				failurePrefix: "Failed to start container",
+			});
+
 		this.addCommand({
 			id: "pkm-start-container",
 			name: "PKM: Start Container",
-			callback: () => this.startContainer(),
+			callback: startContainer,
 		});
 
 		this.addCommand({
 			id: "pkm-stop-container",
 			name: "PKM: Stop Container",
-			callback: () => this.stopContainer(),
+			callback: () =>
+				this.runDockerCommand({
+					action: () => this.docker.stop(),
+					postState: "stopped",
+					successMsg: "PKM container stopped.",
+					failurePrefix: "Failed to stop container",
+				}),
 		});
 
 		this.addCommand({
@@ -79,11 +95,18 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 		this.addCommand({
 			id: "pkm-restart-container",
 			name: "PKM: Restart Container",
-			callback: () => this.restartContainer(),
+			callback: () =>
+				this.runDockerCommand({
+					preState: "starting",
+					action: () => this.docker.restart(),
+					postState: "running",
+					successMsg: "PKM container restarted.",
+					failurePrefix: "Failed to restart container",
+				}),
 		});
 
 		if (this.settings.autoStartContainer) {
-			void this.startContainer();
+			void startContainer();
 		}
 	}
 
@@ -126,26 +149,21 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 		}
 	}
 
-	private async startContainer(): Promise<void> {
+	private async runDockerCommand(opts: {
+		preState?: ContainerState;
+		action: () => Promise<string>;
+		postState: ContainerState;
+		successMsg: string;
+		failurePrefix: string;
+	}): Promise<void> {
 		try {
-			this.statusBar.setState("starting");
-			await this.docker.start();
-			this.statusBar.setState("running");
-			new Notice("PKM container started.");
+			if (opts.preState) this.statusBar.setState(opts.preState);
+			await opts.action();
+			this.statusBar.setState(opts.postState);
+			new Notice(opts.successMsg);
 		} catch (error: unknown) {
 			this.statusBar.setState("error");
-			new Notice(`Failed to start container: ${toErrorMessage(error)}`);
-		}
-	}
-
-	private async stopContainer(): Promise<void> {
-		try {
-			await this.docker.stop();
-			this.statusBar.setState("stopped");
-			new Notice("PKM container stopped.");
-		} catch (error: unknown) {
-			this.statusBar.setState("error");
-			new Notice(`Failed to stop container: ${toErrorMessage(error)}`);
+			new Notice(`${opts.failurePrefix}: ${toErrorMessage(error)}`);
 		}
 	}
 
@@ -157,18 +175,6 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 		} catch (error: unknown) {
 			this.statusBar.setState("error");
 			new Notice(`Failed to get status: ${toErrorMessage(error)}`);
-		}
-	}
-
-	private async restartContainer(): Promise<void> {
-		try {
-			this.statusBar.setState("starting");
-			await this.docker.restart();
-			this.statusBar.setState("running");
-			new Notice("PKM container restarted.");
-		} catch (error: unknown) {
-			this.statusBar.setState("error");
-			new Notice(`Failed to restart container: ${toErrorMessage(error)}`);
 		}
 	}
 }

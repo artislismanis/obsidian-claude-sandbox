@@ -12,6 +12,11 @@ export interface PkmClaudeTerminalSettings {
 	autoStopContainer: boolean;
 }
 
+export type TerminalSettings = Pick<
+	PkmClaudeTerminalSettings,
+	"ttydPort" | "ttydUsername" | "ttydPassword"
+>;
+
 export const DEFAULT_SETTINGS: PkmClaudeTerminalSettings = {
 	dockerComposeFilePath: "",
 	wslDistroName: "Ubuntu",

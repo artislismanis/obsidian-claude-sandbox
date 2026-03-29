@@ -2,18 +2,13 @@ import type { WorkspaceLeaf } from "obsidian";
 import { ItemView } from "obsidian";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import type { TerminalSettings } from "./settings";
+import { pollUntilReady, fetchAuthToken, buildWsUrl } from "./ttyd-client";
 
 export const VIEW_TYPE_TERMINAL = "pkm-claude-terminal-view";
 
-export interface TerminalViewSettings {
-	ttydPort: number;
-	ttydUser: string;
-	ttydPassword: string;
-}
-
 const MAX_RETRIES = 30;
 const RETRY_DELAY_MS = 1000;
-const FETCH_TIMEOUT_MS = 5000;
 
 // ttyd binary protocol: server sends raw bytes (number prefix),
 // client sends text-prefixed binary frames (string prefix)
@@ -24,7 +19,7 @@ const TTYD_RESIZE = "1";
 const textEncoder = new TextEncoder();
 
 export class TerminalView extends ItemView {
-	private settings: TerminalViewSettings;
+	private getSettings: () => TerminalSettings;
 	private generation = 0;
 	private connecting = false;
 	private term: Terminal | null = null;
@@ -33,9 +28,9 @@ export class TerminalView extends ItemView {
 	private resizeObserver: ResizeObserver | null = null;
 	private resizeRafId: number | null = null;
 
-	constructor(leaf: WorkspaceLeaf, settings: TerminalViewSettings) {
+	constructor(leaf: WorkspaceLeaf, getSettings: () => TerminalSettings) {
 		super(leaf);
-		this.settings = settings;
+		this.getSettings = getSettings;
 	}
 
 	getViewType(): string {
@@ -72,32 +67,13 @@ export class TerminalView extends ItemView {
 			const loading = container.createDiv({ cls: "pkm-terminal-loading" });
 			loading.setText("Connecting to terminal...");
 
-			let connected = false;
-
-			for (let i = 0; i < MAX_RETRIES; i++) {
-				if (gen !== this.generation) return;
-
-				const controller = new AbortController();
-				const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-				try {
-					const resp = await fetch(`http://localhost:${this.settings.ttydPort}`, {
-						signal: controller.signal,
-					});
-					if (resp.ok || resp.status === 401) {
-						connected = true;
-						break;
-					}
-				} catch {
-					// Not ready yet
-				} finally {
-					clearTimeout(timeout);
-				}
-
-				if (gen !== this.generation) return;
-
-				await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
-			}
+			const settings = this.getSettings();
+			const connected = await pollUntilReady(
+				settings.ttydPort,
+				MAX_RETRIES,
+				RETRY_DELAY_MS,
+				() => gen !== this.generation,
+			);
 
 			if (gen !== this.generation) return;
 
@@ -126,30 +102,6 @@ export class TerminalView extends ItemView {
 		retryBtn.addEventListener("click", () => {
 			this.connect();
 		});
-	}
-
-	private async getAuthToken(): Promise<string> {
-		const controller = new AbortController();
-		const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-		try {
-			const resp = await fetch(`http://localhost:${this.settings.ttydPort}/token`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					username: this.settings.ttydUser,
-					password: this.settings.ttydPassword,
-				}),
-				signal: controller.signal,
-			});
-			if (!resp.ok) throw new Error("Authentication failed");
-			const data = (await resp.json()) as { token?: string };
-			if (typeof data.token !== "string") {
-				throw new Error("Invalid token response");
-			}
-			return data.token;
-		} finally {
-			clearTimeout(timeout);
-		}
 	}
 
 	private async initTerminal(container: HTMLElement, gen: number): Promise<void> {
@@ -183,16 +135,21 @@ export class TerminalView extends ItemView {
 		this.term = term;
 		this.fitAddon = fitAddon;
 
-		let wsUrl = `ws://localhost:${this.settings.ttydPort}/ws`;
+		const settings = this.getSettings();
+		let token: string | undefined;
 		try {
-			const token = await this.getAuthToken();
-			wsUrl += `?token=${token}`;
+			token = await fetchAuthToken(
+				settings.ttydPort,
+				settings.ttydUsername,
+				settings.ttydPassword,
+			);
 		} catch {
 			// ttyd may not require auth — connect without token
 		}
 
 		if (gen !== this.generation) return;
 
+		const wsUrl = buildWsUrl(settings.ttydPort, token);
 		const ws = new WebSocket(wsUrl);
 		ws.binaryType = "arraybuffer";
 		this.ws = ws;
