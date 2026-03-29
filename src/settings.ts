@@ -33,10 +33,6 @@ export class PkmClaudeTerminalSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl("h2", {
-			text: "PKM Claude Terminal Settings",
-		});
-
 		new Setting(containerEl)
 			.setName("Docker Compose file path")
 			.setDesc(

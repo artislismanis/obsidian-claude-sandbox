@@ -1,4 +1,4 @@
-import { Plugin } from "obsidian";
+import { Plugin, debounce } from "obsidian";
 import {
 	type PkmClaudeTerminalSettings,
 	DEFAULT_SETTINGS,
@@ -8,17 +8,20 @@ import {
 export default class PkmClaudeTerminalPlugin extends Plugin {
 	settings: PkmClaudeTerminalSettings;
 
+	debouncedSaveSettings = debounce(
+		async () => {
+			await this.saveData(this.settings);
+		},
+		500,
+		true
+	);
+
 	async onload() {
-		console.log("Loading PKM Claude Terminal plugin");
-
 		await this.loadSettings();
-
 		this.addSettingTab(new PkmClaudeTerminalSettingTab(this.app, this));
 	}
 
-	async onunload() {
-		console.log("Unloading PKM Claude Terminal plugin");
-	}
+	async onunload() {}
 
 	async loadSettings() {
 		this.settings = Object.assign(
@@ -29,6 +32,6 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 	}
 
 	async saveSettings() {
-		await this.saveData(this.settings);
+		this.debouncedSaveSettings();
 	}
 }
