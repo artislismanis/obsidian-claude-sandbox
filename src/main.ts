@@ -16,14 +16,16 @@ const DEFAULT_SETTINGS: PkmClaudeTerminalSettings = {
 	autoStop: false,
 };
 
+function toErrorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
 export default class PkmClaudeTerminalPlugin extends Plugin {
 	private docker!: DockerManager;
 	private statusBar!: StatusBarManager;
 	private settings: PkmClaudeTerminalSettings = DEFAULT_SETTINGS;
 
 	async onload() {
-		console.log("Loading PKM Claude Terminal plugin");
-
 		this.docker = new DockerManager({
 			composePath: this.settings.composePath,
 			wslDistro: this.settings.wslDistro,
@@ -57,18 +59,16 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 		});
 
 		if (this.settings.autoStart) {
-			await this.startContainer();
+			void this.startContainer();
 		}
 	}
 
 	async onunload() {
-		console.log("Unloading PKM Claude Terminal plugin");
-
 		if (this.settings.autoStop) {
 			try {
 				await this.docker.stop();
-			} catch (error) {
-				console.error("Failed to stop container on unload:", error);
+			} catch {
+				// Best effort on unload
 			}
 		}
 	}
@@ -78,12 +78,10 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 			this.statusBar.setState("starting");
 			await this.docker.start();
 			this.statusBar.setState("running");
-			new Notice("PKM container started successfully.");
+			new Notice("PKM container started.");
 		} catch (error: unknown) {
 			this.statusBar.setState("error");
-			const message =
-				error instanceof Error ? error.message : String(error);
-			new Notice(`Failed to start container: ${message}`);
+			new Notice(`Failed to start container: ${toErrorMessage(error)}`);
 		}
 	}
 
@@ -94,23 +92,20 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 			new Notice("PKM container stopped.");
 		} catch (error: unknown) {
 			this.statusBar.setState("error");
-			const message =
-				error instanceof Error ? error.message : String(error);
-			new Notice(`Failed to stop container: ${message}`);
+			new Notice(`Failed to stop container: ${toErrorMessage(error)}`);
 		}
 	}
 
 	private async containerStatus(): Promise<void> {
 		try {
-			const status = await this.docker.status();
-			const running = await this.docker.isRunning();
-			this.statusBar.setState(running ? "running" : "stopped");
-			new Notice(`Container status:\n${status || "No containers found."}`);
+			const output = await this.docker.status();
+			this.statusBar.setState(
+				DockerManager.parseIsRunning(output) ? "running" : "stopped"
+			);
+			new Notice(`Container status:\n${output || "No containers found."}`);
 		} catch (error: unknown) {
 			this.statusBar.setState("error");
-			const message =
-				error instanceof Error ? error.message : String(error);
-			new Notice(`Failed to get status: ${message}`);
+			new Notice(`Failed to get status: ${toErrorMessage(error)}`);
 		}
 	}
 
@@ -119,12 +114,10 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 			this.statusBar.setState("starting");
 			await this.docker.restart();
 			this.statusBar.setState("running");
-			new Notice("PKM container restarted successfully.");
+			new Notice("PKM container restarted.");
 		} catch (error: unknown) {
 			this.statusBar.setState("error");
-			const message =
-				error instanceof Error ? error.message : String(error);
-			new Notice(`Failed to restart container: ${message}`);
+			new Notice(`Failed to restart container: ${toErrorMessage(error)}`);
 		}
 	}
 }

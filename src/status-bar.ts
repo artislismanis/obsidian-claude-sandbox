@@ -18,12 +18,9 @@ export class StatusBarManager {
 	}
 
 	setState(state: ContainerState): void {
+		if (this.state === state) return;
 		this.state = state;
 		this.render();
-	}
-
-	getState(): ContainerState {
-		return this.state;
 	}
 
 	private render(): void {

@@ -18,7 +18,7 @@ export class DockerManager {
 	}
 
 	private buildCommand(dockerCmd: string): string {
-		const innerCmd = `cd ${this.composePath} && ${dockerCmd}`;
+		const innerCmd = `cd '${this.composePath.replace(/'/g, "'\\''")}' && ${dockerCmd}`;
 		return `wsl -d ${this.wslDistro} -- bash -c "${innerCmd}"`;
 	}
 
@@ -29,35 +29,25 @@ export class DockerManager {
 			return stdout.trim();
 		} catch (error: unknown) {
 			const err = error as { stderr?: string; message?: string };
-			const stderr = err.stderr || "";
-			const message = err.message || "";
+			const combined = (err.stderr || "") + (err.message || "");
 
-			if (
-				stderr.includes("is not recognized") ||
-				message.includes("is not recognized")
-			) {
+			if (combined.includes("is not recognized")) {
 				throw new Error(
 					"WSL is not available. Please ensure WSL is installed and configured."
 				);
 			}
-			if (
-				stderr.includes("Cannot connect to the Docker daemon") ||
-				message.includes("Cannot connect to the Docker daemon")
-			) {
+			if (combined.includes("Cannot connect to the Docker daemon")) {
 				throw new Error(
 					"Docker is not running. Please start Docker Desktop or the Docker daemon."
 				);
 			}
-			if (
-				stderr.includes("No such distribution") ||
-				message.includes("No such distribution")
-			) {
+			if (combined.includes("No such distribution")) {
 				throw new Error(
 					`WSL distribution '${this.wslDistro}' not found. Please check your settings.`
 				);
 			}
 			throw new Error(
-				`Docker command failed: ${stderr || message}`
+				`Docker command failed: ${err.stderr || err.message}`
 			);
 		}
 	}
@@ -78,10 +68,13 @@ export class DockerManager {
 		return this.run("docker compose restart");
 	}
 
+	static parseIsRunning(statusOutput: string): boolean {
+		return statusOutput.length > 0 && statusOutput.includes('"running"');
+	}
+
 	async isRunning(): Promise<boolean> {
 		try {
-			const output = await this.run("docker compose ps --format json");
-			return output.length > 0 && output.includes('"running"');
+			return DockerManager.parseIsRunning(await this.status());
 		} catch {
 			return false;
 		}
