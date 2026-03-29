@@ -3,6 +3,9 @@ import { promisify } from "util";
 
 const exec = promisify(execCb);
 
+const VALID_DISTRO_NAME = /^[\w][\w.-]*$/;
+const EXEC_TIMEOUT = 30_000;
+
 interface DockerManagerSettings {
 	composePath: string;
 	wslDistro: string;
@@ -18,14 +21,22 @@ export class DockerManager {
 	}
 
 	private buildCommand(dockerCmd: string): string {
-		const innerCmd = `cd '${this.composePath.replace(/'/g, "'\\''")}' && ${dockerCmd}`;
-		return `wsl -d ${this.wslDistro} -- bash -c "${innerCmd}"`;
+		if (!VALID_DISTRO_NAME.test(this.wslDistro)) {
+			throw new Error(
+				`Invalid WSL distribution name '${this.wslDistro}'. Only alphanumeric characters, hyphens, underscores, and dots are allowed.`
+			);
+		}
+		// Escape single quotes for bash, then escape double quotes for cmd.exe
+		const escapedPath = this.composePath.replace(/'/g, "'\\''");
+		const innerCmd = `cd '${escapedPath}' && ${dockerCmd}`;
+		const cmdSafe = innerCmd.replace(/"/g, '\\"');
+		return `wsl -d ${this.wslDistro} -- bash -c "${cmdSafe}"`;
 	}
 
 	private async run(dockerCmd: string): Promise<string> {
 		const command = this.buildCommand(dockerCmd);
 		try {
-			const { stdout } = await exec(command);
+			const { stdout } = await exec(command, { timeout: EXEC_TIMEOUT });
 			return stdout.trim();
 		} catch (error: unknown) {
 			const err = error as { stderr?: string; message?: string };
@@ -70,13 +81,5 @@ export class DockerManager {
 
 	static parseIsRunning(statusOutput: string): boolean {
 		return statusOutput.length > 0 && statusOutput.includes('"running"');
-	}
-
-	async isRunning(): Promise<boolean> {
-		try {
-			return DockerManager.parseIsRunning(await this.status());
-		} catch {
-			return false;
-		}
 	}
 }
