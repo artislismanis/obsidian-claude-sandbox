@@ -1,34 +1,36 @@
-import { Notice, Plugin } from "obsidian";
+import { Notice, Plugin, debounce } from "obsidian";
+import {
+	type PkmClaudeTerminalSettings,
+	DEFAULT_SETTINGS,
+	PkmClaudeTerminalSettingTab,
+} from "./settings";
 import { DockerManager } from "./docker";
 import { StatusBarManager } from "./status-bar";
-
-interface PkmClaudeTerminalSettings {
-	composePath: string;
-	wslDistro: string;
-	autoStart: boolean;
-	autoStop: boolean;
-}
-
-const DEFAULT_SETTINGS: PkmClaudeTerminalSettings = {
-	composePath: "~/pkm-claude-terminal",
-	wslDistro: "Ubuntu",
-	autoStart: false,
-	autoStop: false,
-};
 
 function toErrorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
 export default class PkmClaudeTerminalPlugin extends Plugin {
+	settings: PkmClaudeTerminalSettings = { ...DEFAULT_SETTINGS };
 	private docker!: DockerManager;
 	private statusBar!: StatusBarManager;
-	private settings: PkmClaudeTerminalSettings = DEFAULT_SETTINGS;
+
+	private debouncedSaveSettings = debounce(
+		async () => {
+			await this.saveData(this.settings);
+		},
+		500,
+		true
+	);
 
 	async onload() {
+		await this.loadSettings();
+		this.addSettingTab(new PkmClaudeTerminalSettingTab(this.app, this));
+
 		this.docker = new DockerManager({
-			composePath: this.settings.composePath,
-			wslDistro: this.settings.wslDistro,
+			composePath: this.settings.dockerComposeFilePath,
+			wslDistro: this.settings.wslDistroName,
 		});
 
 		const statusBarEl = this.addStatusBarItem();
@@ -58,19 +60,33 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 			callback: () => this.restartContainer(),
 		});
 
-		if (this.settings.autoStart) {
+		if (this.settings.autoStartContainer) {
 			void this.startContainer();
 		}
 	}
 
-	async onunload() {
-		if (this.settings.autoStop) {
+	onunload() {
+		this.debouncedSaveSettings();
+
+		if (this.settings.autoStopContainer) {
 			try {
-				await this.docker.stop();
+				this.docker.stop();
 			} catch {
 				// Best effort on unload
 			}
 		}
+	}
+
+	async loadSettings() {
+		this.settings = Object.assign(
+			{},
+			DEFAULT_SETTINGS,
+			await this.loadData()
+		);
+	}
+
+	saveSettings() {
+		this.debouncedSaveSettings();
 	}
 
 	private async startContainer(): Promise<void> {
