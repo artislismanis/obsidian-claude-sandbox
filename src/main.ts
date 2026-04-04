@@ -1,5 +1,5 @@
 import type { WorkspaceLeaf } from "obsidian";
-import { Notice, Plugin, debounce } from "obsidian";
+import { FileSystemAdapter, Notice, Plugin, debounce } from "obsidian";
 import {
 	type PkmClaudeTerminalSettings,
 	DEFAULT_SETTINGS,
@@ -34,6 +34,10 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 		this.docker = new DockerManager(() => ({
 			composePath: this.settings.dockerComposeFilePath,
 			wslDistro: this.settings.wslDistroName,
+			vaultPath:
+				this.app.vault.adapter instanceof FileSystemAdapter
+					? this.app.vault.adapter.getBasePath()
+					: undefined,
 		}));
 
 		const statusBarEl = this.addStatusBarItem();

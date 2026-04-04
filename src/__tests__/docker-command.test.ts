@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildWslCommand } from "../docker";
+import { buildWslCommand, windowsToWslPath } from "../docker";
 
 describe("buildWslCommand", () => {
 	it("builds a basic command", () => {
@@ -52,5 +52,56 @@ describe("buildWslCommand", () => {
 	it("allows distro names with underscores", () => {
 		const cmd = buildWslCommand("/home/user", "my_distro", "docker compose up -d");
 		expect(cmd).toContain("wsl -d my_distro");
+	});
+
+	it("includes env vars in the command", () => {
+		const cmd = buildWslCommand("/home/user/project", "Ubuntu", "docker compose up -d", {
+			PKM_VAULT_PATH: "/mnt/c/Users/foo/vault",
+		});
+		expect(cmd).toContain("export PKM_VAULT_PATH='/mnt/c/Users/foo/vault'");
+		expect(cmd).toContain("&& cd '/home/user/project'");
+	});
+
+	it("escapes single quotes in env var values", () => {
+		const cmd = buildWslCommand("/home/user/project", "Ubuntu", "docker compose up -d", {
+			PKM_VAULT_PATH: "/mnt/c/Users/it's me/vault",
+		});
+		expect(cmd).toContain("PKM_VAULT_PATH='/mnt/c/Users/it'\\''s me/vault'");
+	});
+
+	it("handles env var values with spaces", () => {
+		const cmd = buildWslCommand("/home/user/project", "Ubuntu", "docker compose up -d", {
+			PKM_VAULT_PATH: "/mnt/c/Users/My User/vault",
+		});
+		expect(cmd).toContain("PKM_VAULT_PATH='/mnt/c/Users/My User/vault'");
+	});
+
+	it("omits env prefix when no env vars provided", () => {
+		const cmd = buildWslCommand("/home/user/project", "Ubuntu", "docker compose up -d", {});
+		expect(cmd).not.toContain("export");
+	});
+});
+
+describe("windowsToWslPath", () => {
+	it("converts a standard Windows path", () => {
+		expect(windowsToWslPath("C:\\Users\\foo\\vault")).toBe("/mnt/c/Users/foo/vault");
+	});
+
+	it("lowercases the drive letter", () => {
+		expect(windowsToWslPath("D:\\Data")).toBe("/mnt/d/Data");
+	});
+
+	it("handles forward slashes in Windows path", () => {
+		expect(windowsToWslPath("C:/Users/foo")).toBe("/mnt/c/Users/foo");
+	});
+
+	it("passes through a Unix path unchanged", () => {
+		expect(windowsToWslPath("/home/user/vault")).toBe("/home/user/vault");
+	});
+
+	it("handles paths with spaces", () => {
+		expect(windowsToWslPath("C:\\Users\\My User\\My Vault")).toBe(
+			"/mnt/c/Users/My User/My Vault",
+		);
 	});
 });

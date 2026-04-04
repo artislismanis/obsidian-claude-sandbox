@@ -9,16 +9,39 @@ const EXEC_TIMEOUT = 30_000;
 export interface DockerManagerSettings {
 	composePath: string;
 	wslDistro: string;
+	vaultPath?: string;
 }
 
-export function buildWslCommand(composePath: string, wslDistro: string, dockerCmd: string): string {
+export function windowsToWslPath(windowsPath: string): string {
+	const match = windowsPath.match(/^([A-Za-z]):[/\\]/);
+	if (!match) return windowsPath;
+	const driveLetter = match[1].toLowerCase();
+	const rest = windowsPath.slice(3).replace(/\\/g, "/");
+	return `/mnt/${driveLetter}/${rest}`;
+}
+
+export function buildWslCommand(
+	composePath: string,
+	wslDistro: string,
+	dockerCmd: string,
+	envVars: Record<string, string> = {},
+): string {
 	if (!VALID_DISTRO_NAME.test(wslDistro)) {
 		throw new Error(
 			`Invalid WSL distribution name '${wslDistro}'. Only alphanumeric characters, hyphens, underscores, and dots are allowed.`,
 		);
 	}
 	const escapedPath = composePath.replace(/'/g, "'\\''");
-	const innerCmd = `cd '${escapedPath}' && ${dockerCmd}`;
+
+	const envPrefix = Object.entries(envVars)
+		.map(([key, value]) => {
+			const escapedValue = value.replace(/'/g, "'\\''");
+			return `${key}='${escapedValue}'`;
+		})
+		.join(" ");
+	const envPart = envPrefix ? `export ${envPrefix} && ` : "";
+
+	const innerCmd = `${envPart}cd '${escapedPath}' && ${dockerCmd}`;
 	const cmdSafe = innerCmd.replace(/"/g, '\\"');
 	return `wsl -d ${wslDistro} -- bash -c "${cmdSafe}"`;
 }
@@ -31,8 +54,14 @@ export class DockerManager {
 	}
 
 	private async run(dockerCmd: string): Promise<string> {
-		const { composePath, wslDistro } = this.getSettings();
-		const command = buildWslCommand(composePath, wslDistro, dockerCmd);
+		const { composePath, wslDistro, vaultPath } = this.getSettings();
+
+		const envVars: Record<string, string> = {};
+		if (vaultPath) {
+			envVars.PKM_VAULT_PATH = windowsToWslPath(vaultPath);
+		}
+
+		const command = buildWslCommand(composePath, wslDistro, dockerCmd, envVars);
 		try {
 			const { stdout } = await exec(command, { timeout: EXEC_TIMEOUT });
 			return stdout.trim();
@@ -60,6 +89,12 @@ export class DockerManager {
 	}
 
 	async start(): Promise<string> {
+		// Stop first to ensure env vars (PKM_VAULT_PATH) are fresh
+		try {
+			await this.run("docker compose down");
+		} catch {
+			/* may not be running */
+		}
 		return this.run("docker compose up -d");
 	}
 
