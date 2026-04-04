@@ -1,3 +1,5 @@
+import { requestUrl } from "obsidian";
+
 const FETCH_TIMEOUT_MS = 5000;
 
 export async function pollUntilReady(
@@ -9,20 +11,18 @@ export async function pollUntilReady(
 	for (let i = 0; i < maxRetries; i++) {
 		if (isAborted()) return false;
 
-		const controller = new AbortController();
-		const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
 		try {
-			const resp = await fetch(`http://localhost:${port}`, {
-				signal: controller.signal,
-			});
-			if (resp.ok || resp.status === 401) {
+			const resp = await Promise.race([
+				requestUrl({ url: `http://localhost:${port}`, throw: false }),
+				new Promise<never>((_, reject) =>
+					setTimeout(() => reject(new Error("timeout")), FETCH_TIMEOUT_MS),
+				),
+			]);
+			if (resp.status === 200 || resp.status === 401) {
 				return true;
 			}
 		} catch {
 			// Not ready yet
-		} finally {
-			clearTimeout(timeout);
 		}
 
 		if (isAborted()) return false;
@@ -37,24 +37,24 @@ export async function fetchAuthToken(
 	username: string,
 	password: string,
 ): Promise<string> {
-	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-	try {
-		const resp = await fetch(`http://localhost:${port}/token`, {
+	const resp = await Promise.race([
+		requestUrl({
+			url: `http://localhost:${port}/token`,
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			contentType: "application/json",
 			body: JSON.stringify({ username, password }),
-			signal: controller.signal,
-		});
-		if (!resp.ok) throw new Error("Authentication failed");
-		const data = (await resp.json()) as { token?: string };
-		if (typeof data.token !== "string") {
-			throw new Error("Invalid token response");
-		}
-		return data.token;
-	} finally {
-		clearTimeout(timeout);
+			throw: false,
+		}),
+		new Promise<never>((_, reject) =>
+			setTimeout(() => reject(new Error("timeout")), FETCH_TIMEOUT_MS),
+		),
+	]);
+	if (resp.status !== 200) throw new Error("Authentication failed");
+	const data = resp.json as { token?: string };
+	if (typeof data.token !== "string") {
+		throw new Error("Invalid token response");
 	}
+	return data.token;
 }
 
 export function buildWsUrl(port: number, token?: string): string {

@@ -1,60 +1,65 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// Mock obsidian's requestUrl before importing ttyd-client
+vi.mock("obsidian", () => ({
+	requestUrl: vi.fn(),
+}));
+
+import { requestUrl } from "obsidian";
 import { pollUntilReady, fetchAuthToken, buildWsUrl } from "../ttyd-client";
 
-// Mock global fetch
-const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
+const mockRequestUrl = requestUrl as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
-	mockFetch.mockReset();
+	mockRequestUrl.mockReset();
 });
 
 describe("pollUntilReady", () => {
-	it("returns true when server responds OK", async () => {
-		mockFetch.mockResolvedValueOnce({ ok: true, status: 200 });
+	it("returns true when server responds 200", async () => {
+		mockRequestUrl.mockResolvedValueOnce({ status: 200 });
 		const result = await pollUntilReady(7681, 3, 10, () => false);
 		expect(result).toBe(true);
 	});
 
 	it("returns true when server responds 401 (auth required)", async () => {
-		mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
+		mockRequestUrl.mockResolvedValueOnce({ status: 401 });
 		const result = await pollUntilReady(7681, 3, 10, () => false);
 		expect(result).toBe(true);
 	});
 
-	it("retries on fetch error and eventually succeeds", async () => {
-		mockFetch
+	it("retries on error and eventually succeeds", async () => {
+		mockRequestUrl
 			.mockRejectedValueOnce(new Error("ECONNREFUSED"))
 			.mockRejectedValueOnce(new Error("ECONNREFUSED"))
-			.mockResolvedValueOnce({ ok: true, status: 200 });
+			.mockResolvedValueOnce({ status: 200 });
 
 		const result = await pollUntilReady(7681, 5, 10, () => false);
 		expect(result).toBe(true);
-		expect(mockFetch).toHaveBeenCalledTimes(3);
+		expect(mockRequestUrl).toHaveBeenCalledTimes(3);
 	});
 
 	it("returns false after all retries exhausted", async () => {
-		mockFetch.mockRejectedValue(new Error("ECONNREFUSED"));
+		mockRequestUrl.mockRejectedValue(new Error("ECONNREFUSED"));
 		const result = await pollUntilReady(7681, 3, 10, () => false);
 		expect(result).toBe(false);
-		expect(mockFetch).toHaveBeenCalledTimes(3);
+		expect(mockRequestUrl).toHaveBeenCalledTimes(3);
 	});
 
 	it("aborts early when isAborted returns true", async () => {
 		let aborted = false;
-		mockFetch.mockRejectedValue(new Error("ECONNREFUSED"));
+		mockRequestUrl.mockRejectedValue(new Error("ECONNREFUSED"));
 
 		const result = await pollUntilReady(7681, 10, 10, () => {
-			if (mockFetch.mock.calls.length >= 2) aborted = true;
+			if (mockRequestUrl.mock.calls.length >= 2) aborted = true;
 			return aborted;
 		});
 
 		expect(result).toBe(false);
-		expect(mockFetch.mock.calls.length).toBeLessThan(10);
+		expect(mockRequestUrl.mock.calls.length).toBeLessThan(10);
 	});
 
 	it("returns false for non-OK non-401 status", async () => {
-		mockFetch.mockResolvedValue({ ok: false, status: 500 });
+		mockRequestUrl.mockResolvedValue({ status: 500 });
 		const result = await pollUntilReady(7681, 2, 10, () => false);
 		expect(result).toBe(false);
 	});
@@ -62,25 +67,25 @@ describe("pollUntilReady", () => {
 
 describe("fetchAuthToken", () => {
 	it("returns token on success", async () => {
-		mockFetch.mockResolvedValueOnce({
-			ok: true,
-			json: () => Promise.resolve({ token: "abc123" }),
+		mockRequestUrl.mockResolvedValueOnce({
+			status: 200,
+			json: { token: "abc123" },
 		});
 		const token = await fetchAuthToken(7681, "user", "pass");
 		expect(token).toBe("abc123");
 	});
 
-	it("throws on non-OK response", async () => {
-		mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
+	it("throws on non-200 response", async () => {
+		mockRequestUrl.mockResolvedValueOnce({ status: 401 });
 		await expect(fetchAuthToken(7681, "user", "wrong")).rejects.toThrow(
 			"Authentication failed",
 		);
 	});
 
 	it("throws on missing token field", async () => {
-		mockFetch.mockResolvedValueOnce({
-			ok: true,
-			json: () => Promise.resolve({}),
+		mockRequestUrl.mockResolvedValueOnce({
+			status: 200,
+			json: {},
 		});
 		await expect(fetchAuthToken(7681, "user", "pass")).rejects.toThrow(
 			"Invalid token response",
@@ -88,24 +93,25 @@ describe("fetchAuthToken", () => {
 	});
 
 	it("throws on non-string token", async () => {
-		mockFetch.mockResolvedValueOnce({
-			ok: true,
-			json: () => Promise.resolve({ token: 12345 }),
+		mockRequestUrl.mockResolvedValueOnce({
+			status: 200,
+			json: { token: 12345 },
 		});
 		await expect(fetchAuthToken(7681, "user", "pass")).rejects.toThrow(
 			"Invalid token response",
 		);
 	});
 
-	it("sends correct request body", async () => {
-		mockFetch.mockResolvedValueOnce({
-			ok: true,
-			json: () => Promise.resolve({ token: "t" }),
+	it("sends correct request", async () => {
+		mockRequestUrl.mockResolvedValueOnce({
+			status: 200,
+			json: { token: "t" },
 		});
 		await fetchAuthToken(7681, "myuser", "mypass");
-		const call = mockFetch.mock.calls[0];
-		expect(call[0]).toBe("http://localhost:7681/token");
-		const body = JSON.parse(call[1].body as string);
+		const call = mockRequestUrl.mock.calls[0][0];
+		expect(call.url).toBe("http://localhost:7681/token");
+		expect(call.method).toBe("POST");
+		const body = JSON.parse(call.body as string);
 		expect(body).toEqual({ username: "myuser", password: "mypass" });
 	});
 });
