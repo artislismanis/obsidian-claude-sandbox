@@ -40,16 +40,17 @@ No leaf module imports from another leaf — only `main.ts` wires them together.
 - **Settings reactivity**: DockerManager and TerminalView accept `() => Settings` getter functions, not snapshots. Settings changes in the UI take effect immediately.
 - **Generation counter**: TerminalView uses an incrementing counter to prevent race conditions when the view is rapidly closed/reopened. Each async operation checks if its generation is still current.
 - **Shell escaping**: `buildWslCommand()` in docker.ts handles both bash single-quote escaping and cmd.exe double-quote escaping. Distro names are validated against `/^[\w][\w.-]*$/`.
-- **ttyd protocol**: Binary WebSocket frames with type-byte prefix. Server sends `[0, ...data]` for output. Client sends `"0" + input` for keystrokes, `"1" + JSON` for resize.
+- **ttyd protocol**: Binary WebSocket frames with ASCII command prefix. Commands are `'0'` (output/input), `'1'` (title/resize), `'2'` (preferences). Server and client use the same character codes. Connection requires `['tty']` subprotocol and a JSON handshake with `{AuthToken, columns, rows}` on open. Uses Obsidian's `requestUrl` for HTTP (bypasses CORS) and native WebSocket for the terminal stream.
+- **Clipboard**: Auto-copies on text selection via `onSelectionChange`. Paste via `Ctrl+Shift+V`. Designed for `set -g mouse off` in tmux so mouse selection works without Shift.
 - **Debounced save**: Settings saves are debounced to 500ms and flushed on plugin unload.
 
 ## Testing
 
-32 tests across 4 test files using Vitest:
+33 tests across 4 test files using Vitest:
 - `docker.test.ts` — `parseIsRunning()` static method
 - `docker-command.test.ts` — `buildWslCommand()` escaping and validation
 - `status-bar.test.ts` — `StatusBarManager` state transitions
-- `ttyd-client.test.ts` — Polling, auth token, URL construction (mocks `fetch`)
+- `ttyd-client.test.ts` — Polling, auth token, URL construction (mocks `requestUrl`)
 
 The Obsidian API-dependent modules (main.ts, settings.ts, terminal-view.ts) are not unit tested — they would require mocking Plugin, ItemView, WorkspaceLeaf, etc. Test pure logic by extracting it into testable modules (docker.ts, ttyd-client.ts, status-bar.ts).
 

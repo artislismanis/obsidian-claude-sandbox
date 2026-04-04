@@ -107,12 +107,14 @@ Pre-commit hooks (via husky) automatically lint and format staged files.
 
 | Action | Shortcut |
 |--------|----------|
-| **Copy** | `Shift` + select text with mouse — auto-copied to clipboard |
-| **Copy word** | `Shift` + right-click a word |
+| **Copy** | Select text with mouse — auto-copied to clipboard |
+| **Copy word** | Right-click a word |
 | **Paste** | `Ctrl+Shift+V` |
 | **Interrupt (SIGINT)** | `Ctrl+C` |
 
-Hold `Shift` while selecting to bypass tmux's mouse capture. Standard `Ctrl+C` sends an interrupt to the shell as expected. tmux keybindings (e.g., `Ctrl+B` then `C` for new window) work normally.
+tmux keybindings work normally (e.g., `Ctrl+B` then `C` for new window, `Ctrl+B` then `[` for scroll mode).
+
+> **Tip:** Set `set -g mouse off` in your container's `.tmux.conf` for the best experience inside Obsidian. With mouse mode off, text selection and copy work with a simple click-drag — no need to hold Shift.
 
 ## Commands
 

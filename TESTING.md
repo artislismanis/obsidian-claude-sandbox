@@ -5,7 +5,7 @@
 - [ ] Docker installed inside WSL2 (not Docker Desktop on Windows)
 - [ ] WSL2 networking mode set to `mirrored` in `~/.wslconfig`
 - [ ] pkm-workspace repo with `docker-compose.yml` configured
-- [ ] Container includes: `ttyd` (port 7681), `tmux`, Claude Code CLI
+- [ ] Container includes: `ttyd` (port 7681), `tmux` (with `set -g mouse off`), Claude Code CLI
 - [ ] `ANTHROPIC_API_KEY` set as environment variable for the container
 - [ ] Plugin built: `npm install && npm run build`
 - [ ] Plugin installed: copy `main.js`, `manifest.json`, `styles.css` to vault's `.obsidian/plugins/pkm-claude-terminal/`
