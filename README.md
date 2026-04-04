@@ -107,12 +107,12 @@ Pre-commit hooks (via husky) automatically lint and format staged files.
 
 | Action | Shortcut |
 |--------|----------|
-| **Copy** | Select text with mouse — auto-copied to clipboard |
-| **Copy word** | Right-click a word |
+| **Copy** | `Shift` + select text with mouse — auto-copied to clipboard |
+| **Copy word** | `Shift` + right-click a word |
 | **Paste** | `Ctrl+Shift+V` |
 | **Interrupt (SIGINT)** | `Ctrl+C` |
 
-Standard `Ctrl+C` sends an interrupt to the shell as expected. tmux keybindings (e.g., `Ctrl+B` then `C` for new window) work normally.
+Hold `Shift` while selecting to bypass tmux's mouse capture. Standard `Ctrl+C` sends an interrupt to the shell as expected. tmux keybindings (e.g., `Ctrl+B` then `C` for new window) work normally.
 
 ## Commands
 
