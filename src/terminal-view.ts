@@ -10,11 +10,12 @@ export const VIEW_TYPE_TERMINAL = "pkm-claude-terminal-view";
 const MAX_RETRIES = 30;
 const RETRY_DELAY_MS = 1000;
 
-// ttyd binary protocol: server sends raw bytes (number prefix),
-// client sends text-prefixed binary frames (string prefix)
-const TTYD_OUTPUT = 0;
-const TTYD_INPUT = "0";
-const TTYD_RESIZE = "1";
+// ttyd protocol command characters (ASCII, same value for server and client)
+const CMD_OUTPUT = "0";
+const CMD_SET_WINDOW_TITLE = "1";
+const CMD_SET_PREFERENCES = "2";
+const CMD_INPUT = "0";
+const CMD_RESIZE = "1";
 
 const textEncoder = new TextEncoder();
 
@@ -150,23 +151,34 @@ export class TerminalView extends ItemView {
 		if (gen !== this.generation) return;
 
 		const wsUrl = buildWsUrl(settings.ttydPort, token);
-		const ws = new WebSocket(wsUrl);
+		const ws = new WebSocket(wsUrl, ["tty"]);
 		ws.binaryType = "arraybuffer";
 		this.ws = ws;
 
 		ws.onopen = () => {
-			const handshake = JSON.stringify({
+			const msg = JSON.stringify({
 				AuthToken: token ?? "",
 				columns: term.cols,
 				rows: term.rows,
 			});
-			ws.send("{" + handshake);
+			ws.send(textEncoder.encode(msg));
 		};
 
 		ws.onmessage = (event) => {
-			const data = new Uint8Array(event.data as ArrayBuffer);
-			if (data[0] === TTYD_OUTPUT) {
-				term.write(data.subarray(1));
+			const rawData = event.data as ArrayBuffer;
+			const cmd = String.fromCharCode(new Uint8Array(rawData)[0]);
+			const data = rawData.slice(1);
+
+			switch (cmd) {
+				case CMD_OUTPUT:
+					term.write(new Uint8Array(data));
+					break;
+				case CMD_SET_WINDOW_TITLE:
+					// Could set document title; ignored for Obsidian
+					break;
+				case CMD_SET_PREFERENCES:
+					// Server preferences; ignored
+					break;
 			}
 		};
 
@@ -184,13 +196,16 @@ export class TerminalView extends ItemView {
 
 		term.onData((input) => {
 			if (ws.readyState === WebSocket.OPEN) {
-				ws.send(textEncoder.encode(TTYD_INPUT + input));
+				const payload = new Uint8Array(input.length * 3 + 1);
+				payload[0] = CMD_INPUT.charCodeAt(0);
+				const { written } = textEncoder.encodeInto(input, payload.subarray(1));
+				ws.send(payload.subarray(0, (written ?? 0) + 1));
 			}
 		});
 
 		term.onResize(({ cols, rows }) => {
 			if (ws.readyState === WebSocket.OPEN) {
-				const msg = TTYD_RESIZE + JSON.stringify({ columns: cols, rows: rows });
+				const msg = CMD_RESIZE + JSON.stringify({ columns: cols, rows: rows });
 				ws.send(textEncoder.encode(msg));
 			}
 		});
