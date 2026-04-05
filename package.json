@@ -2,7 +2,7 @@
 	"name": "pkm-claude-terminal",
 	"version": "0.1.0",
 	"description": "Obsidian plugin for managing a Docker-based Claude Code environment",
-	"main": "main.js",
+	"main": "dist/main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",

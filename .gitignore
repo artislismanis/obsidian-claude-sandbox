@@ -1,5 +1,5 @@
 # Build output
-main.js
+dist/
 
 # npm
 node_modules/

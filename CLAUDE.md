@@ -77,4 +77,4 @@ The Obsidian API-dependent modules (main.ts, settings.ts, terminal-view.ts) are 
 
 ## Deployment
 
-After building, copy `main.js`, `manifest.json`, and `styles.css` to the vault's `.obsidian/plugins/pkm-claude-terminal/` directory. The `styles.css` includes the full xterm.js base styles — Obsidian loads it automatically.
+`npm run build` produces a ready-to-install `dist/` folder containing `main.js` (minified, all dependencies bundled), `manifest.json`, and `styles.css`. Copy the contents of `dist/` to the vault's `.obsidian/plugins/pkm-claude-terminal/` directory. The `styles.css` includes the full xterm.js base styles — Obsidian loads it automatically.
