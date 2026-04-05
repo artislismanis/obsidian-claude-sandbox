@@ -1,10 +1,6 @@
 import type { WorkspaceLeaf } from "obsidian";
 import { FileSystemAdapter, Notice, Plugin, debounce } from "obsidian";
-import {
-	type PkmClaudeTerminalSettings,
-	DEFAULT_SETTINGS,
-	PkmClaudeTerminalSettingTab,
-} from "./settings";
+import { type AgentSandboxSettings, DEFAULT_SETTINGS, AgentSandboxSettingTab } from "./settings";
 import { DockerManager } from "./docker";
 import type { ContainerState } from "./status-bar";
 import { StatusBarManager } from "./status-bar";
@@ -14,8 +10,8 @@ function toErrorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
-export default class PkmClaudeTerminalPlugin extends Plugin {
-	settings: PkmClaudeTerminalSettings = { ...DEFAULT_SETTINGS };
+export default class AgentSandboxPlugin extends Plugin {
+	settings: AgentSandboxSettings = { ...DEFAULT_SETTINGS };
 	private docker!: DockerManager;
 	private statusBar!: StatusBarManager;
 
@@ -29,7 +25,7 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
-		this.addSettingTab(new PkmClaudeTerminalSettingTab(this.app, this));
+		this.addSettingTab(new AgentSandboxSettingTab(this.app, this));
 
 		this.docker = new DockerManager(() => ({
 			dockerMode: this.settings.dockerMode,
@@ -57,13 +53,13 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 			}));
 		});
 
-		this.addRibbonIcon("terminal", "Open Claude Terminal", () => {
+		this.addRibbonIcon("terminal", "Open Sandbox Terminal", () => {
 			this.activateTerminalView();
 		});
 
 		this.addCommand({
 			id: "open-claude-terminal",
-			name: "Open Claude Terminal",
+			name: "Open Sandbox Terminal",
 			callback: () => {
 				this.activateTerminalView();
 			},
@@ -77,43 +73,43 @@ export default class PkmClaudeTerminalPlugin extends Plugin {
 					return this.docker.start();
 				},
 				postState: "running",
-				successMsg: "PKM container started.",
+				successMsg: "Sandbox container started.",
 				failurePrefix: "Failed to start container",
 			});
 
 		this.addCommand({
-			id: "pkm-start-container",
-			name: "PKM: Start Container",
+			id: "sandbox-start-container",
+			name: "Sandbox: Start Container",
 			callback: startContainer,
 		});
 
 		this.addCommand({
-			id: "pkm-stop-container",
-			name: "PKM: Stop Container",
+			id: "sandbox-stop-container",
+			name: "Sandbox: Stop Container",
 			callback: () =>
 				this.runDockerCommand({
 					action: () => this.docker.stop(),
 					postState: "stopped",
-					successMsg: "PKM container stopped.",
+					successMsg: "Sandbox container stopped.",
 					failurePrefix: "Failed to stop container",
 				}),
 		});
 
 		this.addCommand({
-			id: "pkm-container-status",
-			name: "PKM: Container Status",
+			id: "sandbox-container-status",
+			name: "Sandbox: Container Status",
 			callback: () => this.containerStatus(),
 		});
 
 		this.addCommand({
-			id: "pkm-restart-container",
-			name: "PKM: Restart Container",
+			id: "sandbox-restart-container",
+			name: "Sandbox: Restart Container",
 			callback: () =>
 				this.runDockerCommand({
 					preState: "starting",
 					action: () => this.docker.restart(),
 					postState: "running",
-					successMsg: "PKM container restarted.",
+					successMsg: "Sandbox container restarted.",
 					failurePrefix: "Failed to restart container",
 				}),
 		});

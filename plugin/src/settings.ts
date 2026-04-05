@@ -1,11 +1,11 @@
 import type { App } from "obsidian";
 import { PluginSettingTab, Setting } from "obsidian";
-import type PkmClaudeTerminalPlugin from "./main";
+import type AgentSandboxPlugin from "./main";
 
 export type TerminalThemeMode = "obsidian" | "dark" | "light";
 export type DockerMode = "wsl" | "local";
 
-export interface PkmClaudeTerminalSettings {
+export interface AgentSandboxSettings {
 	dockerMode: DockerMode;
 	dockerComposeFilePath: string;
 	wslDistroName: string;
@@ -19,11 +19,11 @@ export interface PkmClaudeTerminalSettings {
 }
 
 export type TerminalSettings = Pick<
-	PkmClaudeTerminalSettings,
+	AgentSandboxSettings,
 	"ttydPort" | "ttydUsername" | "ttydPassword" | "terminalTheme"
 >;
 
-export const DEFAULT_SETTINGS: PkmClaudeTerminalSettings = {
+export const DEFAULT_SETTINGS: AgentSandboxSettings = {
 	dockerMode: "wsl",
 	dockerComposeFilePath: "",
 	wslDistroName: "Ubuntu",
@@ -36,10 +36,10 @@ export const DEFAULT_SETTINGS: PkmClaudeTerminalSettings = {
 	terminalTheme: "obsidian",
 };
 
-export class PkmClaudeTerminalSettingTab extends PluginSettingTab {
-	plugin: PkmClaudeTerminalPlugin;
+export class AgentSandboxSettingTab extends PluginSettingTab {
+	plugin: AgentSandboxPlugin;
 
-	constructor(app: App, plugin: PkmClaudeTerminalPlugin) {
+	constructor(app: App, plugin: AgentSandboxPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
@@ -83,8 +83,8 @@ export class PkmClaudeTerminalSettingTab extends PluginSettingTab {
 				text
 					.setPlaceholder(
 						isWsl
-							? "/home/user/obsidian-claude-sandbox/docker"
-							: "/opt/obsidian-claude-sandbox/docker",
+							? "/home/user/obsidian-agent-sandbox/docker"
+							: "/opt/obsidian-agent-sandbox/docker",
 					)
 					.setValue(this.plugin.settings.dockerComposeFilePath)
 					.onChange(async (value) => {

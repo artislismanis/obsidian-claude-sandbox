@@ -1,6 +1,6 @@
-# CLAUDE.md — PKM Claude Terminal
+# CLAUDE.md — Agent Sandbox
 
-Monorepo containing an Obsidian plugin and its paired Docker container for working with Obsidian vaults using Claude Code.
+Monorepo containing an Obsidian plugin and its paired Docker container for working with Obsidian vaults using AI coding agents.
 
 ## Quick reference
 

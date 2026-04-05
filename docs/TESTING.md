@@ -1,6 +1,6 @@
 # Manual Testing Checklist
 
-Testing the PKM Docker container and the Obsidian plugin together.
+Testing the Agent Sandbox Docker container and the Obsidian plugin together.
 
 ## Prerequisites
 
@@ -9,7 +9,7 @@ Testing the PKM Docker container and the Obsidian plugin together.
 - [ ] An Obsidian vault with some test files
 - [ ] Claude Code subscription authenticated
 - [ ] Plugin built: `cd plugin && npm install && npm run build`
-- [ ] Plugin installed: copy contents of `plugin/dist/` to vault's `.obsidian/plugins/pkm-claude-terminal/`
+- [ ] Plugin installed: copy contents of `plugin/dist/` to vault's `.obsidian/plugins/obsidian-agent-sandbox/`
 - [ ] Plugin enabled in Obsidian Settings > Community Plugins
 
 ---
@@ -26,7 +26,7 @@ docker compose up -d
 
 - [ ] `docker compose build` completes without errors
 - [ ] `docker compose up -d` starts successfully
-- [ ] `docker compose ps` shows `pkm-sandbox` as **healthy**
+- [ ] `docker compose ps` shows `agent-sandbox` as **healthy**
 
 ## 2. Verify Script
 
@@ -82,7 +82,7 @@ claude
 
 | # | Test | Steps | Expected |
 |---|------|-------|----------|
-| 6.1 | Settings tab renders | Open Settings > Community Plugins > PKM Claude Terminal | All fields visible: compose path, WSL distro, ttyd port, ttyd user, ttyd password, terminal theme, auto-start toggle, auto-stop toggle |
+| 6.1 | Settings tab renders | Open Settings > Community Plugins > Agent Sandbox | All fields visible: compose path, WSL distro, ttyd port, ttyd user, ttyd password, terminal theme, auto-start toggle, auto-stop toggle |
 | 6.2 | Default values | Open settings tab fresh | WSL distro = "Ubuntu", port = 7681, user = "user", password = empty, theme = "Follow Obsidian theme", both toggles off |
 | 6.3 | Values persist | Change compose path, restart Obsidian | Value persists |
 | 6.4 | Password field masked | Look at ttyd password field | Input type is password (dots, not plaintext) |
@@ -95,13 +95,13 @@ claude
 
 | # | Test | Steps | Expected |
 |---|------|-------|----------|
-| 7.1 | Start container | Cmd palette > "PKM: Start Container" | Notice: "PKM container started." Status bar: "PKM: ▶ Running" |
-| 7.2 | Container status | Cmd palette > "PKM: Container Status" | Notice shows JSON output |
-| 7.3 | Restart container | Cmd palette > "PKM: Restart Container" | Status bar briefly "⏳ Starting", then "▶ Running" |
-| 7.4 | Stop container | Cmd palette > "PKM: Stop Container" | Notice: "PKM container stopped." Status bar: "⏹ Stopped" |
+| 7.1 | Start container | Cmd palette > "Sandbox: Start Container" | Notice: "Sandbox container started." Status bar: "Sandbox: ▶ Running" |
+| 7.2 | Container status | Cmd palette > "Sandbox: Container Status" | Notice shows JSON output |
+| 7.3 | Restart container | Cmd palette > "Sandbox: Restart Container" | Status bar briefly "⏳ Starting", then "▶ Running" |
+| 7.4 | Stop container | Cmd palette > "Sandbox: Stop Container" | Notice: "Sandbox container stopped." Status bar: "⏹ Stopped" |
 | 7.5 | Error - no Docker | Stop Docker daemon, run Start | Notice: "Docker is not running..." Status bar: "⚠ Error" |
 | 7.6 | Error - bad distro | Set WSL distro to "NonExistent", run Start | Notice: "WSL distribution 'NonExistent' not found..." |
-| 7.7 | Status bar on load | Enable plugin with auto-start OFF | Status bar shows "PKM: ⏹ Stopped" |
+| 7.7 | Status bar on load | Enable plugin with auto-start OFF | Status bar shows "Sandbox: ⏹ Stopped" |
 | 7.8 | Auto-start | Enable auto-start, restart Obsidian | Container starts automatically |
 | 7.9 | Auto-stop | Enable auto-stop, disable plugin | Container stops on plugin unload |
 
@@ -112,7 +112,7 @@ claude
 | # | Test | Steps | Expected |
 |---|------|-------|----------|
 | 8.1 | Open via ribbon | Click terminal icon in left ribbon | Terminal pane opens at bottom |
-| 8.2 | Open via command | Cmd palette > "Open Claude Terminal" | New terminal pane opens |
+| 8.2 | Open via command | Cmd palette > "Open Sandbox Terminal" | New terminal pane opens |
 | 8.3 | Terminal connects | With container running | Loading message, then xterm.js terminal renders |
 | 8.4 | Terminal is interactive | Type commands | Input/output works, shell responds |
 | 8.5 | Theme - follow Obsidian | Set theme to "Follow Obsidian theme", open terminal | Colors match Obsidian theme |
@@ -131,7 +131,7 @@ claude
 
 | # | Test | Steps | Expected |
 |---|------|-------|----------|
-| 9.1 | Multiple terminals | Open 3 terminals via command palette | 3 separate tabs: "Claude Terminal 1", "Claude Terminal 2", "Claude Terminal 3" |
+| 9.1 | Multiple terminals | Open 3 terminals via command palette | 3 separate tabs: "Sandbox Terminal 1", "Sandbox Terminal 2", "Sandbox Terminal 3" |
 | 9.2 | Independent sessions | Type different commands in each terminal | Each has its own shell, no shared state |
 | 9.3 | tmux sessions visible | Run `tmux list-sessions` in any terminal | Shows 3 separate `claude-*` sessions |
 | 9.4 | Close one | Close terminal 2 | Terminals 1 and 3 unaffected |
@@ -171,8 +171,8 @@ docker compose up -d
 ```
 
 - [ ] Container comes back up healthy
-- [ ] Named volumes preserve Claude Code config (`pkm-claude-config`)
-- [ ] Named volumes preserve atuin history (`pkm-atuin-history`)
+- [ ] Named volumes preserve Claude Code config (`sandbox-claude-config`)
+- [ ] Named volumes preserve atuin history (`sandbox-atuin-history`)
 
 ## 13. Network Firewall (optional)
 

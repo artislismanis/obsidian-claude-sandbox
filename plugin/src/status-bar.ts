@@ -1,10 +1,10 @@
 export type ContainerState = "stopped" | "starting" | "running" | "error";
 
 const STATE_DISPLAY: Record<ContainerState, string> = {
-	stopped: "PKM: ⏹ Stopped",
-	starting: "PKM: ⏳ Starting",
-	running: "PKM: ▶ Running",
-	error: "PKM: ⚠ Error",
+	stopped: "Sandbox: ⏹ Stopped",
+	starting: "Sandbox: ⏳ Starting",
+	running: "Sandbox: ▶ Running",
+	error: "Sandbox: ⚠ Error",
 };
 
 export class StatusBarManager {

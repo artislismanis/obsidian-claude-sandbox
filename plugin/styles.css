@@ -1,4 +1,4 @@
-/* PKM Claude Terminal plugin styles */
+/* Agent Sandbox plugin styles */
 
 /* ============================================================
  * xterm.js base styles (from @xterm/xterm/css/xterm.css)
@@ -199,7 +199,7 @@
  * Plugin styles
  * ============================================================ */
 
-.pkm-terminal-container {
+.sandbox-terminal-container {
 	display: flex;
 	flex-direction: column;
 	width: 100%;
@@ -207,12 +207,12 @@
 	overflow: hidden;
 }
 
-.pkm-terminal-container .xterm {
+.sandbox-terminal-container .xterm {
 	flex: 1;
 	padding: 4px;
 }
 
-.pkm-terminal-loading {
+.sandbox-terminal-loading {
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -222,7 +222,7 @@
 	font-size: var(--font-ui-medium);
 }
 
-.pkm-terminal-error {
+.sandbox-terminal-error {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
@@ -234,13 +234,13 @@
 	font-size: var(--font-ui-medium);
 }
 
-.pkm-terminal-error p {
+.sandbox-terminal-error p {
 	margin: 0;
 	text-align: center;
 	max-width: 400px;
 }
 
-.pkm-terminal-error button {
+.sandbox-terminal-error button {
 	padding: 6px 16px;
 	border-radius: var(--radius-s);
 	background-color: var(--interactive-accent);
@@ -250,6 +250,6 @@
 	font-size: var(--font-ui-small);
 }
 
-.pkm-terminal-error button:hover {
+.sandbox-terminal-error button:hover {
 	background-color: var(--interactive-accent-hover);
 }

@@ -5,7 +5,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import type { TerminalSettings, TerminalThemeMode } from "./settings";
 import { pollUntilReady, fetchAuthToken, buildWsUrl } from "./ttyd-client";
 
-export const VIEW_TYPE_TERMINAL = "pkm-claude-terminal-view";
+export const VIEW_TYPE_TERMINAL = "agent-sandbox-terminal-view";
 
 const MAX_RETRIES = 30;
 const RETRY_DELAY_MS = 1000;
@@ -43,7 +43,7 @@ export class TerminalView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return `Claude Terminal ${this.instanceId}`;
+		return `Sandbox Terminal ${this.instanceId}`;
 	}
 
 	getIcon(): string {
@@ -72,7 +72,7 @@ export class TerminalView extends ItemView {
 		this.resizeRafId = requestAnimationFrame(() => {
 			this.resizeRafId = null;
 			if (!this.fitAddon || !this.term) return;
-			const el = this.contentEl.querySelector(".pkm-terminal-container");
+			const el = this.contentEl.querySelector(".sandbox-terminal-container");
 			if (!el || el.clientWidth < 10 || el.clientHeight < 10) return;
 			try {
 				this.fitAddon.fit();
@@ -91,7 +91,7 @@ export class TerminalView extends ItemView {
 			const container = this.contentEl;
 			container.empty();
 
-			const loading = container.createDiv({ cls: "pkm-terminal-loading" });
+			const loading = container.createDiv({ cls: "sandbox-terminal-loading" });
 			loading.setText("Connecting to terminal...");
 
 			const settings = this.getSettings();
@@ -120,7 +120,7 @@ export class TerminalView extends ItemView {
 	}
 
 	private showError(container: HTMLElement, message: string): void {
-		const errorDiv = container.createDiv({ cls: "pkm-terminal-error" });
+		const errorDiv = container.createDiv({ cls: "sandbox-terminal-error" });
 		const msgEl = errorDiv.createEl("p");
 		msgEl.setText(message);
 
@@ -181,7 +181,7 @@ export class TerminalView extends ItemView {
 	}
 
 	private async initTerminal(container: HTMLElement, gen: number): Promise<void> {
-		const wrapper = container.createDiv({ cls: "pkm-terminal-container" });
+		const wrapper = container.createDiv({ cls: "sandbox-terminal-container" });
 
 		const settings = this.getSettings();
 		const { fontFamily, theme } = this.buildTheme(settings.terminalTheme);

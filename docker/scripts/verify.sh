@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "=== PKM Sandbox — Environment Verification ==="
+echo "=== Agent Sandbox — Environment Verification ==="
 
 echo "Node:    $(node --version 2>&1 || echo 'not found')"
 echo "npm:     $(npm --version 2>&1 || echo 'not found')"

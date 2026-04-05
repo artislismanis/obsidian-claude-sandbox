@@ -92,7 +92,7 @@ export class DockerManager {
 
 		if (!composePath) {
 			throw new Error(
-				"Docker Compose path not configured. Set it in Settings > PKM Claude Terminal.",
+				"Docker Compose path not configured. Set it in Settings > Agent Sandbox.",
 			);
 		}
 

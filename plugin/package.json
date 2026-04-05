@@ -1,5 +1,5 @@
 {
-	"name": "pkm-claude-terminal",
+	"name": "obsidian-agent-sandbox",
 	"version": "0.1.0",
 	"description": "Obsidian plugin for managing a Docker-based Claude Code environment",
 	"main": "dist/main.js",

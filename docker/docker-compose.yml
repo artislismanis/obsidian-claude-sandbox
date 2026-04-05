@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: pkm-sandbox
+    container_name: agent-sandbox
     cap_add:
       - NET_ADMIN
       - NET_RAW
@@ -13,8 +13,8 @@ services:
       - .:/workspace
       - ${PKM_VAULT_PATH:-./vault}:/workspace/vault:ro
       - ${PKM_VAULT_PATH:-./vault}/${PKM_WRITE_DIR:-claude-workspace}:/workspace/vault/${PKM_WRITE_DIR:-claude-workspace}
-      - pkm-claude-config:/home/claude/.claude
-      - pkm-atuin-history:/home/claude/.local/share/atuin
+      - sandbox-claude-config:/home/claude/.claude
+      - sandbox-atuin-history:/home/claude/.local/share/atuin
     environment:
       - TERM=xterm-256color
       - TTYD_USER=${TTYD_USER:-}
@@ -38,5 +38,5 @@ services:
     #       cpus: "2.0"
 
 volumes:
-  pkm-claude-config:
-  pkm-atuin-history:
+  sandbox-claude-config:
+  sandbox-atuin-history:

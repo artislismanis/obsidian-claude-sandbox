@@ -1,9 +1,9 @@
 {
-	"id": "pkm-claude-terminal",
-	"name": "PKM Claude Terminal",
+	"id": "obsidian-agent-sandbox",
+	"name": "Agent Sandbox",
 	"version": "0.1.0",
 	"minAppVersion": "1.0.0",
-	"description": "Manage a Docker-based Claude Code environment from within Obsidian. Provides container lifecycle management and an embedded terminal view via ttyd.",
+	"description": "Manage a Docker-based agent sandbox from within Obsidian. Provides container lifecycle management and an embedded terminal view via ttyd.",
 	"author": "artislismanis",
 	"isDesktopOnly": true
 }

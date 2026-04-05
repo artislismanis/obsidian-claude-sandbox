@@ -12,28 +12,28 @@ describe("StatusBarManager", () => {
 	it("renders stopped state on construction", () => {
 		const el = createMockElement();
 		new StatusBarManager(el);
-		expect(el.setText).toHaveBeenCalledWith("PKM: \u23F9 Stopped");
+		expect(el.setText).toHaveBeenCalledWith("Sandbox: \u23F9 Stopped");
 	});
 
 	it("updates display on setState", () => {
 		const el = createMockElement();
 		const mgr = new StatusBarManager(el);
 		mgr.setState("running");
-		expect(el.setText).toHaveBeenCalledWith("PKM: \u25B6 Running");
+		expect(el.setText).toHaveBeenCalledWith("Sandbox: \u25B6 Running");
 	});
 
 	it("shows starting state", () => {
 		const el = createMockElement();
 		const mgr = new StatusBarManager(el);
 		mgr.setState("starting");
-		expect(el.setText).toHaveBeenCalledWith("PKM: \u23F3 Starting");
+		expect(el.setText).toHaveBeenCalledWith("Sandbox: \u23F3 Starting");
 	});
 
 	it("shows error state", () => {
 		const el = createMockElement();
 		const mgr = new StatusBarManager(el);
 		mgr.setState("error");
-		expect(el.setText).toHaveBeenCalledWith("PKM: \u26A0 Error");
+		expect(el.setText).toHaveBeenCalledWith("Sandbox: \u26A0 Error");
 	});
 
 	it("skips render when state unchanged", () => {

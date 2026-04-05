@@ -37,7 +37,7 @@ No leaf module imports from another leaf — only `main.ts` wires them together.
 - **ttyd protocol**: Binary WebSocket frames with ASCII command prefix. Commands are `'0'` (output/input), `'1'` (title/resize), `'2'` (preferences). Server and client use the same character codes. Connection requires `['tty']` subprotocol and a JSON handshake with `{AuthToken, columns, rows}` on open. Uses Obsidian's `requestUrl` for HTTP (bypasses CORS) and native WebSocket for the terminal stream.
 - **Clipboard**: Auto-copies on text selection via `onSelectionChange`. Paste via `Ctrl+Shift+V`. Designed for `set -g mouse off` in tmux so mouse selection works without Shift.
 - **Vault path injection**: Plugin auto-detects vault path via `FileSystemAdapter.getBasePath()`, converts Windows→WSL format via `windowsToWslPath()`, and passes `PKM_VAULT_PATH` env var to all docker compose commands. `start()` does stop+start to ensure fresh env vars.
-- **Multiple terminals**: Each "Open Claude Terminal" creates an independent terminal tab with its own WebSocket connection and unique instance ID. Terminals open at the bottom via horizontal split.
+- **Multiple terminals**: Each "Open Sandbox Terminal" creates an independent terminal tab with its own WebSocket connection and unique instance ID. Terminals open at the bottom via horizontal split.
 - **Debounced save**: Settings saves are debounced to 500ms and flushed on plugin unload.
 
 ## Testing
@@ -72,4 +72,4 @@ The Obsidian API-dependent modules (main.ts, settings.ts, terminal-view.ts) are 
 
 ## Deployment
 
-`npm run build` produces a ready-to-install `dist/` folder containing `main.js` (minified, all dependencies bundled), `manifest.json`, and `styles.css`. Copy the contents of `dist/` to the vault's `.obsidian/plugins/pkm-claude-terminal/` directory. The `styles.css` includes the full xterm.js base styles — Obsidian loads it automatically.
+`npm run build` produces a ready-to-install `dist/` folder containing `main.js` (minified, all dependencies bundled), `manifest.json`, and `styles.css`. Copy the contents of `dist/` to the vault's `.obsidian/plugins/obsidian-agent-sandbox/` directory. The `styles.css` includes the full xterm.js base styles — Obsidian loads it automatically.

@@ -1,4 +1,4 @@
-# CLAUDE.md — PKM Docker Container
+# CLAUDE.md — Agent Sandbox Container
 
 ## Environment
 
