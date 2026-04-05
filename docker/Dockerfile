@@ -109,6 +109,8 @@ RUN atuin init bash > /tmp/atuin-init.bash \
        'auto_sync = false' \
        'search_mode = "fuzzy"' \
        'style = "compact"' \
+       'filter_mode = "global"' \
+       'filter_mode_shell_up_arrow = "global"' \
        > /home/claude/.config/atuin/config.toml
 
 WORKDIR /workspace
