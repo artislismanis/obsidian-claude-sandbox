@@ -60,6 +60,16 @@ export class TerminalView extends ItemView {
 		this.dispose();
 	}
 
+	onResize(): void {
+		if (this.fitAddon) {
+			try {
+				this.fitAddon.fit();
+			} catch {
+				/* pane not visible */
+			}
+		}
+	}
+
 	private async connect(): Promise<void> {
 		if (this.connecting) return;
 		this.connecting = true;
