@@ -174,7 +174,7 @@ export class DockerManager {
 				? buildWslCommand(composePath, wslDistro, dockerCmd, envVars)
 				: buildLocalCommand(composePath, dockerCmd, envVars);
 		try {
-			const { stdout } = await exec(command, { timeout: EXEC_TIMEOUT });
+			const { stdout } = await exec(command, { timeout: EXEC_TIMEOUT, windowsHide: true });
 			return stdout.trim();
 		} catch (error: unknown) {
 			const err = error as { stderr?: string; message?: string };
@@ -262,6 +262,7 @@ export class DockerManager {
 		const child = spawn(shell, args, {
 			detached: true,
 			stdio: "ignore",
+			windowsHide: true,
 		});
 		child.unref();
 	}

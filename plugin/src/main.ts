@@ -119,6 +119,17 @@ export default class AgentSandboxPlugin extends Plugin {
 			callback: () => this.toggleFirewall(),
 		});
 
+		// Stop container on app quit (onunload only fires on plugin disable, not app exit)
+		this.registerEvent(
+			this.app.workspace.on("quit", (tasks) => {
+				if (this.settings.autoStopContainer) {
+					tasks.add(async () => {
+						this.docker.stopDetached();
+					});
+				}
+			}),
+		);
+
 		if (this.settings.autoStartContainer) {
 			void this.startContainer();
 		}
