@@ -194,6 +194,11 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 	}
 
 	private renderTerminal(el: HTMLElement): void {
+		el.createEl("p", {
+			text: "Port, bind address, and tmux settings require a container restart to take effect.",
+			cls: "setting-item-description",
+		});
+
 		new Setting(el)
 			.setName("Port")
 			.setDesc("The host port mapped to ttyd inside the container (default: 7681).")
@@ -279,6 +284,11 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 	}
 
 	private renderAdvanced(el: HTMLElement): void {
+		el.createEl("p", {
+			text: "Resource limit and firewall changes require a container restart to take effect.",
+			cls: "setting-item-description",
+		});
+
 		new Setting(el).setName("Resource limits").setHeading();
 
 		new Setting(el)

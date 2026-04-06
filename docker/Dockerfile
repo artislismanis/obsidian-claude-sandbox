@@ -57,7 +57,8 @@ COPY --from=uv /uv /uvx /usr/local/bin/
 # Create non-root user
 RUN useradd -m -s /bin/bash claude \
     && mkdir -p /workspace /home/claude/.claude /home/claude/.shell-history \
-    && chown -R claude:claude /workspace /home/claude/.claude /home/claude/.shell-history
+    && chown -R claude:claude /workspace /home/claude/.claude /home/claude/.shell-history \
+    && ln -sf /home/claude/.claude/.claude.json /home/claude/.claude.json
 
 # Firewall script (run as root via docker compose exec --user root)
 COPY --chmod=755 scripts/init-firewall.sh /usr/local/bin/init-firewall.sh
