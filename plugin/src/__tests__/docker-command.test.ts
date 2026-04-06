@@ -131,6 +131,18 @@ describe("buildLocalCommand", () => {
 		const cmd = buildLocalCommand("/opt/project", "docker compose up -d", {});
 		expect(cmd).not.toContain("export");
 	});
+
+	it("escapes double quotes in path", () => {
+		const cmd = buildLocalCommand('/opt/"quoted"', "docker compose up -d");
+		expect(cmd).toContain('\\"quoted\\"');
+	});
+
+	it("escapes double quotes in env var values", () => {
+		const cmd = buildLocalCommand("/opt/project", "docker compose up -d", {
+			MY_VAR: 'value with "quotes"',
+		});
+		expect(cmd).toContain('\\"quotes\\"');
+	});
 });
 
 describe("windowsToWslPath", () => {

@@ -31,6 +31,7 @@ export class TerminalView extends ItemView {
 	private ws: WebSocket | null = null;
 	private resizeObserver: ResizeObserver | null = null;
 	private resizeRafId: number | null = null;
+	private termDisposables: { dispose(): void }[] = [];
 
 	constructor(leaf: WorkspaceLeaf, getSettings: () => TerminalSettings) {
 		super(leaf);
@@ -127,11 +128,14 @@ export class TerminalView extends ItemView {
 		const retryBtn = errorDiv.createEl("button");
 		retryBtn.setText("Retry");
 		retryBtn.addEventListener("click", () => {
-			this.connect();
+			void this.connect();
 		});
 	}
 
-	private buildTheme(mode: TerminalThemeMode): {
+	private buildTheme(
+		mode: TerminalThemeMode,
+		userFont?: string,
+	): {
 		fontFamily: string;
 		theme: {
 			background: string;
@@ -141,7 +145,19 @@ export class TerminalView extends ItemView {
 		};
 	} {
 		const styles = getComputedStyle(document.body);
-		const fontFamily = styles.getPropertyValue("--font-monospace").trim() || "monospace";
+		const obsidianFont = styles.getPropertyValue("--font-monospace").trim();
+		const fontFamily = [
+			userFont?.trim(),
+			obsidianFont,
+			"Cascadia Code",
+			"Cascadia Mono",
+			"Consolas",
+			"Menlo",
+			"DejaVu Sans Mono",
+			"monospace",
+		]
+			.filter(Boolean)
+			.join(", ");
 
 		if (mode === "dark") {
 			return {
@@ -184,7 +200,10 @@ export class TerminalView extends ItemView {
 		const wrapper = container.createDiv({ cls: "sandbox-terminal-container" });
 
 		const settings = this.getSettings();
-		const { fontFamily, theme } = this.buildTheme(settings.terminalTheme);
+		const { fontFamily, theme } = this.buildTheme(
+			settings.terminalTheme,
+			settings.terminalFont,
+		);
 
 		const term = new Terminal({
 			cursorBlink: true,
@@ -204,12 +223,14 @@ export class TerminalView extends ItemView {
 		}
 
 		// Clipboard: auto-copy on selection, Ctrl+Shift+V to paste
-		term.onSelectionChange(() => {
-			const selection = term.getSelection();
-			if (selection) {
-				navigator.clipboard.writeText(selection).catch(() => {});
-			}
-		});
+		this.termDisposables.push(
+			term.onSelectionChange(() => {
+				const selection = term.getSelection();
+				if (selection) {
+					navigator.clipboard.writeText(selection).catch(() => {});
+				}
+			}),
+		);
 
 		term.attachCustomKeyEventHandler((event) => {
 			if (event.ctrlKey && event.shiftKey && event.key === "V" && event.type === "keydown") {
@@ -279,21 +300,25 @@ export class TerminalView extends ItemView {
 			}
 		};
 
-		term.onData((input) => {
-			if (ws.readyState === WebSocket.OPEN) {
-				const payload = new Uint8Array(input.length * 3 + 1);
-				payload[0] = CMD_INPUT.charCodeAt(0);
-				const { written } = textEncoder.encodeInto(input, payload.subarray(1));
-				ws.send(payload.subarray(0, (written ?? 0) + 1));
-			}
-		});
+		this.termDisposables.push(
+			term.onData((input) => {
+				if (ws.readyState === WebSocket.OPEN) {
+					const payload = new Uint8Array(input.length * 3 + 1);
+					payload[0] = CMD_INPUT.charCodeAt(0);
+					const { written } = textEncoder.encodeInto(input, payload.subarray(1));
+					ws.send(payload.subarray(0, (written ?? 0) + 1));
+				}
+			}),
+		);
 
-		term.onResize(({ cols, rows }) => {
-			if (ws.readyState === WebSocket.OPEN) {
-				const msg = CMD_RESIZE + JSON.stringify({ columns: cols, rows: rows });
-				ws.send(textEncoder.encode(msg));
-			}
-		});
+		this.termDisposables.push(
+			term.onResize(({ cols, rows }) => {
+				if (ws.readyState === WebSocket.OPEN) {
+					const msg = CMD_RESIZE + JSON.stringify({ columns: cols, rows: rows });
+					ws.send(textEncoder.encode(msg));
+				}
+			}),
+		);
 
 		this.resizeObserver = new ResizeObserver(() => {
 			this.scheduleFit();
@@ -302,6 +327,8 @@ export class TerminalView extends ItemView {
 	}
 
 	private dispose(): void {
+		for (const d of this.termDisposables) d.dispose();
+		this.termDisposables = [];
 		if (this.resizeRafId != null) {
 			cancelAnimationFrame(this.resizeRafId);
 			this.resizeRafId = null;

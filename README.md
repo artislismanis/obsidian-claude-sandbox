@@ -25,7 +25,7 @@ Each terminal tab in Obsidian gets its own independent tmux session — run mult
 **Plugin:**
 - **Container management** — Start, stop, restart, and check status via the command palette
 - **Status bar** — Shows container state (stopped/starting/running/error)
-- **Multiple terminals** — Each tab gets an independent session, docked at the bottom
+- **Multiple terminals** — Each tab gets an independent session in the main editor area
 - **Terminal theming** — Follow Obsidian theme, or force dark/light
 - **Clipboard** — Auto-copy on select, `Ctrl+Shift+V` to paste
 - **Auto-lifecycle** — Optionally start/stop the container with plugin load/unload
@@ -38,6 +38,18 @@ Each terminal tab in Obsidian gets its own independent tmux session — run mult
 - **Claude Code CLI** — Pre-installed and ready to use
 - **Dev tools** — Node 22, Python 3.12, ripgrep, fd, git-delta, atuin, fzf, jq, gh
 - **Network sandboxing** — Optional allowlist-based firewall
+
+## Security
+
+- **Read-only vault** — mounted read-only; only the write directory is writable
+- **Read-only source** — container tooling at /workspace is read-only
+- **Localhost-only terminal** — ttyd binds to 127.0.0.1 by default
+- **Firewall toggle** — enable/disable allowlist-based outbound firewall from the status bar (shield icon) or command palette. Auto-enable on start via Advanced settings. Restricts traffic to: Anthropic, npm, GitHub, PyPI, CDNs. Configure `ALLOWED_PRIVATE_HOSTS` for local services (NAS, etc.)
+- **Credentials** — set ttyd username/password in plugin settings or .env
+- **Resource limits** — memory and CPU capped by default (configurable)
+
+> **WSL2 note:** Docker inside WSL2 is also limited by `.wslconfig` memory settings.
+> Ensure WSL2 allocation >= container memory limit.
 
 ## Prerequisites
 
@@ -111,26 +123,44 @@ tmux keybindings work normally (e.g., `Ctrl+B` then `C` for new window).
 
 | Command | Description |
 |---------|-------------|
-| **Open Sandbox Terminal** | Open a new terminal tab at the bottom |
+| **Open Sandbox Terminal** | Open a new terminal tab in the main editor area |
 | **Sandbox: Start Container** | Run `docker compose up -d` |
 | **Sandbox: Stop Container** | Run `docker compose down` |
 | **Sandbox: Container Status** | Show `docker compose ps` output |
 | **Sandbox: Restart Container** | Run `docker compose restart` |
+| **Sandbox: Toggle Firewall** | Enable or disable the outbound firewall |
 
 ## Settings
 
+Settings are organized into three tabs:
+
+**General:**
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Docker mode | `WSL` | WSL (Windows) or Local (Linux/Mac/native Docker) |
 | Docker Compose path | *(empty)* | Path to the directory containing docker-compose.yml |
 | WSL distribution | `Ubuntu` | WSL distribution for Docker commands (WSL mode only) |
 | Vault write directory | `claude-workspace` | Folder inside vault where the container can write files |
-| Port | `7681` | Port where ttyd listens |
+| Auto-start on load | `off` | Start container when plugin loads |
+| Auto-stop on unload | `off` | Stop container when plugin is disabled |
+
+**Terminal:**
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Port | `7681` | Host port mapped to ttyd |
+| Bind address | `127.0.0.1` | IP address ttyd binds to (set 0.0.0.0 for network access) |
 | Username | `user` | Username for ttyd auth |
 | Password | *(empty)* | Password for ttyd auth |
 | Terminal theme | Follow Obsidian | Follow Obsidian theme, Dark, or Light |
-| Auto-start on load | `off` | Start container when plugin loads |
-| Auto-stop on unload | `off` | Stop container when plugin is disabled |
+| Terminal font | *(auto)* | Custom font family (falls back through common monospace fonts) |
+
+**Advanced:**
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Memory limit | `8G` | Maximum container memory |
+| CPU limit | `4` | Maximum container CPU cores |
+| Auto-enable firewall | `off` | Enable outbound firewall on container start |
+| Allowed private hosts | *(empty)* | Comma-separated IPs/CIDRs for firewall allowlist |
 
 ## Project structure
 

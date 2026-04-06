@@ -31,7 +31,7 @@ docker compose up -d
 ## 2. Verify Script
 
 ```bash
-docker compose exec pkm bash /workspace/scripts/verify.sh
+docker compose exec sandbox bash /workspace/scripts/verify.sh
 ```
 
 - [ ] All tool versions print (Node, npm, git, tmux, ttyd, jq, Claude, gh, delta, fzf, rg, fd, atuin, uv, Python)
@@ -177,14 +177,14 @@ docker compose up -d
 ## 13. Network Firewall (optional)
 
 ```bash
-docker compose exec pkm sudo /usr/local/bin/init-firewall.sh
+docker compose exec sandbox sudo /usr/local/bin/init-firewall.sh
 ```
 
 - [ ] Script runs without errors
 - [ ] `curl https://api.anthropic.com` works (allowlisted)
 - [ ] `curl https://example.com` fails (not allowlisted)
 - [ ] Claude Code still functions
-- [ ] Disable: `docker compose exec pkm sudo iptables -F OUTPUT`
+- [ ] Disable: `docker compose exec sandbox sudo iptables -F OUTPUT`
 
 ## 14. Port Remapping (optional)
 

@@ -5,8 +5,19 @@ const exec = promisify(execCb);
 
 const VALID_DISTRO_NAME = /^[\w][\w.-]*$/;
 const EXEC_TIMEOUT = 30_000;
+const SERVICE_NAME = "sandbox";
 
 import type { DockerMode } from "./settings";
+import { isValidWriteDir, isValidPrivateHosts, isValidMemory, isValidCpus } from "./validation";
+
+// Re-export validators so existing imports from docker.ts keep working
+export {
+	isValidWriteDir,
+	isValidPrivateHosts,
+	isValidMemory,
+	isValidCpus,
+	isValidBindAddress,
+} from "./validation";
 
 export interface DockerManagerSettings {
 	dockerMode: DockerMode;
@@ -15,8 +26,12 @@ export interface DockerManagerSettings {
 	vaultPath?: string;
 	writeDir?: string;
 	ttydPort?: number;
+	ttydBindAddress?: string;
 	ttydUsername?: string;
 	ttydPassword?: string;
+	allowedPrivateHosts?: string;
+	containerMemory?: string;
+	containerCpus?: string;
 }
 
 export function windowsToWslPath(windowsPath: string): string {
@@ -25,6 +40,28 @@ export function windowsToWslPath(windowsPath: string): string {
 	const driveLetter = match[1].toLowerCase();
 	const rest = windowsPath.slice(3).replace(/\\/g, "/");
 	return `/mnt/${driveLetter}/${rest}`;
+}
+
+/**
+ * Builds the inner shell command string with env vars and cd.
+ * `dockerCmd` must be a trusted literal — it is NOT escaped.
+ */
+function buildInnerCommand(
+	composePath: string,
+	dockerCmd: string,
+	envVars: Record<string, string>,
+): string {
+	const escapedPath = composePath.replace(/'/g, "'\\''");
+
+	const envPrefix = Object.entries(envVars)
+		.map(([key, value]) => {
+			const escapedValue = value.replace(/'/g, "'\\''");
+			return `${key}='${escapedValue}'`;
+		})
+		.join(" ");
+	const envPart = envPrefix ? `export ${envPrefix} && ` : "";
+
+	return `${envPart}cd '${escapedPath}' && ${dockerCmd}`;
 }
 
 export function buildWslCommand(
@@ -38,18 +75,7 @@ export function buildWslCommand(
 			`Invalid WSL distribution name '${wslDistro}'. Only alphanumeric characters, hyphens, underscores, and dots are allowed.`,
 		);
 	}
-	const escapedPath = composePath.replace(/'/g, "'\\''");
-
-	const envPrefix = Object.entries(envVars)
-		.map(([key, value]) => {
-			const escapedValue = value.replace(/'/g, "'\\''");
-			return `${key}='${escapedValue}'`;
-		})
-		.join(" ");
-	const envPart = envPrefix ? `export ${envPrefix} && ` : "";
-
-	const innerCmd = `${envPart}cd '${escapedPath}' && ${dockerCmd}`;
-	const cmdSafe = innerCmd.replace(/"/g, '\\"');
+	const cmdSafe = buildInnerCommand(composePath, dockerCmd, envVars).replace(/"/g, '\\"');
 	return `wsl -d ${wslDistro} -- bash -c "${cmdSafe}"`;
 }
 
@@ -58,24 +84,20 @@ export function buildLocalCommand(
 	dockerCmd: string,
 	envVars: Record<string, string> = {},
 ): string {
-	const escapedPath = composePath.replace(/'/g, "'\\''");
-
-	const envPrefix = Object.entries(envVars)
-		.map(([key, value]) => {
-			const escapedValue = value.replace(/'/g, "'\\''");
-			return `${key}='${escapedValue}'`;
-		})
-		.join(" ");
-	const envPart = envPrefix ? `export ${envPrefix} && ` : "";
-
-	return `bash -c "${envPart}cd '${escapedPath}' && ${dockerCmd}"`;
+	const cmdSafe = buildInnerCommand(composePath, dockerCmd, envVars).replace(/"/g, '\\"');
+	return `bash -c "${cmdSafe}"`;
 }
 
 export class DockerManager {
 	private getSettings: () => DockerManagerSettings;
+	private busy = false;
 
 	constructor(getSettings: () => DockerManagerSettings) {
 		this.getSettings = getSettings;
+	}
+
+	isBusy(): boolean {
+		return this.busy;
 	}
 
 	private async run(dockerCmd: string): Promise<string> {
@@ -86,8 +108,12 @@ export class DockerManager {
 			vaultPath,
 			writeDir,
 			ttydPort,
+			ttydBindAddress,
 			ttydUsername,
 			ttydPassword,
+			allowedPrivateHosts,
+			containerMemory,
+			containerCpus,
 		} = this.getSettings();
 
 		if (!composePath) {
@@ -101,6 +127,11 @@ export class DockerManager {
 			envVars.PKM_VAULT_PATH = dockerMode === "wsl" ? windowsToWslPath(vaultPath) : vaultPath;
 		}
 		if (writeDir) {
+			if (!isValidWriteDir(writeDir)) {
+				throw new Error(
+					"Invalid vault write directory. Must be a relative path without '..' components.",
+				);
+			}
 			envVars.PKM_WRITE_DIR = writeDir;
 		}
 		if (ttydPort) {
@@ -109,8 +140,33 @@ export class DockerManager {
 		if (ttydUsername) {
 			envVars.TTYD_USER = ttydUsername;
 		}
+		if (ttydBindAddress) {
+			envVars.TTYD_BIND = ttydBindAddress;
+		}
 		if (ttydPassword) {
 			envVars.TTYD_PASSWORD = ttydPassword;
+		}
+		if (allowedPrivateHosts) {
+			if (!isValidPrivateHosts(allowedPrivateHosts)) {
+				throw new Error(
+					"Invalid allowed private hosts. Use comma-separated IPs or CIDRs (e.g. 192.168.1.100, 10.0.0.0/8).",
+				);
+			}
+			envVars.ALLOWED_PRIVATE_HOSTS = allowedPrivateHosts;
+		}
+		if (containerMemory) {
+			if (!isValidMemory(containerMemory)) {
+				throw new Error(
+					"Invalid memory limit. Use a number with unit suffix (e.g. 4G, 512M, 1T).",
+				);
+			}
+			envVars.CONTAINER_MEMORY = containerMemory;
+		}
+		if (containerCpus) {
+			if (!isValidCpus(containerCpus)) {
+				throw new Error("Invalid CPU limit. Use a number (e.g. 4, 2.5).");
+			}
+			envVars.CONTAINER_CPUS = containerCpus;
 		}
 
 		const command =
@@ -143,26 +199,69 @@ export class DockerManager {
 		}
 	}
 
-	async start(): Promise<string> {
-		// Stop first to ensure env vars (PKM_VAULT_PATH) are fresh
-		try {
-			await this.run("docker compose down");
-		} catch {
-			/* may not be running */
+	/** Wraps run() with a busy guard to prevent concurrent docker operations. */
+	private async guardedRun(dockerCmd: string): Promise<string> {
+		if (this.busy) {
+			throw new Error("Another container operation is in progress. Please wait.");
 		}
-		return this.run("docker compose up -d");
+		this.busy = true;
+		try {
+			return await this.run(dockerCmd);
+		} finally {
+			this.busy = false;
+		}
+	}
+
+	async start(): Promise<string> {
+		if (this.busy) {
+			throw new Error("Another container operation is in progress. Please wait.");
+		}
+		this.busy = true;
+		try {
+			// Stop first to ensure env vars (PKM_VAULT_PATH) are fresh
+			try {
+				await this.run("docker compose down");
+			} catch {
+				/* may not be running */
+			}
+			return await this.run("docker compose up -d");
+		} finally {
+			this.busy = false;
+		}
 	}
 
 	async stop(): Promise<string> {
-		return this.run("docker compose down");
+		return this.guardedRun("docker compose down");
 	}
 
 	async status(): Promise<string> {
 		return this.run("docker compose ps --format json");
 	}
 
+	/** Delegates to start() which does down+up to pick up fresh env vars. */
 	async restart(): Promise<string> {
-		return this.run("docker compose restart");
+		return this.start();
+	}
+
+	async enableFirewall(): Promise<string> {
+		return this.guardedRun(
+			`docker compose exec ${SERVICE_NAME} sudo /usr/local/bin/init-firewall.sh`,
+		);
+	}
+
+	async disableFirewall(): Promise<string> {
+		return this.guardedRun(`docker compose exec ${SERVICE_NAME} sudo iptables -F OUTPUT`);
+	}
+
+	async firewallStatus(): Promise<boolean> {
+		try {
+			const output = await this.run(
+				`docker compose exec ${SERVICE_NAME} sudo iptables -L OUTPUT -n`,
+			);
+			return output.includes("DROP");
+		} catch {
+			return false;
+		}
 	}
 
 	static parseIsRunning(statusOutput: string): boolean {

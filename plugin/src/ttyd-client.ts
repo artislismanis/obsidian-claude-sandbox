@@ -2,6 +2,34 @@ import { requestUrl } from "obsidian";
 
 const FETCH_TIMEOUT_MS = 5000;
 
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+	let done = false;
+	return new Promise<T>((resolve, reject) => {
+		const timer = setTimeout(() => {
+			if (!done) {
+				done = true;
+				reject(new Error("timeout"));
+			}
+		}, ms);
+		promise.then(
+			(val) => {
+				clearTimeout(timer);
+				if (!done) {
+					done = true;
+					resolve(val);
+				}
+			},
+			(err) => {
+				clearTimeout(timer);
+				if (!done) {
+					done = true;
+					reject(err);
+				}
+			},
+		);
+	});
+}
+
 export async function pollUntilReady(
 	port: number,
 	maxRetries: number,
@@ -12,12 +40,10 @@ export async function pollUntilReady(
 		if (isAborted()) return false;
 
 		try {
-			const resp = await Promise.race([
+			const resp = await withTimeout(
 				requestUrl({ url: `http://localhost:${port}`, throw: false }),
-				new Promise<never>((_, reject) =>
-					setTimeout(() => reject(new Error("timeout")), FETCH_TIMEOUT_MS),
-				),
-			]);
+				FETCH_TIMEOUT_MS,
+			);
 			if (resp.status === 200 || resp.status === 401) {
 				return true;
 			}
@@ -37,7 +63,7 @@ export async function fetchAuthToken(
 	username: string,
 	password: string,
 ): Promise<string> {
-	const resp = await Promise.race([
+	const resp = await withTimeout(
 		requestUrl({
 			url: `http://localhost:${port}/token`,
 			method: "POST",
@@ -45,10 +71,8 @@ export async function fetchAuthToken(
 			body: JSON.stringify({ username, password }),
 			throw: false,
 		}),
-		new Promise<never>((_, reject) =>
-			setTimeout(() => reject(new Error("timeout")), FETCH_TIMEOUT_MS),
-		),
-	]);
+		FETCH_TIMEOUT_MS,
+	);
 	if (resp.status !== 200) {
 		throw new Error(
 			resp.status === 403 || resp.status === 401
