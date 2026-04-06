@@ -247,7 +247,13 @@ export class DockerManager {
 			const innerCmd = `cd '${escapedPath}' && docker compose down`;
 			shell = "wsl";
 			args = ["-d", wslDistro, "--", "bash", "-c", innerCmd];
+		} else if (process.platform === "win32") {
+			// Native Docker on Windows — use cmd.exe
+			const escapedPath = composePath.replace(/"/g, '\\"');
+			shell = "cmd.exe";
+			args = ["/c", `cd /d "${escapedPath}" && docker compose down`];
 		} else {
+			// Linux / Mac
 			const command = buildLocalCommand(composePath, "docker compose down");
 			shell = "bash";
 			args = ["-c", command];
