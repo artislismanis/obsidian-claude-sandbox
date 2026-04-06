@@ -1,4 +1,4 @@
-import { exec as execCb } from "child_process";
+import { exec as execCb, spawn } from "child_process";
 import { promisify } from "util";
 
 const exec = promisify(execCb);
@@ -232,6 +232,21 @@ export class DockerManager {
 
 	async stop(): Promise<string> {
 		return this.guardedRun("docker compose down");
+	}
+
+	/** Fire-and-forget stop that survives parent process exit. */
+	stopDetached(): void {
+		const { dockerMode, composePath, wslDistro } = this.getSettings();
+		if (!composePath) return;
+		const command =
+			dockerMode === "wsl"
+				? buildWslCommand(composePath, wslDistro, "docker compose down")
+				: buildLocalCommand(composePath, "docker compose down");
+		const child = spawn("bash", ["-c", command], {
+			detached: true,
+			stdio: "ignore",
+		});
+		child.unref();
 	}
 
 	async status(): Promise<string> {

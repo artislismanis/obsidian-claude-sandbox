@@ -64,5 +64,5 @@ export function buildAuthToken(username: string, password: string): string {
 
 export function buildWsUrl(port: number, token?: string): string {
 	const base = `ws://localhost:${port}/ws`;
-	return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+	return token ? `${base}?token=${token}` : base;
 }

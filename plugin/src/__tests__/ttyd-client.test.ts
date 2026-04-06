@@ -86,8 +86,12 @@ describe("buildWsUrl", () => {
 		expect(buildWsUrl(7681, "abc123")).toBe("ws://localhost:7681/ws?token=abc123");
 	});
 
-	it("encodes special characters in token", () => {
-		expect(buildWsUrl(7681, "a&b=c")).toBe("ws://localhost:7681/ws?token=a%26b%3Dc");
+	it("passes token without encoding (ttyd expects raw base64)", () => {
+		expect(buildWsUrl(7681, "dXNlcjpwYXNz")).toBe("ws://localhost:7681/ws?token=dXNlcjpwYXNz");
+	});
+
+	it("preserves base64 padding characters", () => {
+		expect(buildWsUrl(7681, "abc=")).toBe("ws://localhost:7681/ws?token=abc=");
 	});
 
 	it("uses custom port", () => {

@@ -133,7 +133,7 @@ export default class AgentSandboxPlugin extends Plugin {
 		}
 
 		if (this.settings.autoStopContainer) {
-			this.docker.stop().catch(() => {});
+			this.docker.stopDetached();
 		}
 	}
 
