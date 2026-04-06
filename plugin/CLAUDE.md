@@ -44,7 +44,7 @@ No leaf module imports from another leaf — only `main.ts` wires them together.
 
 ## Testing
 
-122 tests across 5 test files using Vitest:
+Vitest test files (`npm run test`):
 - `docker.test.ts` — `parseIsRunning()` static method, compose path validation
 - `docker-command.test.ts` — `buildWslCommand()` escaping/validation, `buildLocalCommand()` double-quote escaping, `windowsToWslPath()` conversion, env var injection
 - `status-bar.test.ts` — `StatusBarManager` state transitions and tooltips, `FirewallStatusBar` states/clicks/destroy
