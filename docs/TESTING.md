@@ -150,7 +150,7 @@ claude
 |---|------|-------|----------|
 | 11.1 | Compose path with spaces | Set path with spaces | Commands execute correctly (shell-escaped) |
 | 11.2 | Invalid port | Type "abc" in port field | Silently rejected, previous port retained |
-| 11.4 | Console errors | Open dev tools (Ctrl+Shift+I), perform all tests | No unexpected errors |
+| 11.3 | Console errors | Open dev tools (Ctrl+Shift+I), perform all tests | No unexpected errors |
 
 ## 12. Container Lifecycle
 

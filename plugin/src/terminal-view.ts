@@ -254,7 +254,6 @@ export class TerminalView extends ItemView {
 
 		ws.onopen = () => {
 			const msg = JSON.stringify({
-				AuthToken: "",
 				columns: term.cols,
 				rows: term.rows,
 			});

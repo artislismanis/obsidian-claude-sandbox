@@ -121,7 +121,10 @@ export default class AgentSandboxPlugin extends Plugin {
 			this.app.workspace.on("quit", (tasks) => {
 				if (this.settings.autoStopContainer) {
 					tasks.add(async () => {
-						// Short timeout to avoid hanging Obsidian shutdown
+						if (this.docker.isBusy()) {
+							this.docker.stopDetached();
+							return;
+						}
 						await Promise.race([
 							this.docker.stop().catch(() => {}),
 							new Promise((r) => setTimeout(r, 5000)),

@@ -89,6 +89,13 @@ describe("buildWslCommand", () => {
 		expect(cmd).toContain("PKM_VAULT_PATH=");
 		expect(cmd).toContain("PKM_WRITE_DIR='agent-workspace'");
 	});
+
+	it("includes TTYD_NO_TMUX env var when tmux is disabled", () => {
+		const cmd = buildWslCommand("/home/user/project", "Ubuntu", "docker compose up -d", {
+			TTYD_NO_TMUX: "1",
+		});
+		expect(cmd).toContain("TTYD_NO_TMUX='1'");
+	});
 });
 
 describe("buildLocalCommand", () => {
