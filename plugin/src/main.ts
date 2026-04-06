@@ -5,6 +5,7 @@ import { DockerManager } from "./docker";
 import type { ContainerState } from "./status-bar";
 import { FirewallStatusBar, StatusBarManager } from "./status-bar";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./terminal-view";
+import { WORKSPACE_README } from "./workspace-readme";
 
 function toErrorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
@@ -301,6 +302,10 @@ export default class AgentSandboxPlugin extends Plugin {
 		}
 		if (!(await this.app.vault.adapter.exists(dir))) {
 			await this.app.vault.createFolder(dir);
+		}
+		const readmePath = `${dir}/README.md`;
+		if (!(await this.app.vault.adapter.exists(readmePath))) {
+			await this.app.vault.adapter.write(readmePath, WORKSPACE_README);
 		}
 	}
 
