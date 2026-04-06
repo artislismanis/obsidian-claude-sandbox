@@ -16,15 +16,16 @@ Pre-commit hooks run `lint-staged` (eslint --fix + prettier) on staged files aut
 
 ## Architecture
 
-Hub-and-spoke pattern. `main.ts` orchestrates 5 leaf modules:
+Hub-and-spoke pattern. `main.ts` orchestrates 6 leaf modules:
 
 ```
-main.ts (Plugin entry, commands, lifecycle)
-├── settings.ts      — Settings interface + UI tab
-├── docker.ts        — DockerManager: WSL → docker compose commands
-├── status-bar.ts    — StatusBarManager: container state display
-├── terminal-view.ts — TerminalView: xterm.js + WebSocket to ttyd
-└── ttyd-client.ts   — Pure functions: polling, auth token, URL building
+main.ts (Plugin entry, commands, lifecycle, context menu, firewall toggle)
+├── settings.ts        — Settings interface + tabbed UI (General/Terminal/Advanced)
+├── docker.ts          — DockerManager: WSL → docker compose commands + firewall
+├── status-bar.ts      — StatusBarManager + FirewallStatusBar: state display
+├── terminal-view.ts   — TerminalView: xterm.js + WebSocket to ttyd
+├── ttyd-client.ts     — Pure functions: polling, auth token, URL building
+└── workspace-readme.ts — README content for vault workspace folder
 ```
 
 No leaf module imports from another leaf — only `main.ts` wires them together. Exception: `settings.ts` imports the plugin type from `main.ts` for the settings tab constructor.
