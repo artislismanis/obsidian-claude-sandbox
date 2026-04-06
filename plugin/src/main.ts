@@ -71,6 +71,9 @@ export default class AgentSandboxPlugin extends Plugin {
 			}));
 		});
 
+		// Clear terminal tabs persisted from previous session
+		this.app.workspace.detachLeavesOfType(VIEW_TYPE_TERMINAL);
+
 		this.addRibbonIcon("box", "Open Sandbox Terminal", () => {
 			this.activateTerminalView();
 		});

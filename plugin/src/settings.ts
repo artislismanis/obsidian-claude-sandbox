@@ -185,8 +185,8 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(el)
-			.setName("Auto-stop on unload")
-			.setDesc("Stop the container when the plugin is disabled.")
+			.setName("Auto-stop on exit")
+			.setDesc("Stop the container when Obsidian closes or the plugin is disabled.")
 			.addToggle((toggle) =>
 				toggle.setValue(this.plugin.settings.autoStopContainer).onChange(async (value) => {
 					this.plugin.settings.autoStopContainer = value;
