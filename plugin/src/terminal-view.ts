@@ -3,7 +3,7 @@ import { ItemView } from "obsidian";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { TerminalSettings, TerminalThemeMode } from "./settings";
-import { pollUntilReady, buildAuthToken, buildWsUrl } from "./ttyd-client";
+import { pollUntilReady, fetchAuthToken, buildWsUrl } from "./ttyd-client";
 
 export const VIEW_TYPE_TERMINAL = "agent-sandbox-terminal-view";
 
@@ -248,7 +248,11 @@ export class TerminalView extends ItemView {
 
 		let token: string | undefined;
 		if (settings.ttydPassword) {
-			token = buildAuthToken(settings.ttydUsername, settings.ttydPassword);
+			token = await fetchAuthToken(
+				settings.ttydPort,
+				settings.ttydUsername,
+				settings.ttydPassword,
+			);
 		}
 
 		if (gen !== this.generation) return;
