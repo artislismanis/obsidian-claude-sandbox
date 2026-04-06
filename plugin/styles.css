@@ -253,3 +253,53 @@
 .sandbox-terminal-error button:hover {
 	background-color: var(--interactive-accent-hover);
 }
+
+/* ── Settings tabs ─────────────────────────────────── */
+
+.sandbox-settings-tabs {
+	display: flex;
+	gap: 4px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	margin-bottom: 16px;
+}
+
+.sandbox-settings-tab {
+	padding: 6px 16px;
+	border: none;
+	background: none;
+	cursor: pointer;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	border-bottom: 2px solid transparent;
+	margin-bottom: -1px;
+}
+
+.sandbox-settings-tab:hover {
+	color: var(--text-normal);
+}
+
+.sandbox-settings-tab.is-active {
+	color: var(--text-normal);
+	border-bottom-color: var(--interactive-accent);
+}
+
+/* ── Firewall status bar ───────────────────────────── */
+
+.sandbox-firewall-status {
+	cursor: pointer;
+	user-select: none;
+}
+
+.sandbox-firewall-status.firewall-enabled {
+	color: var(--text-success);
+}
+
+.sandbox-firewall-status.firewall-disabled {
+	color: var(--text-muted);
+}
+
+/* ── Status bar clickable ──────────────────────────── */
+
+.sandbox-status-bar {
+	cursor: pointer;
+}

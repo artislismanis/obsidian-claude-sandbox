@@ -132,7 +132,10 @@ export class TerminalView extends ItemView {
 		});
 	}
 
-	private buildTheme(mode: TerminalThemeMode): {
+	private buildTheme(
+		mode: TerminalThemeMode,
+		userFont?: string,
+	): {
 		fontFamily: string;
 		theme: {
 			background: string;
@@ -142,7 +145,19 @@ export class TerminalView extends ItemView {
 		};
 	} {
 		const styles = getComputedStyle(document.body);
-		const fontFamily = styles.getPropertyValue("--font-monospace").trim() || "monospace";
+		const obsidianFont = styles.getPropertyValue("--font-monospace").trim();
+		const fontFamily = [
+			userFont?.trim(),
+			obsidianFont,
+			"Cascadia Code",
+			"Cascadia Mono",
+			"Consolas",
+			"Menlo",
+			"DejaVu Sans Mono",
+			"monospace",
+		]
+			.filter(Boolean)
+			.join(", ");
 
 		if (mode === "dark") {
 			return {
@@ -185,7 +200,10 @@ export class TerminalView extends ItemView {
 		const wrapper = container.createDiv({ cls: "sandbox-terminal-container" });
 
 		const settings = this.getSettings();
-		const { fontFamily, theme } = this.buildTheme(settings.terminalTheme);
+		const { fontFamily, theme } = this.buildTheme(
+			settings.terminalTheme,
+			settings.terminalFont,
+		);
 
 		const term = new Terminal({
 			cursorBlink: true,

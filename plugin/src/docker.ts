@@ -15,8 +15,12 @@ export interface DockerManagerSettings {
 	vaultPath?: string;
 	writeDir?: string;
 	ttydPort?: number;
+	ttydBindAddress?: string;
 	ttydUsername?: string;
 	ttydPassword?: string;
+	allowedPrivateHosts?: string;
+	containerMemory?: string;
+	containerCpus?: string;
 }
 
 export function windowsToWslPath(windowsPath: string): string {
@@ -88,8 +92,12 @@ export class DockerManager {
 			vaultPath,
 			writeDir,
 			ttydPort,
+			ttydBindAddress,
 			ttydUsername,
 			ttydPassword,
+			allowedPrivateHosts,
+			containerMemory,
+			containerCpus,
 		} = this.getSettings();
 
 		if (!composePath) {
@@ -116,8 +124,20 @@ export class DockerManager {
 		if (ttydUsername) {
 			envVars.TTYD_USER = ttydUsername;
 		}
+		if (ttydBindAddress) {
+			envVars.TTYD_BIND = ttydBindAddress;
+		}
 		if (ttydPassword) {
 			envVars.TTYD_PASSWORD = ttydPassword;
+		}
+		if (allowedPrivateHosts) {
+			envVars.ALLOWED_PRIVATE_HOSTS = allowedPrivateHosts;
+		}
+		if (containerMemory) {
+			envVars.CONTAINER_MEMORY = containerMemory;
+		}
+		if (containerCpus) {
+			envVars.CONTAINER_CPUS = containerCpus;
 		}
 
 		const command =
