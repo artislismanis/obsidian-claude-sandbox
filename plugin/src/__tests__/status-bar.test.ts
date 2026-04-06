@@ -4,6 +4,8 @@ import { StatusBarManager } from "../status-bar";
 function createMockElement(): HTMLElement {
 	const el = {
 		setText: vi.fn(),
+		addClass: vi.fn(),
+		setAttribute: vi.fn(),
 	};
 	return el as unknown as HTMLElement;
 }

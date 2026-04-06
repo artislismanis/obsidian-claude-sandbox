@@ -193,6 +193,23 @@ export class DockerManager {
 		return this.run("docker compose up -d");
 	}
 
+	async enableFirewall(): Promise<string> {
+		return this.run("docker compose exec sandbox sudo /usr/local/bin/init-firewall.sh");
+	}
+
+	async disableFirewall(): Promise<string> {
+		return this.run("docker compose exec sandbox sudo iptables -F OUTPUT");
+	}
+
+	async firewallStatus(): Promise<boolean> {
+		try {
+			const output = await this.run("docker compose exec sandbox sudo iptables -L OUTPUT -n");
+			return output.includes("DROP");
+		} catch {
+			return false;
+		}
+	}
+
 	static parseIsRunning(statusOutput: string): boolean {
 		return statusOutput.length > 0 && statusOutput.includes('"running"');
 	}
