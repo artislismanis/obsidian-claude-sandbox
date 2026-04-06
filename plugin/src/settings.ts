@@ -13,6 +13,7 @@ export interface AgentSandboxSettings {
 	vaultWriteDir: string;
 	ttydPort: number;
 	ttydBindAddress: string;
+	useTmux: boolean;
 	autoStartContainer: boolean;
 	autoStopContainer: boolean;
 	terminalTheme: TerminalThemeMode;
@@ -35,6 +36,7 @@ export const DEFAULT_SETTINGS: AgentSandboxSettings = {
 	vaultWriteDir: "agent-workspace",
 	ttydPort: 7681,
 	ttydBindAddress: "127.0.0.1",
+	useTmux: true,
 	autoStartContainer: false,
 	autoStopContainer: false,
 	terminalTheme: "obsidian",
@@ -227,6 +229,20 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 						}
 					});
 			});
+
+		new Setting(el)
+			.setName("Use tmux sessions")
+			.setDesc(
+				"Wrap each terminal in a tmux session. Provides persistent sessions " +
+					"but disables mouse scrolling. When off, terminals run bash directly " +
+					"with full scrollback support.",
+			)
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.useTmux).onChange(async (value) => {
+					this.plugin.settings.useTmux = value;
+					this.plugin.saveSettings();
+				}),
+			);
 
 		new Setting(el).setName("Appearance").setHeading();
 

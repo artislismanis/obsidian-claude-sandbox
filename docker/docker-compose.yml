@@ -17,6 +17,7 @@ services:
       - sandbox-shell-history:/home/claude/.shell-history
     environment:
       - TERM=xterm-256color
+      - TTYD_NO_TMUX=${TTYD_NO_TMUX:-}
       - ALLOWED_PRIVATE_HOSTS=${ALLOWED_PRIVATE_HOSTS:-}
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=1
