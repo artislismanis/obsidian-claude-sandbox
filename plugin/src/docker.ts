@@ -10,7 +10,36 @@ const SERVICE_NAME = "sandbox";
 import type { DockerMode } from "./settings";
 
 export function isValidWriteDir(dir: string): boolean {
+	if (!dir || !dir.trim()) return false;
 	return !dir.includes("..") && !dir.startsWith("/") && dir !== ".";
+}
+
+const VALID_IP_CIDR = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
+
+export function isValidPrivateHosts(value: string): boolean {
+	if (!value.trim()) return true;
+	return value.split(",").every((entry) => VALID_IP_CIDR.test(entry.trim()));
+}
+
+const VALID_MEMORY = /^\d+[KkMmGg]$/;
+
+export function isValidMemory(value: string): boolean {
+	if (!value.trim()) return true;
+	return VALID_MEMORY.test(value.trim());
+}
+
+const VALID_CPUS = /^\d+(\.\d+)?$/;
+
+export function isValidCpus(value: string): boolean {
+	if (!value.trim()) return true;
+	return VALID_CPUS.test(value.trim());
+}
+
+const VALID_BIND_ADDRESS = /^(\d{1,3}\.){3}\d{1,3}$/;
+
+export function isValidBindAddress(value: string): boolean {
+	if (!value.trim()) return true;
+	return VALID_BIND_ADDRESS.test(value.trim());
 }
 
 export interface DockerManagerSettings {
@@ -132,12 +161,25 @@ export class DockerManager {
 			envVars.TTYD_PASSWORD = ttydPassword;
 		}
 		if (allowedPrivateHosts) {
+			if (!isValidPrivateHosts(allowedPrivateHosts)) {
+				throw new Error(
+					"Invalid allowed private hosts. Use comma-separated IPs or CIDRs (e.g. 192.168.1.100, 10.0.0.0/8).",
+				);
+			}
 			envVars.ALLOWED_PRIVATE_HOSTS = allowedPrivateHosts;
 		}
 		if (containerMemory) {
+			if (!isValidMemory(containerMemory)) {
+				throw new Error(
+					"Invalid memory limit. Use a number with unit suffix (e.g. 4G, 512M).",
+				);
+			}
 			envVars.CONTAINER_MEMORY = containerMemory;
 		}
 		if (containerCpus) {
+			if (!isValidCpus(containerCpus)) {
+				throw new Error("Invalid CPU limit. Use a number (e.g. 4, 2.5).");
+			}
 			envVars.CONTAINER_CPUS = containerCpus;
 		}
 

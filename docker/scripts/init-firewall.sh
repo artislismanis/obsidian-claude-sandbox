@@ -41,9 +41,13 @@ echo "Resolving domains..."
 for domain in "${ALLOWED_DOMAINS[@]}"; do
   (
     ips=$(dig +short A "$domain" 2>/dev/null | grep -E '^[0-9]+\.' || true)
-    for ip in $ips; do
-      ipset add allowed_ips "${ip}/32" -exist
-    done
+    if [ -z "$ips" ]; then
+      echo "WARNING: failed to resolve $domain" >&2
+    else
+      for ip in $ips; do
+        ipset add allowed_ips "${ip}/32" -exist
+      done
+    fi
   ) &
 done
 wait

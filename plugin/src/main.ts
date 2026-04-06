@@ -18,6 +18,7 @@ export default class AgentSandboxPlugin extends Plugin {
 	private docker!: DockerManager;
 	private statusBar!: StatusBarManager;
 	private firewallBar!: FirewallStatusBar;
+	private statusBarEl: HTMLElement | null = null;
 	private statusBarClickHandler: ((evt: MouseEvent) => void) | null = null;
 
 	private debouncedSaveSettings = debounce(
@@ -50,11 +51,11 @@ export default class AgentSandboxPlugin extends Plugin {
 			containerCpus: this.settings.containerCpus,
 		}));
 
-		const statusBarEl = this.addStatusBarItem();
-		this.statusBar = new StatusBarManager(statusBarEl);
+		this.statusBarEl = this.addStatusBarItem();
+		this.statusBar = new StatusBarManager(this.statusBarEl);
 		this.statusBar.setDetails(TOOLTIP_STOPPED);
 		this.statusBarClickHandler = (evt) => this.showStatusMenu(evt);
-		statusBarEl.addEventListener("click", this.statusBarClickHandler);
+		this.statusBarEl.addEventListener("click", this.statusBarClickHandler);
 
 		const fwBarEl = this.addStatusBarItem();
 		this.firewallBar = new FirewallStatusBar(fwBarEl, () => this.toggleFirewall());
@@ -120,6 +121,9 @@ export default class AgentSandboxPlugin extends Plugin {
 		void this.saveData(this.settings);
 		this.app.workspace.detachLeavesOfType(VIEW_TYPE_TERMINAL);
 		this.firewallBar.destroy();
+		if (this.statusBarEl && this.statusBarClickHandler) {
+			this.statusBarEl.removeEventListener("click", this.statusBarClickHandler);
+		}
 
 		if (this.settings.autoStopContainer) {
 			this.docker.stop().catch(() => {});
@@ -186,8 +190,11 @@ export default class AgentSandboxPlugin extends Plugin {
 			try {
 				await this.docker.enableFirewall();
 				this.firewallBar.setState("enabled");
-			} catch {
+			} catch (error: unknown) {
 				this.firewallBar.setState("disabled");
+				new Notice(
+					`Auto-enable firewall failed: ${toErrorMessage(error)}. You can enable it manually from the status bar.`,
+				);
 			}
 		} else {
 			await this.refreshFirewallStatus();
@@ -298,12 +305,20 @@ export default class AgentSandboxPlugin extends Plugin {
 			new Notice("Invalid vault write directory.");
 			return;
 		}
-		if (!(await this.app.vault.adapter.exists(dir))) {
-			await this.app.vault.createFolder(dir);
+		try {
+			if (!(await this.app.vault.adapter.exists(dir))) {
+				await this.app.vault.createFolder(dir);
+			}
+		} catch {
+			/* folder may already exist from concurrent start */
 		}
-		const readmePath = `${dir}/README.md`;
-		if (!(await this.app.vault.adapter.exists(readmePath))) {
-			await this.app.vault.adapter.write(readmePath, WORKSPACE_README);
+		try {
+			const readmePath = `${dir}/README.md`;
+			if (!(await this.app.vault.adapter.exists(readmePath))) {
+				await this.app.vault.adapter.write(readmePath, WORKSPACE_README);
+			}
+		} catch {
+			/* README may already exist */
 		}
 	}
 

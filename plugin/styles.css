@@ -303,3 +303,9 @@
 .sandbox-status-bar {
 	cursor: pointer;
 }
+
+/* ── Settings input validation ─────────────────────── */
+
+.sandbox-input-error {
+	border-color: var(--text-error) !important;
+}

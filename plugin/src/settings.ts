@@ -1,6 +1,7 @@
 import type { App } from "obsidian";
 import { PluginSettingTab, Setting } from "obsidian";
 import type AgentSandboxPlugin from "./main";
+import { isValidBindAddress, isValidCpus, isValidMemory, isValidPrivateHosts } from "./docker";
 
 export type TerminalThemeMode = "obsidian" | "dark" | "light";
 export type DockerMode = "wsl" | "local";
@@ -198,15 +199,18 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 		new Setting(el)
 			.setName("Port")
 			.setDesc("The host port mapped to ttyd inside the container (default: 7681).")
-			.addText((text) =>
+			.addText((text) => {
 				text.setValue(String(this.plugin.settings.ttydPort)).onChange(async (value) => {
 					const port = parseInt(value, 10);
 					if (!isNaN(port) && port > 0 && port <= 65535) {
 						this.plugin.settings.ttydPort = port;
 						this.plugin.saveSettings();
+						text.inputEl.removeClass("sandbox-input-error");
+					} else {
+						text.inputEl.addClass("sandbox-input-error");
 					}
-				}),
-			);
+				});
+			});
 
 		new Setting(el)
 			.setName("Bind address")
@@ -214,15 +218,19 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 				"IP address ttyd binds to on the host. Default 127.0.0.1 (localhost only). " +
 					"Set to 0.0.0.0 to allow network access.",
 			)
-			.addText((text) =>
-				text
-					.setPlaceholder("127.0.0.1")
+			.addText((text) => {
+				text.setPlaceholder("127.0.0.1")
 					.setValue(this.plugin.settings.ttydBindAddress)
 					.onChange(async (value) => {
-						this.plugin.settings.ttydBindAddress = value;
-						this.plugin.saveSettings();
-					}),
-			);
+						if (isValidBindAddress(value)) {
+							this.plugin.settings.ttydBindAddress = value;
+							this.plugin.saveSettings();
+							text.inputEl.removeClass("sandbox-input-error");
+						} else {
+							text.inputEl.addClass("sandbox-input-error");
+						}
+					});
+			});
 
 		new Setting(el)
 			.setName("Username")
@@ -288,28 +296,36 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 				"Maximum memory for the container (e.g. 4G, 8G, 16G). " +
 					"On WSL2, also check .wslconfig memory allocation.",
 			)
-			.addText((text) =>
-				text
-					.setPlaceholder("8G")
+			.addText((text) => {
+				text.setPlaceholder("8G")
 					.setValue(this.plugin.settings.containerMemory)
 					.onChange(async (value) => {
-						this.plugin.settings.containerMemory = value;
-						this.plugin.saveSettings();
-					}),
-			);
+						if (isValidMemory(value)) {
+							this.plugin.settings.containerMemory = value;
+							this.plugin.saveSettings();
+							text.inputEl.removeClass("sandbox-input-error");
+						} else {
+							text.inputEl.addClass("sandbox-input-error");
+						}
+					});
+			});
 
 		new Setting(el)
 			.setName("CPU limit")
 			.setDesc("Maximum CPU cores for the container.")
-			.addText((text) =>
-				text
-					.setPlaceholder("4")
+			.addText((text) => {
+				text.setPlaceholder("4")
 					.setValue(this.plugin.settings.containerCpus)
 					.onChange(async (value) => {
-						this.plugin.settings.containerCpus = value;
-						this.plugin.saveSettings();
-					}),
-			);
+						if (isValidCpus(value)) {
+							this.plugin.settings.containerCpus = value;
+							this.plugin.saveSettings();
+							text.inputEl.removeClass("sandbox-input-error");
+						} else {
+							text.inputEl.addClass("sandbox-input-error");
+						}
+					});
+			});
 
 		new Setting(el).setName("Security").setHeading();
 
@@ -333,14 +349,18 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 					"Use for local services like NAS, API servers, etc. " +
 					"The Docker gateway is always allowed.",
 			)
-			.addText((text) =>
-				text
-					.setPlaceholder("e.g. 192.168.1.100, 10.0.0.5")
+			.addText((text) => {
+				text.setPlaceholder("e.g. 192.168.1.100, 10.0.0.0/8")
 					.setValue(this.plugin.settings.allowedPrivateHosts)
 					.onChange(async (value) => {
-						this.plugin.settings.allowedPrivateHosts = value;
-						this.plugin.saveSettings();
-					}),
-			);
+						if (isValidPrivateHosts(value)) {
+							this.plugin.settings.allowedPrivateHosts = value;
+							this.plugin.saveSettings();
+							text.inputEl.removeClass("sandbox-input-error");
+						} else {
+							text.inputEl.addClass("sandbox-input-error");
+						}
+					});
+			});
 	}
 }

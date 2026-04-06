@@ -3,13 +3,31 @@ import { requestUrl } from "obsidian";
 const FETCH_TIMEOUT_MS = 5000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-	let timer: ReturnType<typeof setTimeout>;
-	return Promise.race([
-		promise.finally(() => clearTimeout(timer)),
-		new Promise<never>((_, reject) => {
-			timer = setTimeout(() => reject(new Error("timeout")), ms);
-		}),
-	]);
+	let done = false;
+	return new Promise<T>((resolve, reject) => {
+		const timer = setTimeout(() => {
+			if (!done) {
+				done = true;
+				reject(new Error("timeout"));
+			}
+		}, ms);
+		promise.then(
+			(val) => {
+				clearTimeout(timer);
+				if (!done) {
+					done = true;
+					resolve(val);
+				}
+			},
+			(err) => {
+				clearTimeout(timer);
+				if (!done) {
+					done = true;
+					reject(err);
+				}
+			},
+		);
+	});
 }
 
 export async function pollUntilReady(
