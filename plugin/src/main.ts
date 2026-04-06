@@ -143,9 +143,8 @@ export default class AgentSandboxPlugin extends Plugin {
 			this.statusBarEl.removeEventListener("click", this.statusBarClickHandler);
 		}
 
-		if (this.settings.autoStopContainer) {
-			this.docker.stopDetached();
-		}
+		// Always stop container when plugin is disabled
+		this.docker.stopDetached();
 	}
 
 	async loadSettings() {
