@@ -95,23 +95,25 @@ describe("fetchAuthToken", () => {
 });
 
 describe("buildWsUrl", () => {
-	it("builds URL without token", () => {
+	it("builds URL without credentials", () => {
 		expect(buildWsUrl(7681)).toBe("ws://localhost:7681/ws");
 	});
 
-	it("builds URL with token", () => {
-		expect(buildWsUrl(7681, "abc123")).toBe("ws://localhost:7681/ws?token=abc123");
+	it("embeds credentials in URL for Basic Auth", () => {
+		expect(buildWsUrl(7681, "user", "pass")).toBe("ws://user:pass@localhost:7681/ws");
 	});
 
-	it("passes token without encoding (ttyd expects raw base64)", () => {
-		expect(buildWsUrl(7681, "dXNlcjpwYXNz")).toBe("ws://localhost:7681/ws?token=dXNlcjpwYXNz");
-	});
-
-	it("preserves base64 padding characters", () => {
-		expect(buildWsUrl(7681, "abc=")).toBe("ws://localhost:7681/ws?token=abc=");
+	it("encodes special characters in credentials", () => {
+		expect(buildWsUrl(7681, "user@name", "p@ss:word")).toBe(
+			"ws://user%40name:p%40ss%3Aword@localhost:7681/ws",
+		);
 	});
 
 	it("uses custom port", () => {
 		expect(buildWsUrl(8080)).toBe("ws://localhost:8080/ws");
+	});
+
+	it("skips credentials when only username provided", () => {
+		expect(buildWsUrl(7681, "user", "")).toBe("ws://localhost:7681/ws");
 	});
 });
