@@ -14,7 +14,6 @@ echo "delta:   $(delta --version 2>&1 | head -1 || echo 'not found')"
 echo "fzf:     $(fzf --version 2>&1 | head -1 || echo 'not found')"
 echo "rg:      $(rg --version 2>&1 | head -1 || echo 'not found')"
 echo "fd:      $(fd --version 2>&1 || echo 'not found')"
-echo "atuin:   $(atuin --version 2>&1 || echo 'not found')"
 echo "uv:      $(uv --version 2>&1 || echo 'not found')"
 PY=$(uv python find 2>/dev/null) && echo "Python:  $($PY --version 2>&1)" || echo "Python:  not found"
 

@@ -11,7 +11,6 @@ ARG PYTHON_VERSION=3.12
 ARG NODE_MAJOR=22
 ARG TTYD_VERSION=1.7.7
 ARG NVM_VERSION=0.40.3
-ARG ATUIN_VERSION=18.13.5
 
 # ══════════════════════════════════════════════════════════════
 # Phase 1: ROOT — system packages, binaries, permissions
@@ -37,7 +36,7 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get update && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
-# git-delta, ttyd (web terminal), atuin (shell history)
+# git-delta, ttyd (web terminal)
 RUN ARCH="$(dpkg --print-architecture)" \
     && if [ "$ARCH" = "arm64" ]; then NATIVE_ARCH="aarch64"; else NATIVE_ARCH="x86_64"; fi \
     && curl -fsSL "https://github.com/dandavison/delta/releases/download/${GIT_DELTA_VERSION}/git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb" \
@@ -45,20 +44,15 @@ RUN ARCH="$(dpkg --print-architecture)" \
     && dpkg -i /tmp/git-delta.deb && rm /tmp/git-delta.deb \
     && curl -fsSL "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.${NATIVE_ARCH}" \
        -o /usr/local/bin/ttyd \
-    && chmod +x /usr/local/bin/ttyd \
-    && curl -fsSL "https://github.com/atuinsh/atuin/releases/download/v${ATUIN_VERSION}/atuin-${NATIVE_ARCH}-unknown-linux-gnu.tar.gz" \
-       -o /tmp/atuin.tar.gz \
-    && tar -xzf /tmp/atuin.tar.gz -C /tmp \
-    && install -m 755 /tmp/atuin-*/atuin /usr/local/bin/atuin \
-    && rm -rf /tmp/atuin*
+    && chmod +x /usr/local/bin/ttyd
 
 # uv (Python version & package manager)
 COPY --from=uv /uv /uvx /usr/local/bin/
 
 # Create non-root user
 RUN useradd -m -s /bin/bash claude \
-    && mkdir -p /workspace /home/claude/.claude /home/claude/.local/share/atuin \
-    && chown -R claude:claude /workspace /home/claude/.claude /home/claude/.local
+    && mkdir -p /workspace /home/claude/.claude /home/claude/.shell-history \
+    && chown -R claude:claude /workspace /home/claude/.claude /home/claude/.shell-history
 
 # Firewall script (run as root via docker compose exec --user root)
 COPY --chmod=755 scripts/init-firewall.sh /usr/local/bin/init-firewall.sh
@@ -71,7 +65,7 @@ COPY --chown=claude:claude --chmod=755 entrypoint.sh /usr/local/bin/entrypoint.s
 COPY --chown=claude:claude --chmod=755 session.sh /usr/local/bin/session.sh
 
 # ══════════════════════════════════════════════════════════════
-# Phase 2: claude user — nvm, Node, Python, Claude Code, atuin
+# Phase 2: claude user — nvm, Node, Python, Claude Code
 # ══════════════════════════════════════════════════════════════
 USER claude
 ENV NVM_DIR=/home/claude/.nvm
@@ -93,25 +87,20 @@ RUN uv python install "${PYTHON_VERSION}" && uv cache clean
 # Claude Code CLI
 RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
 
-# atuin — configure for local-only mode (no sync) and bash integration
-# Use dynamic eval (not static snapshot) so hooks match the runtime binary
-RUN echo '' >> /home/claude/.bashrc \
-    && echo '# Atuin shell history (must be last in .bashrc)' >> /home/claude/.bashrc \
-    && echo 'eval "$(atuin init bash)"' >> /home/claude/.bashrc \
-    && mkdir -p /home/claude/.config/atuin \
-    && printf '%s\n' \
-       '## Local-only — no sync server' \
-       'sync_address = ""' \
-       'auto_sync = false' \
-       'update_check = false' \
-       'search_mode = "fuzzy"' \
-       'style = "compact"' \
-       'filter_mode = "global"' \
-       'filter_mode_shell_up_arrow = "global"' \
+# Shell history — persistent via named volume, fzf for Ctrl+R search
+RUN printf '%s\n' \
        '' \
-       '## Disable daemon — use inline recording (required in containers)' \
-       'daemon_enabled = false' \
-       > /home/claude/.config/atuin/config.toml
+       '# Persistent shell history (volume-backed)' \
+       'export HISTFILE=/home/claude/.shell-history/.bash_history' \
+       'export HISTSIZE=50000' \
+       'export HISTFILESIZE=100000' \
+       'export HISTCONTROL=ignoredups:ignorespace:erasedups' \
+       'shopt -s histappend' \
+       'PROMPT_COMMAND="history -a;${PROMPT_COMMAND:-}"' \
+       '' \
+       '# fzf key bindings (Ctrl+R for history search)' \
+       'eval "$(fzf --bash)"' \
+       >> /home/claude/.bashrc
 
 WORKDIR /workspace
 EXPOSE 7681

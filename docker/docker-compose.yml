@@ -14,7 +14,7 @@ services:
       - ${PKM_VAULT_PATH:-./vault}:/workspace/vault:ro
       - ${PKM_VAULT_PATH:-./vault}/${PKM_WRITE_DIR:-agent-workspace}:/workspace/vault/${PKM_WRITE_DIR:-agent-workspace}:rw
       - sandbox-claude-config:/home/claude/.claude
-      - sandbox-atuin-history:/home/claude/.local/share/atuin
+      - sandbox-shell-history:/home/claude/.shell-history
     environment:
       - TERM=xterm-256color
       - TTYD_USER=${TTYD_USER:-}
@@ -41,4 +41,4 @@ services:
 
 volumes:
   sandbox-claude-config:
-  sandbox-atuin-history:
+  sandbox-shell-history:

@@ -2,7 +2,7 @@
 
 ## Environment
 
-- **Docker Compose container** (Ubuntu 24.04) providing: Node 22 LTS (nvm), Python 3.12 (uv), Claude Code CLI, ttyd web terminal, tmux, ripgrep, fd, git-delta, atuin, fzf, jq, gh
+- **Docker Compose container** (Ubuntu 24.04) providing: Node 22 LTS (nvm), Python 3.12 (uv), Claude Code CLI, ttyd web terminal, tmux, ripgrep, fd, git-delta, fzf (Ctrl+R history search), jq, gh
 - **ttyd** serves a web terminal on port 7681; the Obsidian plugin connects via HTTP/WebSocket
 - **Independent sessions**: each WebSocket connection gets its own tmux session (`session.sh` creates `claude-<timestamp>-<pid>` per connection)
 - Vault bind-mounted **read-only** from host at `/workspace/vault/` (configured via `PKM_VAULT_PATH` in `.env`)
