@@ -99,7 +99,7 @@ RUN printf '%s\n' \
        'PROMPT_COMMAND="history -a;${PROMPT_COMMAND:-}"' \
        '' \
        '# fzf key bindings (Ctrl+R for history search)' \
-       'eval "$(fzf --bash)"' \
+       '[ -f /usr/share/doc/fzf/examples/key-bindings.bash ] && source /usr/share/doc/fzf/examples/key-bindings.bash' \
        >> /home/claude/.bashrc
 
 WORKDIR /workspace

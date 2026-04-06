@@ -58,36 +58,8 @@ export async function pollUntilReady(
 	return false;
 }
 
-export async function fetchAuthToken(
-	port: number,
-	username: string,
-	password: string,
-): Promise<string> {
-	const resp = await withTimeout(
-		requestUrl({
-			url: `http://localhost:${port}/token`,
-			method: "POST",
-			contentType: "application/json",
-			headers: {
-				Authorization: `Basic ${btoa(`${username}:${password}`)}`,
-			},
-			body: JSON.stringify({ username, password }),
-			throw: false,
-		}),
-		FETCH_TIMEOUT_MS,
-	);
-	if (resp.status !== 200) {
-		throw new Error(
-			resp.status === 403 || resp.status === 401
-				? "Authentication failed — check ttyd username and password in settings"
-				: `ttyd auth request failed (HTTP ${resp.status})`,
-		);
-	}
-	const data = resp.json as { token?: string };
-	if (typeof data.token !== "string") {
-		throw new Error("Invalid token response");
-	}
-	return data.token;
+export function buildAuthToken(username: string, password: string): string {
+	return btoa(`${username}:${password}`);
 }
 
 export function buildWsUrl(port: number, token?: string): string {

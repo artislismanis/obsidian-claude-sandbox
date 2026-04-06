@@ -6,7 +6,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { requestUrl } from "obsidian";
-import { pollUntilReady, fetchAuthToken, buildWsUrl } from "../ttyd-client";
+import { pollUntilReady, buildAuthToken, buildWsUrl } from "../ttyd-client";
 
 const mockRequestUrl = requestUrl as ReturnType<typeof vi.fn>;
 
@@ -65,62 +65,15 @@ describe("pollUntilReady", () => {
 	});
 });
 
-describe("fetchAuthToken", () => {
-	it("returns token on success", async () => {
-		mockRequestUrl.mockResolvedValueOnce({
-			status: 200,
-			json: { token: "abc123" },
-		});
-		const token = await fetchAuthToken(7681, "user", "pass");
-		expect(token).toBe("abc123");
+describe("buildAuthToken", () => {
+	it("returns base64-encoded credential", () => {
+		const token = buildAuthToken("user", "pass");
+		expect(token).toBe(btoa("user:pass"));
 	});
 
-	it("throws on 401 response with credential hint", async () => {
-		mockRequestUrl.mockResolvedValueOnce({ status: 401 });
-		await expect(fetchAuthToken(7681, "user", "wrong")).rejects.toThrow(
-			"Authentication failed — check ttyd username and password in settings",
-		);
-	});
-
-	it("throws on server error with status code", async () => {
-		mockRequestUrl.mockResolvedValueOnce({ status: 500 });
-		await expect(fetchAuthToken(7681, "user", "pass")).rejects.toThrow(
-			"ttyd auth request failed (HTTP 500)",
-		);
-	});
-
-	it("throws on missing token field", async () => {
-		mockRequestUrl.mockResolvedValueOnce({
-			status: 200,
-			json: {},
-		});
-		await expect(fetchAuthToken(7681, "user", "pass")).rejects.toThrow(
-			"Invalid token response",
-		);
-	});
-
-	it("throws on non-string token", async () => {
-		mockRequestUrl.mockResolvedValueOnce({
-			status: 200,
-			json: { token: 12345 },
-		});
-		await expect(fetchAuthToken(7681, "user", "pass")).rejects.toThrow(
-			"Invalid token response",
-		);
-	});
-
-	it("sends correct request with Basic Auth header", async () => {
-		mockRequestUrl.mockResolvedValueOnce({
-			status: 200,
-			json: { token: "t" },
-		});
-		await fetchAuthToken(7681, "myuser", "mypass");
-		const call = mockRequestUrl.mock.calls[0][0];
-		expect(call.url).toBe("http://localhost:7681/token");
-		expect(call.method).toBe("POST");
-		expect(call.headers.Authorization).toBe(`Basic ${btoa("myuser:mypass")}`);
-		const body = JSON.parse(call.body as string);
-		expect(body).toEqual({ username: "myuser", password: "mypass" });
+	it("handles special characters in password", () => {
+		const token = buildAuthToken("admin", "p@ss:w0rd!");
+		expect(token).toBe(btoa("admin:p@ss:w0rd!"));
 	});
 });
 
