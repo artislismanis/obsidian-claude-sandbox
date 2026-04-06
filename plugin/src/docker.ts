@@ -238,11 +238,22 @@ export class DockerManager {
 	stopDetached(): void {
 		const { dockerMode, composePath, wslDistro } = this.getSettings();
 		if (!composePath) return;
-		const command =
-			dockerMode === "wsl"
-				? buildWslCommand(composePath, wslDistro, "docker compose down")
-				: buildLocalCommand(composePath, "docker compose down");
-		const child = spawn("bash", ["-c", command], {
+
+		let shell: string;
+		let args: string[];
+		if (dockerMode === "wsl") {
+			// On Windows, spawn wsl.exe directly (no bash available on host)
+			const escapedPath = composePath.replace(/'/g, "'\\''");
+			const innerCmd = `cd '${escapedPath}' && docker compose down`;
+			shell = "wsl";
+			args = ["-d", wslDistro, "--", "bash", "-c", innerCmd];
+		} else {
+			const command = buildLocalCommand(composePath, "docker compose down");
+			shell = "bash";
+			args = ["-c", command];
+		}
+
+		const child = spawn(shell, args, {
 			detached: true,
 			stdio: "ignore",
 		});
