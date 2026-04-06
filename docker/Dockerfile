@@ -21,11 +21,16 @@ ARG DEBIAN_FRONTEND=noninteractive
 # System packages — includes Claude Code deps (ripgrep, git, curl)
 # and firewall tools (iptables, ipset, iproute2, dnsutils, aggregate)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl git tmux jq fzf ca-certificates gnupg \
+    curl git tmux jq fzf ca-certificates gnupg locales \
     ripgrep fd-find tree nano less \
     iptables ipset iproute2 dnsutils aggregate sudo \
     && ln -sf /usr/bin/fdfind /usr/bin/fd \
+    && sed -i '/en_US.UTF-8/s/^# //' /etc/locale.gen && locale-gen \
     && rm -rf /var/lib/apt/lists/*
+
+# UTF-8 locale — required for tmux/terminal Unicode width calculations
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
 
 # GitHub CLI
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
