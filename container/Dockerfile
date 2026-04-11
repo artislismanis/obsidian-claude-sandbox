@@ -13,6 +13,17 @@ ARG NVM_VERSION=0.40.3
 ARG ATUIN_VERSION=18.8.0
 ARG BASH_PREEXEC_VERSION=0.5.0
 
+# ── User ARGs ────────────────────────────────────────────────
+# The claude user's uid/gid. Defaults to 1000 because that's the
+# uid of the first human user on most Linux / WSL2 hosts, and the
+# workspace dir is bind-mounted from the host — matching uids is
+# the only way claude can write to it without chowning the host.
+# Override in container/.env if `id -u` on your host returns
+# something else; docker-compose.yml passes these through as build
+# args. Must be set before the useradd RUN that consumes them.
+ARG CLAUDE_UID=1000
+ARG CLAUDE_GID=1000
+
 # ══════════════════════════════════════════════════════════════
 # Phase 1: ROOT — system packages, binaries, permissions
 # ══════════════════════════════════════════════════════════════
@@ -55,8 +66,17 @@ RUN ARCH="$(dpkg --print-architecture)" \
 # uv (Python version & package manager)
 COPY --from=uv /uv /uvx /usr/local/bin/
 
-# Create non-root user
-RUN useradd -m -s /bin/bash claude \
+# Create non-root user. Ubuntu 24.04's base image ships with a
+# pre-created `ubuntu` user at uid 1000, which would force any new
+# useradd to the next free uid (typically 1001). That breaks writes
+# to the /workspace bind mount when the host user is uid 1000 (the
+# normal case) because bind mounts preserve uids exactly — files
+# owned by host 1000 can only be written by container uid 1000.
+# Fix: delete the base `ubuntu` user first, then create claude with
+# an explicit, overridable uid/gid.
+RUN userdel -r ubuntu 2>/dev/null || true \
+    && groupadd -g "${CLAUDE_GID}" claude \
+    && useradd -m -s /bin/bash -u "${CLAUDE_UID}" -g "${CLAUDE_GID}" claude \
     && mkdir -p /workspace /home/claude/.claude /home/claude/.shell-history \
     && chown -R claude:claude /workspace /home/claude/.claude /home/claude/.shell-history \
     && ln -sf /home/claude/.claude/.claude.json /home/claude/.claude.json

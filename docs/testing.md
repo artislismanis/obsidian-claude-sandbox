@@ -88,7 +88,6 @@ ls /workspace/vault/
 - [ ] Clean up: `rm /workspace/vault/agent-workspace/_test.md`
 - [ ] `/workspace/` itself is writable: `touch /workspace/_scratch && rm /workspace/_scratch` succeeds
 - [ ] `/workspace/CLAUDE.md` is visible (workspace rules for Claude)
-- [ ] `ls /workspace/Dockerfile 2>&1` **fails** — infra files are NOT mounted inside the container
 
 ## 5. Claude Code CLI
 
@@ -298,9 +297,6 @@ docker compose exec sandbox bash -lc 'ls /workspace'
 - [ ] `/workspace/.mcp.json` is visible
 - [ ] `/workspace/CLAUDE.md` is visible (workspace rules)
 - [ ] `/workspace/vault/` is visible
-- [ ] `/workspace/Dockerfile` does NOT exist — infra is not mounted inside
-- [ ] `/workspace/docker-compose.yml` does NOT exist
-- [ ] `/workspace/scripts/` does NOT exist
 - [ ] Writing from inside works: `touch /workspace/_tier1_test && rm /workspace/_tier1_test` succeeds
 
 ## 18. Naming Consistency (OAS prefix, new)

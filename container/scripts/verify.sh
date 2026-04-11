@@ -92,12 +92,65 @@ echo "── Container env ─────────────────�
 # Host-side configuration knobs like PKM_VAULT_PATH, CONTAINER_MEMORY,
 # TTYD_BIND, etc. are consumed by `docker compose` on the host at
 # launch time to build mount sources, resource limits, and port
-# bindings — they're not exposed inside the container. To verify those
-# took effect, look at the Mount points section below and (for
-# resource limits) read /sys/fs/cgroup/{memory.max,cpu.max}.
+# bindings — they're not exposed inside the container. Resource limits
+# are surfaced in the next section from cgroup; mount-source paths are
+# visible above in Mount points.
 for var in TERM TTYD_PORT ALLOWED_PRIVATE_HOSTS MEMORY_FILE_PATH; do
   printf "  %-24s = %s\n" "$var" "${!var:-<unset>}"
 done
+
+echo ""
+echo "── Resource limits (from cgroup) ──────────────────"
+# Kernel-enforced memory and CPU limits for the running container.
+# Docker writes the plugin/.env `deploy.resources` settings to these
+# cgroup files at container start, and the kernel polices them from
+# there — so reading the files is the truthful source for confirming
+# that plugin Advanced-tab settings actually took effect. Works on
+# cgroup v2 (default on modern Docker / WSL2); falls back to v1 paths.
+if [[ -r /sys/fs/cgroup/memory.max ]]; then
+  mem_max=$(cat /sys/fs/cgroup/memory.max)
+  if [[ "$mem_max" == "max" ]]; then
+    echo "  Memory: unlimited (no cgroup cap)"
+  else
+    mem_gib=$((mem_max / 1024 / 1024 / 1024))
+    printf "  Memory: %s GiB (%s bytes)\n" "$mem_gib" "$mem_max"
+  fi
+elif [[ -r /sys/fs/cgroup/memory/memory.limit_in_bytes ]]; then
+  mem_max=$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes)
+  # cgroup v1 uses a huge sentinel value to mean "unlimited".
+  if (( mem_max >= 9223372036854771712 )); then
+    echo "  Memory: unlimited (no cgroup cap)"
+  else
+    mem_gib=$((mem_max / 1024 / 1024 / 1024))
+    printf "  Memory: %s GiB (%s bytes, cgroup v1)\n" "$mem_gib" "$mem_max"
+  fi
+else
+  echo "  Memory: unknown (cgroup not accessible)"
+fi
+if [[ -r /sys/fs/cgroup/cpu.max ]]; then
+  cpu_line=$(cat /sys/fs/cgroup/cpu.max)
+  cpu_quota=$(awk '{print $1}' <<< "$cpu_line")
+  cpu_period=$(awk '{print $2}' <<< "$cpu_line")
+  if [[ "$cpu_quota" == "max" ]]; then
+    echo "  CPUs:   unlimited (no cgroup cap)"
+  elif [[ -n "$cpu_quota" && -n "$cpu_period" ]] && (( cpu_period > 0 )); then
+    cpus=$(awk "BEGIN { printf \"%.2f\", ${cpu_quota} / ${cpu_period} }")
+    printf "  CPUs:   %s cores (quota=%s / period=%s μs)\n" "$cpus" "$cpu_quota" "$cpu_period"
+  else
+    echo "  CPUs:   unknown (cgroup values malformed: $cpu_line)"
+  fi
+elif [[ -r /sys/fs/cgroup/cpu/cpu.cfs_quota_us && -r /sys/fs/cgroup/cpu/cpu.cfs_period_us ]]; then
+  cpu_quota=$(cat /sys/fs/cgroup/cpu/cpu.cfs_quota_us)
+  cpu_period=$(cat /sys/fs/cgroup/cpu/cpu.cfs_period_us)
+  if (( cpu_quota <= 0 )); then
+    echo "  CPUs:   unlimited (no cgroup cap)"
+  else
+    cpus=$(awk "BEGIN { printf \"%.2f\", ${cpu_quota} / ${cpu_period} }")
+    printf "  CPUs:   %s cores (cgroup v1)\n" "$cpus"
+  fi
+else
+  echo "  CPUs:   unknown (cgroup not accessible)"
+fi
 
 echo ""
 echo "── Privileges ─────────────────────────────────────"

@@ -6,6 +6,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Match the container's claude user to the host user so bind
+        # mounts are writable. Default to 1000 (first user on most
+        # Linux / WSL2 hosts). Override in .env if `id -u` on the host
+        # returns something else.
+        CLAUDE_UID: "${CLAUDE_UID:-1000}"
+        CLAUDE_GID: "${CLAUDE_GID:-1000}"
     container_name: oas-sandbox
     cap_add:
       - NET_ADMIN
