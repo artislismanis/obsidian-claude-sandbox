@@ -88,10 +88,20 @@ RUN curl -o- "https://raw.githubusercontent.com/nvm-sh/nvm/v${NVM_VERSION}/insta
     && nvm alias default "${NODE_MAJOR}" \
     && ln -s "$(dirname "$(dirname "$(nvm which default)")")" "$NVM_DIR/default" \
     && nvm cache clear
-ENV PATH=/home/claude/.nvm/default/bin:$PATH
+ENV PATH=/home/claude/.nvm/default/bin:/home/claude/.local/python-default/bin:$PATH
 
-# Python via uv (userspace-managed)
-RUN uv python install "${PYTHON_VERSION}" && uv cache clean
+# Python via uv (userspace-managed). A stable dir symlink at
+# ~/.local/python-default gives a version-agnostic entry for PATH.
+# Symlinking the whole install root (not just the binary) is load-bearing:
+# `python3 -m venv` writes the invocation bin dir into pyvenv.cfg as `home`,
+# and `../lib/python3.12/` must resolve to real stdlib from there. A
+# `/usr/local/bin/python3` symlink breaks venv because pyvenv.cfg ends up
+# with `home = /usr/local/bin` and no stdlib lives there — Python then
+# falls back to python-build-standalone's baked `/install` prefix and
+# bails at `No module named 'encodings'`.
+RUN uv python install "${PYTHON_VERSION}" && uv cache clean \
+    && ln -sfn "$(dirname "$(dirname "$(uv python find)")")" /home/claude/.local/python-default \
+    && ln -sf python3 /home/claude/.local/python-default/bin/python
 
 # Claude Code CLI and MCP servers. Clean the npm cache so ~30–50MB of
 # download artifacts don't end up baked into the image layer.
@@ -154,15 +164,6 @@ RUN ARCH="$(dpkg --print-architecture)" \
     && tar -xzf /tmp/atuin.tar.gz -C /tmp \
     && install -m 755 /tmp/atuin-*/atuin /usr/local/bin/atuin \
     && rm -rf /tmp/atuin*
-
-# Symlink uv-managed Python into /usr/local/bin so python3 / python are
-# on PATH for claude without needing `uv run` prefixes. Claude skills
-# and ad-hoc venv work both need bare `python3` / `python -m venv`.
-# `gosu claude` runs uv as the user that installed the interpreter so
-# `uv python find` resolves correctly.
-RUN PY_BIN=$(gosu claude uv python find) \
-    && ln -sf "$PY_BIN" /usr/local/bin/python3 \
-    && ln -sf "$PY_BIN" /usr/local/bin/python
 
 # Firewall script (run as root via docker compose exec --user root)
 COPY --chmod=755 scripts/init-firewall.sh /usr/local/bin/init-firewall.sh
