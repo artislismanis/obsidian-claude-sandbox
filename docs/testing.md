@@ -55,11 +55,10 @@ docker compose up -d
 docker compose exec sandbox verify.sh
 ```
 
-- [ ] Script runs without errors (now on PATH from `/usr/local/bin/verify.sh`)
-- [ ] **Tool versions** section prints Node, npm, git, ttyd, jq, Claude, gh, atuin, rg, fd, uv, Python, gosu, sudo
+- [ ] `verify.sh` exits 0 — no `not found` entries under **Tool versions**. When a new tool is added to `container/Dockerfile` + `container/scripts/verify.sh`, no checklist edit is needed; verify.sh's own exit code covers it.
 - [ ] **Mount points** section lists `/workspace` (rw), `/workspace/vault` (ro), `/workspace/vault/agent-workspace` (rw), `/home/claude/.claude` (rw), `/home/claude/.shell-history` (rw)
-- [ ] **Environment variables** section dumps `PKM_VAULT_PATH`, `PKM_WRITE_DIR`, `MEMORY_FILE_PATH`, `TTYD_PORT`, etc.
-- [ ] **Privileges** section shows "running as: claude (uid 1000)" and "sudo apt-get: allowed WITH password"
+- [ ] **Container env** section shows `TERM`, `TTYD_PORT`, `ALLOWED_PRIVATE_HOSTS`, `MEMORY_FILE_PATH` (host-side compose knobs like `PKM_VAULT_PATH`, `CONTAINER_MEMORY`, `TTYD_BIND` are intentionally not injected into the container — verify their effect via Mount points above and cgroup `/sys/fs/cgroup/memory.max`, `/sys/fs/cgroup/cpu.max` instead)
+- [ ] **Privileges** section shows `running as: claude` and `sudo apt-get: allowed WITH password` **without prompting for a password** (the probe is non-interactive and derives the answer from sudo's own error message)
 - [ ] **Node globals** section shows `@anthropic-ai/claude-code` and `@modelcontextprotocol/server-memory`
 - [ ] No warnings for vault mount (shows item count)
 - [ ] ttyd shows as listening on port 7681
