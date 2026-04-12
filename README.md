@@ -36,7 +36,7 @@ Each terminal tab in Obsidian gets its own independent bash session — run mult
 - **Web terminal** — ttyd accessible at `http://localhost:7681`
 - **Read-only vault** — Vault mounted read-only; agents can only write to a designated folder (`agent-workspace/` by default)
 - **Claude Code CLI** — Pre-installed and ready to use
-- **Memory MCP** — `@modelcontextprotocol/server-memory` preinstalled, memory file stored in the vault write directory
+- **Memory MCP** — `@modelcontextprotocol/server-memory` preinstalled, memory file stored in `vault/.oas/` (independent of the write directory)
 - **Dev tools** — Node 22, Python 3.12, ripgrep, fd, atuin, jq, gh
 - **Shell history (atuin)** — Commands are recorded by [atuin](https://atuin.sh) into a persistent SQLite DB on the `oas-shell-history` named volume. Press **Ctrl+R** to open atuin's search UI (scoped by cwd, exit code, session, time). To seed atuin with existing bash history on first run, open a terminal and run `atuin import bash` once.
 - **Network sandboxing** — Optional allowlist-based firewall
@@ -137,7 +137,7 @@ Settings are organized into three tabs:
 | Docker Compose path | *(empty)* | Path to the directory containing docker-compose.yml |
 | WSL distribution | `Ubuntu` | WSL distribution for Docker commands (WSL mode only) |
 | Vault write directory | `agent-workspace` | Folder inside vault where the container can write files |
-| Memory file name | `memory.json` | Filename for the memory MCP, stored in the write directory |
+| Memory file name | `memory.json` | Filename for the memory MCP, stored in `vault/.oas/` |
 | Auto-start on load | `off` | Start container when plugin loads |
 | Auto-stop on unload | `off` | Stop container when plugin is disabled |
 
@@ -335,6 +335,18 @@ git restore workspace/
 ```
 
 **Branch protection**: we recommend enabling GitHub branch protection on `main` (Settings > Branches > Add rule > Require pull request before merging). This enforces the PR workflow at the remote level, so even an accidental `git push origin main` gets rejected.
+
+## Upgrading
+
+### Memory file moved out of write directory
+
+The memory MCP file previously lived at `vault/<write-dir>/memory.json`. It now lives at `vault/.oas/memory.json`, independent of the write directory setting. If you have an existing memory file, move it:
+
+```bash
+# On the host, from your vault root:
+mkdir -p .oas
+mv agent-workspace/memory.json .oas/memory.json
+```
 
 ## License
 

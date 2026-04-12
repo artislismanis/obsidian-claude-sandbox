@@ -26,6 +26,8 @@ services:
       - ${PKM_VAULT_PATH:-../vault}:/workspace/vault:ro
       # Writable vault subfolder — rw overlay
       - ${PKM_VAULT_PATH:-../vault}/${PKM_WRITE_DIR:-agent-workspace}:/workspace/vault/${PKM_WRITE_DIR:-agent-workspace}:rw
+      # Vault infrastructure — rw overlay, independent of write directory
+      - ${PKM_VAULT_PATH:-../vault}/.oas:/workspace/vault/.oas:rw
       # Named volumes (OAS-prefixed)
       - oas-claude-config:/home/claude/.claude
       - oas-shell-history:/home/claude/.shell-history
@@ -33,7 +35,8 @@ services:
       - TERM=xterm-256color
       - ALLOWED_PRIVATE_HOSTS=${ALLOWED_PRIVATE_HOSTS:-}
       - PKM_WRITE_DIR=${PKM_WRITE_DIR:-agent-workspace}
-      - MEMORY_FILE_PATH=/workspace/vault/${PKM_WRITE_DIR:-agent-workspace}/${MEMORY_FILE_NAME:-memory.json}
+      - MEMORY_FILE_NAME=${MEMORY_FILE_NAME:-memory.json}
+      - MEMORY_FILE_PATH=/workspace/vault/.oas/${MEMORY_FILE_NAME:-memory.json}
       - SUDO_PASSWORD=${SUDO_PASSWORD:-}
       - TTYD_PORT=${TTYD_PORT:-7681}
     sysctls:

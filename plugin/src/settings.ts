@@ -183,8 +183,8 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 		new Setting(el)
 			.setName("Memory file name")
 			.setDesc(
-				"Filename for the memory MCP server, stored inside the vault write directory. " +
-					"Claude uses this to persist memory across sessions.",
+				"Filename for the memory MCP server, stored in the vault's .oas/ directory " +
+					"(independent of the write directory). Claude uses this to persist memory across sessions.",
 			)
 			.addText((text) =>
 				text

@@ -56,8 +56,8 @@ docker compose exec sandbox verify.sh
 ```
 
 - [ ] `verify.sh` exits 0 — no `not found` entries under **Tool versions**. When a new tool is added to `container/Dockerfile` + `container/scripts/verify.sh`, no checklist edit is needed; verify.sh's own exit code covers it.
-- [ ] **Mount points** section lists `/workspace` (rw), `/workspace/vault` (ro), `/workspace/vault/agent-workspace` (rw), `/home/claude/.claude` (rw), `/home/claude/.shell-history` (rw)
-- [ ] **Container env** section shows `TERM`, `TTYD_PORT`, `ALLOWED_PRIVATE_HOSTS`, `MEMORY_FILE_PATH` (host-side compose knobs like `PKM_VAULT_PATH`, `CONTAINER_MEMORY`, `TTYD_BIND` are intentionally not injected into the container — verify their effect via Mount points above and cgroup `/sys/fs/cgroup/memory.max`, `/sys/fs/cgroup/cpu.max` instead)
+- [ ] **Mount points** section lists `/workspace` (rw), `/workspace/vault` (ro), `/workspace/vault/agent-workspace` (rw), `/workspace/vault/.oas` (rw), `/home/claude/.claude` (rw), `/home/claude/.shell-history` (rw)
+- [ ] **Container env** section shows `TERM`, `TTYD_PORT`, `PKM_WRITE_DIR`, `MEMORY_FILE_NAME`, `ALLOWED_PRIVATE_HOSTS`, `MEMORY_FILE_PATH` (host-side compose knobs like `PKM_VAULT_PATH`, `CONTAINER_MEMORY`, `TTYD_BIND` are intentionally not injected into the container — verify their effect via Mount points above and cgroup `/sys/fs/cgroup/memory.max`, `/sys/fs/cgroup/cpu.max` instead)
 - [ ] **Privileges** section shows `running as: claude` and `sudo apt-get: allowed WITH password` **without prompting for a password** (the probe is non-interactive and derives the answer from sudo's own error message)
 - [ ] **Node globals** section shows `@anthropic-ai/claude-code` and `@modelcontextprotocol/server-memory`
 - [ ] No warnings for vault mount (shows item count)
@@ -314,7 +314,7 @@ In **Settings > Agent Sandbox > General**:
 | 15.3.2 | Container visible to host | Run `docker ps` on the host | `oas-sandbox` listed as running |
 | 15.3.3 | Open terminal | Ribbon icon or "Open Sandbox Terminal" | Terminal renders, bash prompt visible |
 | 15.3.4 | Claude Code works | Run `claude --version` in the terminal | Version prints, no errors |
-| 15.3.5 | Memory MCP works | Run `claude` and ask it to store a fact in memory | Memory file appears at `<vault>/agent-workspace/memory.json` on host |
+| 15.3.5 | Memory MCP works | Run `claude` and ask it to store a fact in memory | Memory file appears at `<vault>/.oas/memory.json` on host |
 | 15.3.6 | Vault mount | Run `ls /workspace/vault` in terminal | Host vault files visible |
 | 15.3.7 | Stop container | "Sandbox: Stop Container" | Notice: "Sandbox container stopped." No errors. |
 

@@ -85,22 +85,27 @@ print_mount() {
 print_mount "/workspace"                                        "Claude workspace (host: workspace/)"
 print_mount "/workspace/vault"                                  "Obsidian vault (read-only)"
 print_mount "/workspace/vault/${PKM_WRITE_DIR:-agent-workspace}" "Vault writable subfolder"
+print_mount "/workspace/vault/.oas"                             "Vault infrastructure (memory, etc.)"
 print_mount "/home/claude/.claude"                              "Claude Code config (named volume)"
 print_mount "/home/claude/.shell-history"                       "Shell history (named volume)"
 
-# Quick write test on the vault write directory — catches UID mismatches
-# or missing rw overlay mounts that findmnt alone won't reveal.
-WRITE_DIR="/workspace/vault/${PKM_WRITE_DIR:-agent-workspace}"
-if [ -d "$WRITE_DIR" ]; then
-  PROBE="$WRITE_DIR/.oas-write-probe"
-  if touch "$PROBE" 2>/dev/null && rm -f "$PROBE"; then
-    printf "  %-48s %s\n" "$WRITE_DIR" "[write OK]"
+# Quick write tests — catch UID mismatches or missing rw overlay mounts
+# that findmnt alone won't reveal.
+write_check() {
+  local dir="$1"
+  if [ -d "$dir" ]; then
+    local probe="$dir/.oas-write-probe"
+    if touch "$probe" 2>/dev/null && rm -f "$probe"; then
+      printf "  %-48s %s\n" "$dir" "[write OK]"
+    else
+      printf "  %-48s %s\n" "$dir" "[WRITE FAILED — check UID or mount flags]"
+    fi
   else
-    printf "  %-48s %s\n" "$WRITE_DIR" "[WRITE FAILED — check UID or mount flags]"
+    printf "  %-48s %s\n" "$dir" "[MISSING — dir does not exist]"
   fi
-else
-  printf "  %-48s %s\n" "$WRITE_DIR" "[MISSING — dir does not exist]"
-fi
+}
+write_check "/workspace/vault/${PKM_WRITE_DIR:-agent-workspace}"
+write_check "/workspace/vault/.oas"
 
 echo ""
 echo "── Container env ──────────────────────────────────"
@@ -112,7 +117,7 @@ echo "── Container env ─────────────────�
 # bindings — they're not exposed inside the container. Resource limits
 # are surfaced in the next section from cgroup; mount-source paths are
 # visible above in Mount points.
-for var in TERM TTYD_PORT PKM_WRITE_DIR ALLOWED_PRIVATE_HOSTS MEMORY_FILE_PATH; do
+for var in TERM TTYD_PORT PKM_WRITE_DIR MEMORY_FILE_NAME ALLOWED_PRIVATE_HOSTS MEMORY_FILE_PATH; do
   printf "  %-24s = %s\n" "$var" "${!var:-<unset>}"
 done
 
