@@ -359,7 +359,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			item
 				.setTitle(fwEnabled ? "Disable Firewall" : "Enable Firewall")
 				.setIcon("shield")
-				.setDisabled(busy)
+				.setDisabled(busy || !running)
 				.onClick(() => this.toggleFirewall()),
 		);
 
