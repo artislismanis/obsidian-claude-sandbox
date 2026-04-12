@@ -103,6 +103,10 @@ export class TerminalView extends ItemView {
 
 	onResize(): void {
 		this.scheduleFit();
+		// Auto-focus terminal when this tab becomes active (e.g. tab switch)
+		if (this.term && this.app.workspace.activeLeaf === this.leaf) {
+			this.term.focus();
+		}
 	}
 
 	private scheduleFit(): void {
