@@ -21,7 +21,8 @@ session() {
     if [ -z "$1" ]; then
         echo "usage: session <session-name>" >&2
         echo "active sessions:" >&2
-        tmux list-sessions 2>/dev/null || echo "  (no sessions)" >&2
+        local out
+        out=$(tmux list-sessions 2>/dev/null) && echo "$out" | sed 's/^/  - /' >&2 || echo "  (none)" >&2
         return 1
     fi
     # Ensure the target session exists (no-op if already there).
@@ -38,5 +39,6 @@ session() {
 }
 
 sessions() {
-    tmux list-sessions 2>/dev/null || echo "  (no sessions)"
+    local out
+    out=$(tmux list-sessions 2>/dev/null) && echo "$out" | sed 's/^/  - /' || echo "  (none)"
 }
