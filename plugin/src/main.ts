@@ -22,6 +22,7 @@ export default class AgentSandboxPlugin extends Plugin {
 	private firewallBar!: FirewallStatusBar;
 	private statusBarEl: HTMLElement | null = null;
 	private statusBarClickHandler: ((evt: MouseEvent) => void) | null = null;
+	private ribbonEl: HTMLElement | null = null;
 	private healthPollId: number | null = null;
 
 	private debouncedSaveSettings = debounce(
@@ -99,9 +100,14 @@ export default class AgentSandboxPlugin extends Plugin {
 			void this.backgroundStartup();
 		});
 
-		this.addRibbonIcon("box", "Open Sandbox Terminal", () => {
+		this.ribbonEl = this.addRibbonIcon("box", "Open Sandbox Terminal", () => {
+			if (this.statusBar.getState() !== "running") {
+				new Notice("Container is not running. Start it first.");
+				return;
+			}
 			this.activateTerminalView();
 		});
+		this.ribbonEl.addClass("sandbox-ribbon-disabled");
 
 		this.addCommand({
 			id: "open-claude-terminal",
@@ -362,6 +368,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			item
 				.setTitle("New Terminal")
 				.setIcon("terminal")
+				.setDisabled(!running)
 				.onClick(() => this.activateTerminalView()),
 		);
 		menu.addItem((item) =>
@@ -392,6 +399,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			item
 				.setTitle("Open in Browser")
 				.setIcon("external-link")
+				.setDisabled(!running)
 				.onClick(() => window.open(`http://localhost:${this.settings.ttydPort}`)),
 		);
 		menu.addItem((item) =>
@@ -594,6 +602,7 @@ export default class AgentSandboxPlugin extends Plugin {
 	 */
 	private async syncStatusBar(isRunning: boolean): Promise<void> {
 		this.statusBar.setState(isRunning ? "running" : "stopped");
+		this.ribbonEl?.toggleClass("sandbox-ribbon-disabled", !isRunning);
 		if (isRunning) {
 			await this.refreshFirewallStatus();
 			this.updateTooltip();
