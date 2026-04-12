@@ -361,7 +361,7 @@ export class DockerManager {
 	async listSessions(): Promise<string[]> {
 		try {
 			const output = await this.run(
-				`docker compose exec ${SERVICE_NAME} tmux list-sessions -F "#{session_name}"`,
+				`docker compose exec --user claude ${SERVICE_NAME} tmux list-sessions -F "#{session_name}"`,
 				PROBE_TIMEOUT,
 			);
 			return output
@@ -375,7 +375,7 @@ export class DockerManager {
 
 	async renameSession(oldName: string, newName: string): Promise<void> {
 		await this.run(
-			`docker compose exec ${SERVICE_NAME} tmux rename-session -t "${oldName}" "${newName}"`,
+			`docker compose exec --user claude ${SERVICE_NAME} tmux rename-session -t "${oldName}" "${newName}"`,
 			PROBE_TIMEOUT,
 		);
 	}
