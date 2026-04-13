@@ -46,7 +46,7 @@ export const DEFAULT_SETTINGS: AgentSandboxSettings = {
 	containerMemory: "8G",
 	containerCpus: "4",
 	autoEnableFirewall: false,
-	sudoPassword: "",
+	sudoPassword: "sandbox",
 };
 
 type TabId = "general" | "terminal" | "advanced";
@@ -378,8 +378,7 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 			.setDesc(
 				"Password for the narrow apt-get/apt sudo inside the container. " +
 					"Used by humans during interactive sessions to test-install tools. " +
-					"Leave blank to fall through to the value in container/.env " +
-					"(default: 'sandbox'). Set to an empty string in .env to disable sudo entirely. " +
+					"Matches the default in container/.env.example. " +
 					"This is a human-intent gate, not a security boundary — see README > Development.",
 			)
 			.addText((text) =>

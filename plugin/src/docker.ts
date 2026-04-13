@@ -145,6 +145,10 @@ export class DockerManager {
 			);
 		}
 
+		// Convert Windows paths for WSL mode (e.g. Z:\path → /mnt/z/path)
+		const effectiveComposePath =
+			dockerMode === "wsl" ? windowsToWslPath(composePath) : composePath;
+
 		const envVars: Record<string, string> = {};
 		if (vaultPath) {
 			envVars.PKM_VAULT_PATH = dockerMode === "wsl" ? windowsToWslPath(vaultPath) : vaultPath;
@@ -194,7 +198,7 @@ export class DockerManager {
 
 		const command =
 			dockerMode === "wsl"
-				? buildWslCommand(composePath, wslDistro, dockerCmd, envVars)
+				? buildWslCommand(effectiveComposePath, wslDistro, dockerCmd, envVars)
 				: process.platform === "win32"
 					? buildLocalWindowsCommand(composePath, dockerCmd, envVars)
 					: buildLocalCommand(composePath, dockerCmd, envVars);
@@ -202,25 +206,52 @@ export class DockerManager {
 			const { stdout } = await exec(command, { timeout, windowsHide: true });
 			return stdout.trim();
 		} catch (error: unknown) {
-			const err = error as { stderr?: string; message?: string };
+			const err = error as { stderr?: string; message?: string; killed?: boolean };
+			const detail = err.stderr || err.message || String(error);
 			const combined = (err.stderr || "") + (err.message || "");
 
+			// Log full technical detail for troubleshooting (Ctrl+Shift+I)
+			// eslint-disable-next-line no-console
+			console.error("[Agent Sandbox] Docker command failed:", detail);
+
+			// Map known error patterns to user-friendly messages
 			if (combined.includes("is not recognized")) {
 				throw new Error(
 					"WSL is not available. Please ensure WSL is installed and configured.",
 				);
 			}
-			if (combined.includes("Cannot connect to the Docker daemon")) {
+			if (
+				combined.includes("Cannot connect to the Docker daemon") ||
+				combined.includes("//./pipe/docker_engine") ||
+				combined.includes("The system cannot find the file specified")
+			) {
 				throw new Error(
-					"Docker is not running. Please start Docker Desktop or the Docker daemon.",
+					"Docker is not running. Please start Docker Desktop or Rancher Desktop.",
 				);
 			}
 			if (combined.includes("No such distribution")) {
 				throw new Error(
-					`WSL distribution '${wslDistro}' not found. Please check your settings.`,
+					`WSL distribution '${wslDistro}' not found. Check Settings > Docker.`,
 				);
 			}
-			throw new Error(`Docker command failed: ${err.stderr || err.message}`);
+			if (combined.includes("no configuration file provided")) {
+				throw new Error(
+					"docker-compose.yml not found. Check Settings > Docker Compose path.",
+				);
+			}
+			if (combined.includes("No such file or directory")) {
+				throw new Error(
+					"Docker Compose directory not found. Check Settings > Docker Compose path.",
+				);
+			}
+			if (err.killed || combined.includes("ETIMEDOUT") || combined.includes("timed out")) {
+				throw new Error(
+					"Docker is not responding. It may still be starting — try again in a moment.",
+				);
+			}
+			throw new Error(
+				"Unexpected Docker error. Open the developer console (Ctrl+Shift+I) for details.",
+			);
 		}
 	}
 
@@ -266,7 +297,8 @@ export class DockerManager {
 		let args: string[];
 		if (dockerMode === "wsl") {
 			// On Windows, spawn wsl.exe directly (no bash available on host)
-			const escapedPath = composePath.replace(/'/g, "'\\''");
+			const wslPath = windowsToWslPath(composePath);
+			const escapedPath = wslPath.replace(/'/g, "'\\''");
 			const innerCmd = `cd '${escapedPath}' && docker compose down`;
 			shell = "wsl";
 			args = ["-d", wslDistro, "--", "bash", "-c", innerCmd];
