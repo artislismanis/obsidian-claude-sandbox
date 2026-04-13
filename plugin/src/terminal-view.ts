@@ -42,9 +42,19 @@ export class TerminalView extends ItemView {
 		this.instanceId = nextInstanceId++;
 
 		// Register a scope so Obsidian routes key events to us when focused.
-		// Returning false from a handler tells Obsidian "handled, don't propagate."
+		// Returning false prevents Obsidian's "navigate back" on Escape.
+		// Since the scope blocks the DOM event from reaching xterm.js,
+		// we manually send the Escape character over the WebSocket.
 		this.scope = new Scope(this.app.scope);
-		this.scope.register([], "Escape", () => false);
+		this.scope.register([], "Escape", () => {
+			if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+				const payload = new Uint8Array(2);
+				payload[0] = CMD_INPUT.charCodeAt(0);
+				payload[1] = 0x1b; // ESC
+				this.ws.send(payload);
+			}
+			return false;
+		});
 	}
 
 	getViewType(): string {
