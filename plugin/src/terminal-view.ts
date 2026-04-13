@@ -1,5 +1,5 @@
 import type { Menu, ViewStateResult, WorkspaceLeaf } from "obsidian";
-import { ItemView } from "obsidian";
+import { ItemView, Scope } from "obsidian";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { TerminalSettings, TerminalThemeMode } from "./settings";
@@ -40,6 +40,11 @@ export class TerminalView extends ItemView {
 		super(leaf);
 		this.getSettings = getSettings;
 		this.instanceId = nextInstanceId++;
+
+		// Register a scope so Obsidian routes key events to us when focused.
+		// Returning false from a handler tells Obsidian "handled, don't propagate."
+		this.scope = new Scope(this.app.scope);
+		this.scope.register([], "Escape", () => false);
 	}
 
 	getViewType(): string {
@@ -278,11 +283,6 @@ export class TerminalView extends ItemView {
 		);
 
 		term.attachCustomKeyEventHandler((event) => {
-			// Prevent Escape from bubbling to Obsidian's navigation handler
-			if (event.key === "Escape") {
-				event.stopPropagation();
-				return true;
-			}
 			if (event.ctrlKey && event.shiftKey && event.key === "V" && event.type === "keydown") {
 				navigator.clipboard.readText().then(
 					(text) => term.paste(text),
