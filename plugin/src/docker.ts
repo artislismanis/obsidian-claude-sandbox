@@ -225,9 +225,7 @@ export class DockerManager {
 				combined.includes("//./pipe/docker_engine") ||
 				combined.includes("The system cannot find the file specified")
 			) {
-				throw new Error(
-					"Docker is not running. Please start Docker Desktop or Rancher Desktop.",
-				);
+				throw new Error("Docker is not running. Please start your Docker engine.");
 			}
 			if (combined.includes("No such distribution")) {
 				throw new Error(

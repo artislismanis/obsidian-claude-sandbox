@@ -348,6 +348,10 @@ mkdir -p .oas
 mv agent-workspace/memory.json .oas/memory.json
 ```
 
+## Troubleshooting
+
+The plugin shows brief error messages in Obsidian notifications. For detailed technical errors, open the developer console (`Ctrl+Shift+I` on Windows/Linux, `Cmd+Option+I` on Mac) and look for entries prefixed with `[Agent Sandbox]`.
+
 ## License
 
 MIT
