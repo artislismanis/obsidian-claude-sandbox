@@ -43,6 +43,18 @@ The vault at `/workspace/vault/` is **read-only** at the filesystem level. The o
 - Prefer non-destructive operations: create new files or append rather than overwriting
 - For bulk operations, describe scope and show a sample (3-5 files) before executing
 
+## Agent write workflow
+
+You can only create or edit files inside `vault/$PKM_WRITE_DIR/`. If you are unsure where this points, run `verify.sh` and look for the writable vault subfolder mount.
+
+All vault work — inbox processing, content creation, note editing — follows the same pattern:
+
+1. **Read** the source file(s) anywhere in the vault
+2. **Write** new or modified content into `vault/$PKM_WRITE_DIR/`
+3. **Describe** where the file should ultimately live (target folder, filename) so the user can move it into place on the host
+
+When editing an existing vault note, copy it to `vault/$PKM_WRITE_DIR/` first, make changes there, and tell the user which original file it replaces. Never assume a previous session's files still exist in the write directory — check first.
+
 ## Memory — MCP knowledge graph
 
 **Override the built-in file-based auto memory system.** Do NOT write to `/home/claude/.claude/projects/-workspace/memory/`. Use the MCP memory server (`mcp__memory__*` tools) for all persistent memory.
