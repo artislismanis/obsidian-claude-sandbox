@@ -1,8 +1,16 @@
 /** Shared input validators. Used by both settings.ts (UI) and docker.ts (runtime). */
 
+import { posix as posixPath } from "path";
+
 export function isValidWriteDir(dir: string): boolean {
 	if (!dir.trim()) return false;
 	return !dir.includes("..") && !dir.startsWith("/") && dir !== ".";
+}
+
+export function isPathWithinDir(filePath: string, dir: string): boolean {
+	const normalized = posixPath.normalize(filePath).replace(/^\//, "");
+	const normalizedDir = posixPath.normalize(dir).replace(/^\//, "");
+	return normalized === normalizedDir || normalized.startsWith(normalizedDir + "/");
 }
 
 function isValidOctet(s: string): boolean {

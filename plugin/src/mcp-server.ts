@@ -3,7 +3,7 @@ import type { Server, IncomingMessage, ServerResponse } from "http";
 import type { App } from "obsidian";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { randomUUID } from "crypto";
+import { randomUUID, timingSafeEqual } from "crypto";
 import type { PermissionTier, McpToolDef } from "./mcp-tools";
 import { buildTools } from "./mcp-tools";
 
@@ -15,6 +15,7 @@ export interface McpServerConfig {
 }
 
 const SESSION_TIMEOUT_MS = 10 * 60_000;
+const MAX_BODY_BYTES = 1024 * 1024;
 
 export class ObsidianMcpServer {
 	private httpServer: Server | null = null;
@@ -131,16 +132,27 @@ export class ObsidianMcpServer {
 	private checkAuth(req: IncomingMessage): boolean {
 		const auth = req.headers.authorization;
 		if (!auth) return false;
-		return auth === `Bearer ${this.config.token}`;
+		const expected = `Bearer ${this.config.token}`;
+		if (auth.length !== expected.length) return false;
+		return timingSafeEqual(Buffer.from(auth), Buffer.from(expected));
 	}
 
 	private async readBody(req: IncomingMessage): Promise<unknown> {
 		return new Promise((resolve, reject) => {
-			let data = "";
-			req.on("data", (chunk: Buffer) => (data += chunk.toString()));
+			const chunks: Buffer[] = [];
+			let size = 0;
+			req.on("data", (chunk: Buffer) => {
+				size += chunk.length;
+				if (size > MAX_BODY_BYTES) {
+					req.destroy();
+					reject(new Error("Request body too large"));
+				} else {
+					chunks.push(chunk);
+				}
+			});
 			req.on("end", () => {
 				try {
-					resolve(JSON.parse(data));
+					resolve(JSON.parse(Buffer.concat(chunks).toString()));
 				} catch {
 					reject(new Error("Invalid JSON"));
 				}
@@ -157,7 +169,15 @@ export class ObsidianMcpServer {
 
 		for (const tool of this.tools) {
 			server.registerTool(tool.name, tool.config, async (args) => {
-				return tool.handler(args as Record<string, unknown>);
+				try {
+					return await tool.handler(args as Record<string, unknown>);
+				} catch (err: unknown) {
+					const msg = err instanceof Error ? err.message : String(err);
+					return {
+						content: [{ type: "text" as const, text: `Error: ${msg}` }],
+						isError: true,
+					};
+				}
 			});
 		}
 

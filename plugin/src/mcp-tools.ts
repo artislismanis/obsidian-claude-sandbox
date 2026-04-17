@@ -1,6 +1,7 @@
 import type { App, TFile, CachedMetadata } from "obsidian";
 import { prepareSimpleSearch } from "obsidian";
 import { z } from "zod/v4";
+import { isPathWithinDir } from "./validation";
 
 export type PermissionTier = "read" | "writeScoped" | "writeVault" | "navigate" | "manage";
 
@@ -65,11 +66,6 @@ function resolveFile(app: App, args: Record<string, unknown>): TFile | null {
 		return resolved ?? null;
 	}
 	return null;
-}
-
-function isWithinWriteDir(path: string, writeDir: string): boolean {
-	const normalized = path.startsWith("/") ? path.slice(1) : path;
-	return normalized.startsWith(writeDir + "/") || normalized === writeDir;
 }
 
 export function buildTools(app: App, getWriteDir: () => string): McpToolDef[] {
@@ -446,7 +442,7 @@ export function buildTools(app: App, getWriteDir: () => string): McpToolDef[] {
 		" (within write directory)",
 		(path) => {
 			const writeDir = getWriteDir();
-			return isWithinWriteDir(path, writeDir)
+			return isPathWithinDir(path, writeDir)
 				? null
 				: error(`Path must be within the write directory '${writeDir}'.`);
 		},
@@ -454,7 +450,7 @@ export function buildTools(app: App, getWriteDir: () => string): McpToolDef[] {
 			const path = args.path as string | undefined;
 			if (path) {
 				const writeDir = getWriteDir();
-				if (!isWithinWriteDir(path, writeDir))
+				if (!isPathWithinDir(path, writeDir))
 					return error(`Path must be within the write directory '${writeDir}'.`);
 			}
 			const f = resolveFile(app, args);
