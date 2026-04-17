@@ -33,6 +33,8 @@ export interface DockerManagerSettings {
 	containerMemory?: string;
 	containerCpus?: string;
 	sudoPassword?: string;
+	mcpToken?: string;
+	mcpPort?: number;
 }
 
 export function windowsToWslPath(windowsPath: string): string {
@@ -194,6 +196,14 @@ export class DockerManager {
 		}
 		if (sudoPassword) {
 			envVars.SUDO_PASSWORD = sudoPassword;
+		}
+
+		const { mcpToken, mcpPort } = this.getSettings();
+		if (mcpToken) {
+			envVars.OAS_MCP_TOKEN = mcpToken;
+		}
+		if (mcpPort) {
+			envVars.OAS_MCP_PORT = String(mcpPort);
 		}
 
 		const command =

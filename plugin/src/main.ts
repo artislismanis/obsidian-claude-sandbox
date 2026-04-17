@@ -6,6 +6,8 @@ import type { ContainerState } from "./status-bar";
 import { FirewallStatusBar, StatusBarManager } from "./status-bar";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./terminal-view";
 import { isValidWriteDir } from "./validation";
+import { ObsidianMcpServer, generateToken } from "./mcp-server";
+import type { PermissionTier } from "./mcp-tools";
 
 function toErrorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
@@ -22,6 +24,7 @@ export default class AgentSandboxPlugin extends Plugin {
 	private statusBarEl: HTMLElement | null = null;
 	private statusBarClickHandler: ((evt: MouseEvent) => void) | null = null;
 	private healthPollId: number | null = null;
+	private mcpServer: ObsidianMcpServer | null = null;
 
 	private debouncedSaveSettings = debounce(
 		async () => {
@@ -51,6 +54,8 @@ export default class AgentSandboxPlugin extends Plugin {
 			containerMemory: this.settings.containerMemory,
 			containerCpus: this.settings.containerCpus,
 			sudoPassword: this.settings.sudoPassword,
+			mcpToken: this.settings.mcpEnabled ? this.settings.mcpToken : undefined,
+			mcpPort: this.settings.mcpEnabled ? this.settings.mcpPort : undefined,
 		}));
 
 		this.statusBarEl = this.addStatusBarItem();
@@ -161,6 +166,16 @@ export default class AgentSandboxPlugin extends Plugin {
 			},
 		});
 
+		this.addCommand({
+			id: "sandbox-toggle-mcp",
+			name: "Sandbox: Toggle MCP Server",
+			callback: () => this.toggleMcpServer(),
+		});
+
+		if (this.settings.mcpEnabled) {
+			void this.startMcpServer();
+		}
+
 		// Stop container on app quit (onunload only fires on plugin disable, not app exit)
 		this.registerEvent(
 			this.app.workspace.on("quit", (tasks) => {
@@ -182,6 +197,7 @@ export default class AgentSandboxPlugin extends Plugin {
 
 	onunload() {
 		this.stopHealthPoll();
+		void this.mcpServer?.stop();
 		void this.saveData(this.settings);
 		this.app.workspace.detachLeavesOfType(VIEW_TYPE_TERMINAL);
 		this.firewallBar.destroy();
@@ -195,6 +211,10 @@ export default class AgentSandboxPlugin extends Plugin {
 
 	async loadSettings() {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		if (!this.settings.mcpToken) {
+			this.settings.mcpToken = generateToken();
+			await this.saveData(this.settings);
+		}
 	}
 
 	saveSettings() {
@@ -318,6 +338,55 @@ export default class AgentSandboxPlugin extends Plugin {
 			this.firewallBar.setState(fwOn ? "enabled" : "disabled");
 		} catch {
 			this.firewallBar.setState("hidden");
+		}
+	}
+
+	// ── MCP server ────────────────────────────────────────
+
+	private getEnabledTiers(): Set<PermissionTier> {
+		const tiers = new Set<PermissionTier>();
+		if (this.settings.mcpTierRead) tiers.add("read");
+		if (this.settings.mcpTierWriteScoped) tiers.add("writeScoped");
+		if (this.settings.mcpTierWriteVault) tiers.add("writeVault");
+		if (this.settings.mcpTierNavigate) tiers.add("navigate");
+		if (this.settings.mcpTierManage) tiers.add("manage");
+		return tiers;
+	}
+
+	private async startMcpServer(): Promise<void> {
+		if (this.mcpServer?.isRunning()) return;
+		try {
+			this.mcpServer = new ObsidianMcpServer(this.app, {
+				port: this.settings.mcpPort,
+				token: this.settings.mcpToken,
+				enabledTiers: this.getEnabledTiers(),
+				getWriteDir: () => this.settings.vaultWriteDir,
+			});
+			await this.mcpServer.start();
+		} catch (error: unknown) {
+			new Notice(`MCP server failed to start: ${toErrorMessage(error)}`);
+		}
+	}
+
+	private async stopMcpServer(): Promise<void> {
+		if (!this.mcpServer) return;
+		await this.mcpServer.stop();
+		this.mcpServer = null;
+	}
+
+	private async toggleMcpServer(): Promise<void> {
+		if (this.mcpServer?.isRunning()) {
+			await this.stopMcpServer();
+			this.settings.mcpEnabled = false;
+			this.saveSettings();
+			new Notice("MCP server stopped.");
+		} else {
+			this.settings.mcpEnabled = true;
+			this.saveSettings();
+			await this.startMcpServer();
+			if (this.mcpServer?.isRunning()) {
+				new Notice(`MCP server listening on port ${this.settings.mcpPort}.`);
+			}
 		}
 	}
 

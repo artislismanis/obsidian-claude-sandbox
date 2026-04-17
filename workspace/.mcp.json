@@ -2,6 +2,14 @@
 	"mcpServers": {
 		"memory": {
 			"command": "mcp-server-memory"
+		},
+		"obsidian": {
+			"type": "streamable-http",
+			"url": "http://host.docker.internal:${OAS_MCP_PORT}/mcp",
+			"headers": {
+				"Authorization": "Bearer ${OAS_MCP_TOKEN}"
+			},
+			"instructions": "Obsidian vault tools: search notes, read content and frontmatter, query tags/links/backlinks, find orphaned notes, create and modify notes, manage vault structure. Use when interacting with the user's knowledge base or Obsidian vault."
 		}
 	}
 }
