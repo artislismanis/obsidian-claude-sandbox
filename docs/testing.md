@@ -417,6 +417,146 @@ git checkout -b feature/test-workspace-flow
 
 ---
 
+## 21. MCP Server — Settings
+
+**Setup:** Plugin installed and enabled. No container needed for settings tests.
+
+| # | Test | Steps | Expected |
+|---|------|-------|----------|
+| 21.1 | MCP tab renders | Open Settings > Agent Sandbox > MCP tab | All fields visible: Enable toggle, port, auth token, and 5 permission tier toggles |
+| 21.2 | Default values | Check MCP tab on first install | Enable = on, Port = 28080, Token = auto-generated (32-char hex), Read = on, Write (scoped) = on, Write (vault-wide) = off, Navigate = off, Manage = off |
+| 21.3 | Token auto-generated | Disable plugin, delete `data.json`, re-enable | A new token is auto-generated |
+| 21.4 | Token regenerate | Click "Regenerate" button next to token | Token changes to a new value, field updates immediately |
+| 21.5 | Token persists | Note token value, restart Obsidian | Same token value after restart |
+| 21.6 | Port validation | Type "abc" in port field | Input gets red border, previous valid port retained |
+| 21.7 | Tier toggles persist | Toggle Write (vault-wide) on, restart Obsidian | Toggle state persists |
+
+## 22. MCP Server — Lifecycle
+
+**Setup:** Plugin installed and enabled, MCP enabled in settings (default).
+
+| # | Test | Steps | Expected |
+|---|------|-------|----------|
+| 22.1 | Auto-start on load | Enable MCP (default), restart Obsidian | MCP server starts. Verify: `curl http://localhost:28080/mcp` returns 401 Unauthorized (auth required — server is listening) |
+| 22.2 | Toggle off via command | Cmd palette > "Sandbox: Toggle MCP Server" | Notice: "MCP server stopped." `curl http://localhost:28080/mcp` returns connection refused |
+| 22.3 | Toggle on via command | Cmd palette > "Sandbox: Toggle MCP Server" (again) | Notice: "MCP server listening on port 28080." Curl returns 401 again |
+| 22.4 | Disabled in settings | Turn off "Enable MCP server" in settings, restart Obsidian | Server does not start. Curl returns connection refused |
+| 22.5 | Port change | Change MCP port to 28081, restart Obsidian | Server listens on new port. `curl http://localhost:28081/mcp` returns 401 |
+| 22.6 | Port conflict | Set MCP port to same as ttyd (7681), restart | Error notice: "MCP server failed to start: ..." (EADDRINUSE) |
+| 22.7 | Plugin unload stops server | Disable plugin while MCP is running | Server stops. Curl returns connection refused |
+
+## 23. MCP Server — Authentication
+
+**Setup:** MCP server running. Note the auth token from MCP settings tab.
+
+| # | Test | Steps | Expected |
+|---|------|-------|----------|
+| 23.1 | No auth | `curl -X POST http://localhost:28080/mcp -H "Content-Type: application/json" -d '{}'` | 401 `{"error":"Unauthorized"}` |
+| 23.2 | Wrong token | `curl -X POST http://localhost:28080/mcp -H "Authorization: Bearer wrongtoken" -H "Content-Type: application/json" -d '{}'` | 401 `{"error":"Unauthorized"}` |
+| 23.3 | Correct token | `curl -X POST http://localhost:28080/mcp -H "Authorization: Bearer <token>" -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'` | 200 with JSON-RPC response containing server info and capabilities |
+| 23.4 | Wrong path | `curl -X POST http://localhost:28080/other -H "Authorization: Bearer <token>"` | 404 Not Found |
+| 23.5 | CORS preflight | `curl -X OPTIONS http://localhost:28080/mcp` | 204 with CORS headers (Access-Control-Allow-Origin, etc.) |
+
+## 24. MCP Server — Container Integration
+
+**Setup:** MCP server running, container running with Docker Compose path configured.
+
+| # | Test | Steps | Expected |
+|---|------|-------|----------|
+| 24.1 | Env vars injected | Open terminal, run `echo $OAS_MCP_TOKEN` | Prints the same token shown in MCP settings tab |
+| 24.2 | Port var injected | In terminal: `echo $OAS_MCP_PORT` | Prints the MCP port (default 28080) |
+| 24.3 | Host reachable | In terminal: `curl -s -o /dev/null -w "%{http_code}" http://host.docker.internal:28080/mcp` | Returns `401` (server reachable, auth required) |
+| 24.4 | Container auth works | In terminal: `curl -X POST http://host.docker.internal:$OAS_MCP_PORT/mcp -H "Authorization: Bearer $OAS_MCP_TOKEN" -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'` | 200 with server capabilities |
+| 24.5 | MCP disabled omits vars | Turn off MCP in settings, restart container | `echo $OAS_MCP_TOKEN` is empty inside container |
+| 24.6 | Claude Code discovers tools | In terminal: `claude` then ask "what MCP tools do you have?" | Claude lists `mcp__obsidian__vault_*` tools (if .mcp.json is configured). If MCP env vars are missing Claude reports obsidian server connection failed — expected when MCP is off |
+
+## 25. MCP Server — Read Tier Tools
+
+**Setup:** MCP server running, container running, at least a few markdown files in the vault with frontmatter, tags, and wikilinks.
+
+| # | Test | Steps | Expected |
+|---|------|-------|----------|
+| 25.1 | vault_read | In Claude session: "read the file Welcome.md from my vault" | Claude calls `vault_read`, returns file contents |
+| 25.2 | vault_list | "list all markdown files in my vault" | Claude calls `vault_list`, returns file paths |
+| 25.3 | vault_list filtered | "list files in the agent-workspace folder" | Only files within that folder shown |
+| 25.4 | vault_search | "search my vault for [term that exists]" | Returns matching files with context snippets |
+| 25.5 | vault_search no match | "search my vault for xyzzy123nonsense" | "No matches found." |
+| 25.6 | vault_file_info | "show me info about Welcome.md" | Returns path, name, extension, size, created, modified |
+| 25.7 | vault_tags | "what tags are used in my vault?" | Lists tags with occurrence counts, sorted by frequency |
+| 25.8 | vault_tags per file | "what tags does [specific file] have?" | Lists only that file's tags |
+| 25.9 | vault_frontmatter | "show me the frontmatter of [file with YAML]" | Returns parsed frontmatter as JSON |
+| 25.10 | vault_frontmatter property | "what is the 'status' property of [file]?" | Returns just that property's value |
+| 25.11 | vault_links | "what does [file] link to?" | Lists outgoing wikilinks with counts |
+| 25.12 | vault_backlinks | "what files link to [file]?" | Lists files that contain wikilinks to the target |
+| 25.13 | vault_headings | "show me the outline of [file]" | Lists headings indented by level |
+| 25.14 | vault_orphans | "find orphan notes in my vault" | Lists files with no incoming links |
+| 25.15 | vault_unresolved | "are there any broken links in my vault?" | Lists unresolved wikilinks with source files |
+| 25.16 | Read tier disabled | Turn off Read in MCP settings, restart MCP server (toggle command) | Claude cannot find `vault_read` or any read tools. Other tiers still work if enabled |
+
+## 26. MCP Server — Write Scoped Tier Tools
+
+**Setup:** MCP server running, container running, Write (scoped) enabled (default). Write directory is `agent-workspace`.
+
+| # | Test | Steps | Expected |
+|---|------|-------|----------|
+| 26.1 | vault_create | "create a file called agent-workspace/mcp-test.md with content 'Hello from MCP'" | File created. Visible in Obsidian file explorer under agent-workspace/ |
+| 26.2 | vault_create outside write dir | "create a file called test-root.md with content 'test'" | Error: "Path must be within the write directory 'agent-workspace'." |
+| 26.3 | vault_modify | "replace the contents of agent-workspace/mcp-test.md with 'Updated via MCP'" | File contents replaced. Open in Obsidian to verify |
+| 26.4 | vault_append | "append '## New Section' to agent-workspace/mcp-test.md" | Content appended to end of file |
+| 26.5 | vault_frontmatter_set | "set the 'status' property to 'draft' on agent-workspace/mcp-test.md" | Frontmatter added/updated. Open file to verify YAML block |
+| 26.6 | Modify outside write dir | "modify Welcome.md to add 'test' at the end" | Error: "Path must be within the write directory" |
+| 26.7 | Write scoped disabled | Turn off Write (scoped) in settings, restart MCP | Claude cannot find `vault_create`, `vault_modify`, etc. Read tools still work |
+| 26.8 | Clean up | Delete `agent-workspace/mcp-test.md` from Obsidian or terminal | File removed |
+
+## 27. MCP Server — Write Vault Tier Tools
+
+**Setup:** MCP server running, container running, Write (vault-wide) enabled in settings (off by default — turn it on).
+
+| # | Test | Steps | Expected |
+|---|------|-------|----------|
+| 27.1 | vault_create_anywhere | "create a file called mcp-vault-test.md at the vault root with content 'Vault-wide write'" | File created at vault root. Visible in Obsidian |
+| 27.2 | vault_modify_anywhere | "update mcp-vault-test.md with new content 'Modified anywhere'" | File contents replaced |
+| 27.3 | vault_append_anywhere | "append a line to mcp-vault-test.md" | Content appended |
+| 27.4 | vault_frontmatter_set_anywhere | "add a 'created-by' property with value 'mcp' to mcp-vault-test.md" | Frontmatter updated |
+| 27.5 | Tier disabled hides tools | Turn off Write (vault-wide), restart MCP | `vault_*_anywhere` tools not available. Scoped writes still work if that tier is on |
+| 27.6 | Clean up | Delete `mcp-vault-test.md` | File removed |
+
+## 28. MCP Server — Navigate Tier Tools
+
+**Setup:** MCP server running, container running, Navigate enabled in settings (off by default — turn it on). Have a file open in Obsidian.
+
+| # | Test | Steps | Expected |
+|---|------|-------|----------|
+| 28.1 | vault_open | "open Welcome.md in Obsidian" | File opens in the Obsidian editor. User sees the file appear |
+| 28.2 | vault_open new tab | "open Welcome.md in a new tab" | File opens in a new tab alongside existing content |
+| 28.3 | vault_open nonexistent | "open nonexistent-file.md" | Error: "File not found." |
+| 28.4 | Navigate disabled | Turn off Navigate, restart MCP | `vault_open` not available |
+
+## 29. MCP Server — Manage Tier Tools
+
+**Setup:** MCP server running, container running, Manage enabled in settings (off by default — turn it on). Create a test file `agent-workspace/manage-test.md` with a wikilink `[[manage-test]]` in another file.
+
+| # | Test | Steps | Expected |
+|---|------|-------|----------|
+| 29.1 | vault_rename | "rename manage-test.md to manage-renamed.md" | File renamed. Wikilinks in other files updated to `[[manage-renamed]]` |
+| 29.2 | vault_move | "move manage-renamed.md to agent-workspace/subfolder/" | File moved. Links updated |
+| 29.3 | vault_delete | "delete agent-workspace/subfolder/manage-renamed.md" | File moved to trash (not permanently deleted) |
+| 29.4 | vault_create_folder | "create a folder called agent-workspace/new-folder" | Folder created. Visible in Obsidian file explorer |
+| 29.5 | Manage disabled | Turn off Manage, restart MCP | `vault_rename`, `vault_move`, `vault_delete`, `vault_create_folder` not available |
+| 29.6 | Clean up | Remove test folders/files if any remain | Clean state |
+
+## 30. MCP Server — Permission Tier Combinations
+
+| # | Test | Steps | Expected |
+|---|------|-------|----------|
+| 30.1 | All tiers off | Disable all 5 tiers, restart MCP | Claude sees no obsidian tools. MCP server is running but has zero tools |
+| 30.2 | Only Read | Enable only Read | Claude can search/read but cannot create, modify, open, rename, or delete |
+| 30.3 | Read + Write scoped | Enable Read and Write (scoped) (the defaults) | Claude can read anything, write only within agent-workspace/ |
+| 30.4 | All tiers on | Enable all 5 tiers | Claude has full vault access. Verify all tool categories work |
+| 30.5 | Tier change requires restart | Change a tier toggle while MCP is running, don't restart | Tools don't change until MCP is toggled off/on (or Obsidian restarted) |
+
+---
+
 ## Teardown
 
 ```bash
