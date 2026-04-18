@@ -11,12 +11,12 @@ Bug fixes and UX improvements identified during testing.
 - [x] Fix MCP timing-safe auth, body size limit, error handling
 
 ### UX Quick Wins
-- [ ] Terminal font size setting (hardcoded to 14)
-- [ ] Auto-start container when opening terminal (instead of error notice)
-- [ ] Per-setting restart labels (replace blanket warning)
-- [ ] Bind address security warning when set to 0.0.0.0
-- [ ] Compose path validation on input (check docker-compose.yml exists)
-- [ ] Terminal scrollback size setting (hardcoded to 10000)
+- [x] Terminal font size setting (hardcoded to 14)
+- [x] Auto-start container when opening terminal (instead of error notice)
+- [x] Per-setting restart labels (replace blanket warning)
+- [x] Bind address security warning when set to 0.0.0.0
+- [x] Compose path validation on input (check docker-compose.yml exists)
+- [x] Terminal scrollback size setting (hardcoded to 10000)
 
 ## Phase 2: Release Automation (BRAT)
 
@@ -171,6 +171,13 @@ Prepare for the official Obsidian community plugin directory.
 - [x] MCP manual testing checklist (sections 21-30)
 - [x] Code review and simplification (/simplify pass)
 - [x] Surface real error messages in Docker error handlers
+- [x] CRLF line ending fix (.gitattributes eol=lf for shell scripts, Dockerfile, etc.)
+- [x] host.docker.internal routing for Rancher Desktop / WSL2 (OAS_HOST_IP via os.networkInterfaces)
+- [x] MCP stdio→HTTP proxy: per-request connectivity probe with 30s positive cache
+- [x] Container firewall: auto-allow MCP port to host.docker.internal
+- [x] E2E test selector fixes (XPath replacing invalid :has() CSS selectors)
+- [x] Test automation documentation (docs/testing.md — three layers, prerequisites, coverage)
+- [x] Phase 1 UX Quick Wins: font size, scrollback, auto-start prompt, per-setting restart labels, bind address warning, compose path validation
 
 ## Ecosystem References
 
