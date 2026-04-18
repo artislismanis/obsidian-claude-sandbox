@@ -46,13 +46,19 @@ export function isImageBuilt(): boolean {
 	}
 }
 
+// Docker Compose prefixes volumes with the project name. The live compose
+// project is named `oas` (see container/docker-compose.yml), so the volume
+// declared as `oas-claude-config` ends up as `oas_oas-claude-config`.
+const LIVE_CLAUDE_VOLUME = "oas_oas-claude-config";
+const TEST_CLAUDE_VOLUME = "oas-test_oas-test-claude-config";
+
 /**
- * Returns true if the live (non-test) oas-claude-config volume exists.
+ * Returns true if the live oas project's claude-config volume exists.
  * Tests can opt-in to reusing its Claude subscription auth via seedClaudeAuth().
  */
 export function hasLiveClaudeAuth(): boolean {
 	try {
-		execSync("docker volume inspect oas-claude-config", { stdio: "pipe" });
+		execSync(`docker volume inspect ${LIVE_CLAUDE_VOLUME}`, { stdio: "pipe" });
 		return true;
 	} catch {
 		return false;
@@ -60,28 +66,25 @@ export function hasLiveClaudeAuth(): boolean {
 }
 
 /**
- * Seed the test's oas-test_oas-test-claude-config volume from the live
- * oas-claude-config volume so Claude Code inside the test container is
- * already authenticated. Safe to call multiple times — it's idempotent.
- * Returns true on success, false if the live volume doesn't exist or
- * the copy failed.
+ * Copy the live project's claude-config volume into the test project's
+ * claude-config volume so Claude Code inside the test container is
+ * already authenticated. Idempotent. Returns true on success.
  *
  * The test volume is torn down by containerDown() (docker compose down -v),
  * so the seeded auth never leaks back to the live volume.
  */
 export function seedClaudeAuth(): boolean {
 	if (!hasLiveClaudeAuth()) return false;
-	const testVolume = "oas-test_oas-test-claude-config";
 	try {
-		execSync(`docker volume create ${testVolume}`, { stdio: "pipe" });
+		execSync(`docker volume create ${TEST_CLAUDE_VOLUME}`, { stdio: "pipe" });
 	} catch {
 		// already exists, fine
 	}
 	try {
 		execSync(
 			`docker run --rm ` +
-				`-v oas-claude-config:/src:ro ` +
-				`-v ${testVolume}:/dst ` +
+				`-v ${LIVE_CLAUDE_VOLUME}:/src:ro ` +
+				`-v ${TEST_CLAUDE_VOLUME}:/dst ` +
 				`alpine sh -c "cp -a /src/. /dst/"`,
 			{ stdio: "pipe" },
 		);
