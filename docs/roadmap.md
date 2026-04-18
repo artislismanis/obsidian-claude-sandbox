@@ -119,6 +119,17 @@ Obsidian markdown conventions (wikilinks, callouts, embeds, properties) are hand
 - [ ] In-memory cache for vault-wide operations with metadata-change invalidation
 - [ ] Configurable response size limits per tool
 
+### Human-in-the-Loop Review (new permission tier)
+A **Write (reviewed)** tier where every vault write pauses for human approval in Obsidian before executing. Claude proposes a change, a diff modal appears in Obsidian, user approves or rejects, Claude gets the result.
+- [ ] `DiffReviewModal` — Obsidian Modal showing file path, old vs new content (unified diff), Approve/Reject buttons. Returns a Promise resolved by button click (same async pattern as existing `promptSessionName()`)
+- [ ] New **Write (reviewed)** permission tier — sits between Write Scoped and Write Vault. All writes through this tier route through the review modal regardless of path
+- [ ] Wire into `addWriteTools()` factory — reviewed-tier tools call the modal before executing the vault operation
+- [ ] Review modal for frontmatter changes — show property name + old/new value
+- [ ] Review modal for file creation — show proposed path + content (no "old" side)
+- [ ] Review modal for rename/move/delete — show operation description + affected links
+- [ ] Batch review option — queue multiple proposed changes, review all at once
+- [ ] Audit trail — log approved/rejected operations to a file for later review
+
 ## Phase 5: UX & Integration Depth
 
 Deeper Obsidian integration and workflow improvements.
