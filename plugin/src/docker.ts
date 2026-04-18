@@ -1,4 +1,5 @@
 import { exec as execCb, spawn } from "child_process";
+import { networkInterfaces } from "os";
 import { promisify } from "util";
 
 const exec = promisify(execCb);
@@ -113,6 +114,19 @@ export function buildLocalWindowsCommand(
 	return `${envPart}cd /d "${escapedPath}" && ${dockerCmd}`;
 }
 
+// Returns the IP of the first Windows vEthernet WSL adapter, or undefined
+// when not on Windows or when no WSL adapter is found.
+function getWslHostIp(): string | undefined {
+	if (process.platform !== "win32") return undefined;
+	const nets = networkInterfaces();
+	for (const [name, addrs] of Object.entries(nets)) {
+		if (!name.toLowerCase().includes("wsl")) continue;
+		const addr = addrs?.find((a) => a.family === "IPv4" && !a.internal);
+		if (addr) return addr.address;
+	}
+	return undefined;
+}
+
 export class DockerManager {
 	private getSettings: () => DockerManagerSettings;
 	private busy = false;
@@ -204,6 +218,16 @@ export class DockerManager {
 		}
 		if (mcpPort) {
 			envVars.OAS_MCP_PORT = String(mcpPort);
+		}
+		// On Windows, inject the actual Windows host IP so the container can
+		// reach host.docker.internal correctly under Rancher Desktop / WSL2.
+		// The Docker bridge address (172.17.x.x) or Rancher's internal DNS
+		// (192.168.127.x) that host-gateway resolves to inside WSL2 is not
+		// reachable from within the container. The vEthernet WSL adapter IP
+		// (typically 172.20.x.1) is the correct gateway.
+		const wslHostIp = getWslHostIp();
+		if (wslHostIp) {
+			envVars.OAS_HOST_IP = wslHostIp;
 		}
 
 		const command =

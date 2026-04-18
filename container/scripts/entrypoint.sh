@@ -17,6 +17,29 @@ fi
 # the child shell's environment (would otherwise be visible via `env`).
 unset SUDO_PASSWORD
 
+# On WSL2 (Rancher Desktop, Docker Desktop WSL2 backend, raw Docker Engine in
+# WSL2), host.docker.internal is set to the Docker bridge gateway (172.17.0.1)
+# by the compose extra_hosts mapping. That IP is the Linux bridge interface
+# INSIDE WSL2, not the Windows host. The Obsidian plugin's MCP server runs on
+# Windows and is unreachable at 172.17.0.1.
+#
+# Fix: the plugin detects the Windows vEthernet (WSL) adapter IP via
+# os.networkInterfaces() and passes it as OAS_HOST_IP. When set, override
+# host.docker.internal with that IP so the container can reach Windows.
+#
+# On native Linux / macOS, OAS_HOST_IP is not set so this block is skipped
+# and host.docker.internal keeps its default (correct) value.
+if [[ -n "${OAS_HOST_IP:-}" ]]; then
+    echo "entrypoint: overriding host.docker.internal → ${OAS_HOST_IP} (Windows WSL host)"
+    # /etc/hosts is a bind-mount inside Docker; sed -i fails because it
+    # tries to rename a temp file across mount boundaries. Use cp instead.
+    tmp=$(mktemp)
+    grep -v 'host\.docker\.internal' /etc/hosts > "$tmp"
+    echo "${OAS_HOST_IP}  host.docker.internal" >> "$tmp"
+    cp "$tmp" /etc/hosts
+    rm -f "$tmp"
+fi
+
 # Fix directory ownership if it doesn't match claude's current uid.
 # Named volumes persist across rebuilds and bind-mount targets may be
 # created as root:root — check-then-chown is idempotent and skips if
