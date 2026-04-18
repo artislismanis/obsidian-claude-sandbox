@@ -51,13 +51,12 @@ describe.skipIf(SKIP)("MCP server integration with container", () => {
 		expect(config.mcpServers).toHaveProperty("obsidian");
 	});
 
-	it("obsidian MCP config references correct env vars", () => {
+	it("obsidian MCP config uses stdio proxy script", () => {
 		const output = containerExec("cat /workspace/.mcp.json");
 		const config = JSON.parse(output);
 		const obsidian = config.mcpServers.obsidian;
-		expect(obsidian.url).toContain("host.docker.internal");
-		expect(obsidian.url).toContain("${OAS_MCP_PORT}");
-		expect(obsidian.headers.Authorization).toContain("${OAS_MCP_TOKEN}");
+		expect(obsidian.command).toBe("node");
+		expect(obsidian.args[0]).toContain("obsidian-mcp-proxy.js");
 	});
 
 	it("memory MCP server binary is available", () => {

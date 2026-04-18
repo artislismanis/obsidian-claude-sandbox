@@ -39,6 +39,8 @@ services:
       - MEMORY_FILE_PATH=/workspace/vault/.oas/${MEMORY_FILE_NAME:-memory.json}
       - SUDO_PASSWORD=${SUDO_PASSWORD:-}
       - TTYD_PORT=${TTYD_PORT:-7681}
+      - OAS_MCP_TOKEN=${OAS_MCP_TOKEN:-}
+      - OAS_MCP_PORT=${OAS_MCP_PORT:-28080}
     sysctls:
       # IPv6 disabled — simplifies firewall (IPv4-only rules) and matches
       # common local network configs. All allowlisted domains resolve A records.
