@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { isDockerAvailable, isImageBuilt, hasLiveClaudeAuth, containerExec } from "./helpers";
+import { isDockerAvailable, isImageBuilt, hasTestClaudeAuth, containerExec } from "./helpers";
 
 const SKIP_DOCKER = !isDockerAvailable() || !isImageBuilt();
 
-// Claude auth is seeded once in globalSetup. If the live oas-claude-config
-// volume didn't exist at setup time, auth wasn't seeded and these tests skip.
-const SKIP = SKIP_DOCKER || !hasLiveClaudeAuth();
+// Claude auth lives in the persistent oas-test-claude-config volume. Sign in once
+// via `docker exec -it oas-test-sandbox claude` — see docs/testing.md for setup.
+const SKIP = SKIP_DOCKER || !hasTestClaudeAuth();
 
 describe.skipIf(SKIP)("Claude Code — programmatic (authenticated from live volume)", () => {
 	it("claude --version prints a version", () => {

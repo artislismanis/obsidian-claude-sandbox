@@ -51,4 +51,5 @@ services:
 
 volumes:
     oas-test-claude-config:
+        external: true
     oas-test-shell-history:

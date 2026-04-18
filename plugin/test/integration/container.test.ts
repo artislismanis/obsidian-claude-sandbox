@@ -109,11 +109,13 @@ describe.skipIf(SKIP_NO_IMAGE)("Container", () => {
 		expect(image).toBe("oas-sandbox:latest");
 	});
 
-	it("named volumes use test prefix", () => {
+	it("named volumes use expected names", () => {
 		const mounts = execSyncTrim(
 			"docker inspect --format '{{range .Mounts}}{{.Name}} {{end}}' oas-test-sandbox",
 		);
-		expect(mounts).toContain("oas-test_oas-test-claude-config");
+		// claude-config is an external volume — no compose project prefix
+		expect(mounts).toContain("oas-test-claude-config");
+		// shell-history is compose-managed — gets the oas-test project prefix
 		expect(mounts).toContain("oas-test_oas-test-shell-history");
 	});
 });

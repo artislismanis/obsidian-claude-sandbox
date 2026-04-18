@@ -46,49 +46,37 @@ export function isImageBuilt(): boolean {
 	}
 }
 
-// Docker Compose prefixes volumes with the project name. The live compose
-// project is named `oas` (see container/docker-compose.yml), so the volume
-// declared as `oas-claude-config` ends up as `oas_oas-claude-config`.
-const LIVE_CLAUDE_VOLUME = "oas_oas-claude-config";
-const TEST_CLAUDE_VOLUME = "oas-test_oas-test-claude-config";
+// The test container's Claude auth lives in this external volume.
+// It persists across `compose down -v` because it is declared external in
+// docker-compose.test.yml. Seed it once via `docker exec -it oas-test-sandbox claude`.
+const TEST_CLAUDE_VOLUME = "oas-test-claude-config";
 
 /**
- * Returns true if the live oas project's claude-config volume exists.
- * Tests can opt-in to reusing its Claude subscription auth via seedClaudeAuth().
+ * Ensure the external claude-config volume exists. Called by globalSetup before
+ * compose up so Docker does not reject the external volume reference.
+ * docker volume create is idempotent — exits 0 if the volume already exists.
  */
-export function hasLiveClaudeAuth(): boolean {
+export function ensureTestClaudeVolume(): void {
 	try {
-		execSync(`docker volume inspect ${LIVE_CLAUDE_VOLUME}`, { stdio: "pipe" });
-		return true;
+		execSync(`docker volume create ${TEST_CLAUDE_VOLUME}`, { stdio: "pipe" });
 	} catch {
-		return false;
+		// already exists or docker unavailable — both handled downstream
 	}
 }
 
 /**
- * Copy the live project's claude-config volume into the test project's
- * claude-config volume so Claude Code inside the test container is
- * already authenticated. Idempotent. Returns true on success.
- *
- * The test volume is torn down by containerDown() (docker compose down -v),
- * so the seeded auth never leaks back to the live volume.
+ * Returns true if the test container's claude-config volume has been
+ * authenticated (i.e. the sign-in was done via `docker exec … claude`).
+ * Uses a disposable alpine container to peek inside the volume without
+ * requiring the test container to be running.
  */
-export function seedClaudeAuth(): boolean {
-	if (!hasLiveClaudeAuth()) return false;
+export function hasTestClaudeAuth(): boolean {
 	try {
-		execSync(`docker volume create ${TEST_CLAUDE_VOLUME}`, { stdio: "pipe" });
-	} catch {
-		// already exists, fine
-	}
-	try {
-		execSync(
-			`docker run --rm ` +
-				`-v ${LIVE_CLAUDE_VOLUME}:/src:ro ` +
-				`-v ${TEST_CLAUDE_VOLUME}:/dst ` +
-				`alpine sh -c "cp -a /src/. /dst/"`,
-			{ stdio: "pipe" },
+		const out = execSync(
+			`docker run --rm -v ${TEST_CLAUDE_VOLUME}:/auth:ro alpine sh -c "ls -A /auth | head -1"`,
+			{ stdio: "pipe", timeout: 15000 },
 		);
-		return true;
+		return out.toString().trim().length > 0;
 	} catch {
 		return false;
 	}
@@ -251,4 +239,88 @@ export function httpPost(
 		req.write(data);
 		req.end();
 	});
+}
+
+/** Like httpPost but also returns response headers. Used for MCP session init. */
+export function httpPostFull(
+	url: string,
+	body: unknown,
+	headers: Record<string, string> = {},
+): Promise<{ status: number; body: string; headers: Record<string, string> }> {
+	const data = JSON.stringify(body);
+	const parsed = new URL(url);
+	return new Promise((resolve, reject) => {
+		const req = http.request(
+			{
+				hostname: parsed.hostname,
+				port: parsed.port,
+				path: parsed.pathname,
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Accept: "application/json, text/event-stream",
+					...headers,
+				},
+			},
+			(res: http.IncomingMessage) => {
+				let buf = "";
+				const resHeaders: Record<string, string> = {};
+				for (const [k, v] of Object.entries(res.headers)) {
+					if (v !== undefined)
+						resHeaders[k.toLowerCase()] = Array.isArray(v) ? v[0] : v;
+				}
+				res.on("data", (chunk: Buffer) => (buf += chunk.toString()));
+				res.on("end", () =>
+					resolve({ status: res.statusCode ?? 0, body: buf, headers: resHeaders }),
+				);
+			},
+		);
+		req.on("error", reject);
+		req.write(data);
+		req.end();
+	});
+}
+
+// ── MCP session helpers ────────────────────────────────────────────────────
+
+export interface McpSession {
+	sessionId: string;
+	url: string;
+	token: string;
+}
+
+/** Send the MCP initialize handshake and return a session ready for further calls. */
+export async function mcpInitialize(port: number, token: string): Promise<McpSession> {
+	const url = `http://127.0.0.1:${port}/mcp`;
+	const res = await httpPostFull(
+		url,
+		{
+			jsonrpc: "2.0",
+			id: 1,
+			method: "initialize",
+			params: {
+				protocolVersion: "2025-03-26",
+				capabilities: {},
+				clientInfo: { name: "integration-test", version: "1.0" },
+			},
+		},
+		{ Authorization: `Bearer ${token}` },
+	);
+	return { sessionId: res.headers["mcp-session-id"] ?? "", url, token };
+}
+
+/** Send a JSON-RPC request on an established MCP session. Returns the parsed envelope. */
+export async function mcpRequest(
+	session: McpSession,
+	method: string,
+	params?: unknown,
+): Promise<unknown> {
+	const headers: Record<string, string> = { Authorization: `Bearer ${session.token}` };
+	if (session.sessionId) headers["Mcp-Session-Id"] = session.sessionId;
+	const res = await httpPost(
+		session.url,
+		{ jsonrpc: "2.0", id: Date.now(), method, params },
+		headers,
+	);
+	return parseJsonOrSse(res.body);
 }

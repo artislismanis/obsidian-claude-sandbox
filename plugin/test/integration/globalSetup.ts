@@ -10,7 +10,8 @@ import {
 	isImageBuilt,
 	containerUp,
 	containerDown,
-	seedClaudeAuth,
+	ensureTestClaudeVolume,
+	hasTestClaudeAuth,
 	waitForHealth,
 	TTYD_PORT,
 } from "./helpers";
@@ -25,14 +26,17 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
 		return async () => {};
 	}
 
+	// Ensure the external claude-config volume exists before compose up references it.
+	ensureTestClaudeVolume();
+
 	process.stderr.write("[integration] starting test container...\n");
 	containerUp();
 
-	const seeded = seedClaudeAuth();
+	const hasAuth = hasTestClaudeAuth();
 	process.stderr.write(
-		seeded
-			? "[integration] Claude auth seeded from live oas-claude-config volume\n"
-			: "[integration] no live Claude auth to seed (claude-code tests will skip)\n",
+		hasAuth
+			? "[integration] Claude auth found in test volume (claude-code tests will run)\n"
+			: "[integration] no Claude auth in test volume (claude-code tests will skip — see docs/testing.md)\n",
 	);
 
 	process.stderr.write(`[integration] waiting for ttyd health on port ${TTYD_PORT}...\n`);
