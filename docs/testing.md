@@ -8,9 +8,28 @@ Run these first. If a behavior is covered here, don't test it manually — fix t
 cd plugin
 
 npm run test              # Layer 1: unit tests (184 tests, <2s)
-npm run test:integration  # Layer 2: container integration (28+ tests, ~15s, needs Docker)
-npm run test:e2e          # Layer 3: real Obsidian UI (20+ tests, ~15s, needs Obsidian)
+npm run test:integration  # Layer 2: container integration (~40 tests, ~20s, needs Docker)
+npm run test:e2e          # Layer 3: real Obsidian UI (~21 tests, ~20s, needs Obsidian)
 ```
+
+### Claude Code authentication for integration tests
+
+The Claude Code tests in `test/integration/claude-code.test.ts` need an authenticated subscription. Rather than burning API tokens, they **borrow auth from your live container** if available:
+
+1. The live container's auth is in the `oas-claude-config` Docker volume (created when you first run `claude` and log in inside your real sandbox)
+2. Before running Claude tests, the helper copies this volume to the test's `oas-test_oas-test-claude-config` volume
+3. `docker compose down -v` at teardown removes the test volume — your live auth is untouched
+
+If the live volume doesn't exist (you haven't used Claude inside the sandbox yet), these tests **skip gracefully** rather than fail. To enable them:
+
+```bash
+# In your live sandbox (not the test one), authenticate once:
+docker compose -f container/docker-compose.yml up -d
+docker compose -f container/docker-compose.yml exec sandbox claude
+# Follow the auth flow, exit. Auth is now persisted in oas-claude-config volume.
+```
+
+After that, `npm run test:integration` will run the Claude -p tests.
 
 | Suite | Covers |
 |-------|--------|

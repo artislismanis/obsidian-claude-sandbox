@@ -46,6 +46,51 @@ export function isImageBuilt(): boolean {
 	}
 }
 
+/**
+ * Returns true if the live (non-test) oas-claude-config volume exists.
+ * Tests can opt-in to reusing its Claude subscription auth via seedClaudeAuth().
+ */
+export function hasLiveClaudeAuth(): boolean {
+	try {
+		execSync("docker volume inspect oas-claude-config", { stdio: "pipe" });
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Seed the test's oas-test_oas-test-claude-config volume from the live
+ * oas-claude-config volume so Claude Code inside the test container is
+ * already authenticated. Safe to call multiple times — it's idempotent.
+ * Returns true on success, false if the live volume doesn't exist or
+ * the copy failed.
+ *
+ * The test volume is torn down by containerDown() (docker compose down -v),
+ * so the seeded auth never leaks back to the live volume.
+ */
+export function seedClaudeAuth(): boolean {
+	if (!hasLiveClaudeAuth()) return false;
+	const testVolume = "oas-test_oas-test-claude-config";
+	try {
+		execSync(`docker volume create ${testVolume}`, { stdio: "pipe" });
+	} catch {
+		// already exists, fine
+	}
+	try {
+		execSync(
+			`docker run --rm ` +
+				`-v oas-claude-config:/src:ro ` +
+				`-v ${testVolume}:/dst ` +
+				`alpine sh -c "cp -a /src/. /dst/"`,
+			{ stdio: "pipe" },
+		);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 export function containerUp(): void {
 	compose("up -d");
 }
