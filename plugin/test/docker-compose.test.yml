@@ -1,0 +1,54 @@
+name: oas-test
+
+services:
+    sandbox:
+        image: oas-sandbox:latest
+        container_name: oas-test-sandbox
+        cap_add:
+            - NET_ADMIN
+        ports:
+            - "127.0.0.1:${TTYD_PORT:-17681}:7681"
+        volumes:
+            - ../../workspace:/workspace:rw
+            - ${PKM_VAULT_PATH}:/workspace/vault:ro
+            - ${PKM_VAULT_PATH}/${PKM_WRITE_DIR:-agent-workspace}:/workspace/vault/${PKM_WRITE_DIR:-agent-workspace}:rw
+            - oas-test-claude-config:/home/claude/.claude
+            - oas-test-shell-history:/home/claude/.shell-history
+        environment:
+            - TERM=xterm-256color
+            - ALLOWED_PRIVATE_HOSTS=${ALLOWED_PRIVATE_HOSTS:-}
+            - PKM_WRITE_DIR=${PKM_WRITE_DIR:-agent-workspace}
+            - MEMORY_FILE_NAME=${MEMORY_FILE_NAME:-memory.json}
+            - MEMORY_FILE_PATH=/workspace/vault/.oas/${MEMORY_FILE_NAME:-memory.json}
+            - SUDO_PASSWORD=${SUDO_PASSWORD:-}
+            - TTYD_PORT=${TTYD_PORT:-17681}
+            - OAS_MCP_TOKEN=${OAS_MCP_TOKEN:-}
+            - OAS_MCP_PORT=${OAS_MCP_PORT:-}
+        sysctls:
+            - net.ipv6.conf.all.disable_ipv6=1
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
+        stdin_open: true
+        tty: true
+        healthcheck:
+            test:
+                [
+                    "CMD",
+                    "bash",
+                    "-c",
+                    "curl -so /dev/null -w '%{http_code}' http://localhost:7681/ | grep -q '200'",
+                ]
+            interval: 10s
+            timeout: 3s
+            retries: 3
+            start_period: 10s
+        restart: "no"
+        deploy:
+            resources:
+                limits:
+                    memory: ${CONTAINER_MEMORY:-4G}
+                    cpus: "${CONTAINER_CPUS:-2}"
+
+volumes:
+    oas-test-claude-config:
+    oas-test-shell-history:

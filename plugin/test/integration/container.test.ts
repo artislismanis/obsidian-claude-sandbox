@@ -78,7 +78,7 @@ describe.skipIf(SKIP_NO_IMAGE)("Container lifecycle", () => {
 		const token = containerExec("echo $OAS_MCP_TOKEN");
 		const port = containerExec("echo $OAS_MCP_PORT");
 		expect(token).toBe("integration-test-token");
-		expect(port).toBe("28080");
+		expect(port).toBe("38080");
 	});
 
 	it("container logs have no critical errors", () => {

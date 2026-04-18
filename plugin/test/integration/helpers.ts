@@ -2,14 +2,13 @@ import { execSync, type ExecSyncOptions } from "child_process";
 import { resolve } from "path";
 import * as http from "http";
 
-export const COMPOSE_DIR = resolve(__dirname, "../../../container");
+export const COMPOSE_FILE = resolve(__dirname, "../docker-compose.test.yml");
 export const VAULT_DIR = resolve(__dirname, "../fixtures/vault");
-export const TTYD_PORT = 7681;
-export const MCP_PORT = 28080;
+export const TTYD_PORT = 17681;
+export const MCP_PORT = 38080;
 export const MCP_TOKEN = "integration-test-token";
 
 const execOpts: ExecSyncOptions = {
-	cwd: COMPOSE_DIR,
 	stdio: "pipe",
 	env: {
 		...process.env,
@@ -23,6 +22,10 @@ const execOpts: ExecSyncOptions = {
 		OAS_MCP_PORT: String(MCP_PORT),
 	},
 };
+
+function compose(cmd: string): string {
+	return execSync(`docker compose -f "${COMPOSE_FILE}" ${cmd}`, execOpts).toString().trim();
+}
 
 export function isDockerAvailable(): boolean {
 	try {
@@ -45,19 +48,19 @@ export function isImageBuilt(): boolean {
 }
 
 export function containerUp(): void {
-	execSync("docker compose up -d", execOpts);
+	compose("up -d");
 }
 
 export function containerDown(): void {
-	execSync("docker compose down", execOpts);
+	compose("down -v");
 }
 
 export function containerExec(cmd: string): string {
-	return execSync(`docker compose exec -T sandbox ${cmd}`, execOpts).toString().trim();
+	return compose(`exec -T sandbox ${cmd}`);
 }
 
 export function containerLogs(): string {
-	return execSync("docker compose logs sandbox --tail=50", execOpts).toString();
+	return compose("logs sandbox --tail=50");
 }
 
 export async function waitForHealth(
