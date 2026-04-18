@@ -17,6 +17,29 @@ fi
 # the child shell's environment (would otherwise be visible via `env`).
 unset SUDO_PASSWORD
 
+# On WSL2 (Rancher Desktop, Docker Desktop WSL2 backend, raw Docker Engine in
+# WSL2), host.docker.internal is set to the Docker bridge gateway (172.17.0.1)
+# by the compose extra_hosts mapping. That IP is the Linux bridge interface
+# INSIDE WSL2, not the Windows host. The Obsidian plugin's MCP server runs on
+# Windows and is unreachable at 172.17.0.1.
+#
+# Fix: detect WSL2 via /proc/version, read the actual Windows host IP from the
+# WSL2 resolv.conf (mounted at /run/wsl-resolv.conf), and override the hosts
+# entry. The WSL2 resolv.conf nameserver is always the vEthernet (WSL) adapter
+# IP on Windows — the gateway that WSL2 uses to reach Windows.
+#
+# On native Linux the fix is skipped (host.docker.internal = 172.17.0.1 is
+# correct there). On macOS Docker Desktop the volume mount won't exist, so
+# the condition is also skipped.
+if grep -qi microsoft /proc/version 2>/dev/null && [[ -f /run/wsl-resolv.conf ]]; then
+    wsl_host=$(awk '/^nameserver/ {print $2; exit}' /run/wsl-resolv.conf)
+    if [[ -n "$wsl_host" && "$wsl_host" != "127.0.0.1" && "$wsl_host" != "127.0.0.53" ]]; then
+        echo "entrypoint: WSL2 detected — routing host.docker.internal to Windows host at $wsl_host"
+        sed -i '/host\.docker\.internal/d' /etc/hosts
+        echo "$wsl_host  host.docker.internal" >> /etc/hosts
+    fi
+fi
+
 # Fix directory ownership if it doesn't match claude's current uid.
 # Named volumes persist across rebuilds and bind-mount targets may be
 # created as root:root — check-then-chown is idempotent and skips if
