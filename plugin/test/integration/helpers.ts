@@ -91,31 +91,64 @@ export function seedClaudeAuth(): boolean {
 	}
 }
 
-export function containerUp(): void {
-	// Ensure a clean slate — removes any stale container, network, or
-	// volume from a previous test run. Cheap no-op when nothing exists.
+function forceCleanup(): void {
+	// Nuclear cleanup — ignores errors because any of these may not exist
+	try {
+		execSync("docker rm -f oas-test-sandbox", { stdio: "pipe" });
+	} catch {
+		/* ok */
+	}
+	try {
+		execSync("docker network rm oas-test_default", { stdio: "pipe" });
+	} catch {
+		/* ok */
+	}
 	try {
 		compose("down -v --remove-orphans");
 	} catch {
-		// no state to clean
+		/* ok */
 	}
-	compose("up -d");
+}
+
+export function containerUp(): void {
+	forceCleanup();
+	let lastErr: unknown;
+	for (let attempt = 1; attempt <= 3; attempt++) {
+		try {
+			compose("up -d");
+			return;
+		} catch (err) {
+			lastErr = err;
+			forceCleanup();
+			// Brief pause before retry — Docker state may be settling
+			try {
+				execSync("sleep 1", { stdio: "pipe" });
+			} catch {
+				/* ok */
+			}
+		}
+	}
+	throw lastErr;
 }
 
 export function containerDown(): void {
-	try {
-		compose("down -v --remove-orphans");
-	} catch {
-		// best effort
-	}
+	forceCleanup();
 }
 
 export function containerExec(cmd: string): string {
-	return compose(`exec -T sandbox ${cmd}`);
+	// Use `docker exec` directly rather than `docker compose exec`.
+	// Direct exec is faster and avoids docker-compose's internal exec-id
+	// tracking, which was producing spurious "No such exec instance"
+	// errors in fast-running test suites.
+	return execSync(`docker exec -i oas-test-sandbox ${cmd}`, execOpts).toString().trim();
 }
 
 export function containerLogs(): string {
-	return compose("logs sandbox --tail=50");
+	try {
+		return execSync("docker logs --tail 50 oas-test-sandbox", { stdio: "pipe" }).toString();
+	} catch {
+		return "(no logs available)";
+	}
 }
 
 export async function waitForHealth(

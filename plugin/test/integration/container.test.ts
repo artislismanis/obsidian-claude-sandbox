@@ -28,23 +28,19 @@ describe.skipIf(SKIP)("Container prerequisites", () => {
 	});
 });
 
-describe.skipIf(SKIP_NO_IMAGE)("Container lifecycle", () => {
+describe.skipIf(SKIP_NO_IMAGE)("Container", () => {
 	beforeAll(async () => {
 		containerUp();
 		await waitForHealth(`http://127.0.0.1:${TTYD_PORT}`, 60000);
 	}, 120000);
 
 	afterAll(() => {
-		try {
-			containerDown();
-		} catch {
-			// best effort
-		}
+		containerDown();
 	});
 
-	it("container is running and healthy", async () => {
-		const output = containerExec("echo ok");
-		expect(output).toBe("ok");
+	// ── lifecycle / health ──
+	it("is running and healthy", () => {
+		expect(containerExec("echo ok")).toBe("ok");
 	});
 
 	it("ttyd responds on configured port", async () => {
@@ -58,40 +54,27 @@ describe.skipIf(SKIP_NO_IMAGE)("Container lifecycle", () => {
 		expect(output).not.toContain("not found");
 	});
 
-	it("vault is mounted read-only", () => {
-		const output = containerExec("cat /workspace/vault/Welcome.md");
-		expect(output).toContain("Welcome");
-	});
-
-	it("vault write dir is writable", () => {
-		containerExec("touch /workspace/vault/agent-workspace/_integration_test");
-		containerExec("rm /workspace/vault/agent-workspace/_integration_test");
-	});
-
-	it("vault root is not writable", () => {
-		expect(() => {
-			containerExec("touch /workspace/vault/_should_fail 2>&1");
-		}).toThrow();
-	});
-
-	it("claude code CLI is installed", () => {
-		const output = containerExec("claude --version");
-		expect(output).toMatch(/\d+\.\d+/);
-	});
-
-	it("MCP env vars are injected", () => {
-		const token = containerExec("echo $OAS_MCP_TOKEN");
-		const port = containerExec("echo $OAS_MCP_PORT");
-		expect(token).toBe("integration-test-token");
-		expect(port).toBe("38080");
-	});
-
-	it("container logs have no critical errors", () => {
+	it("logs have no critical errors", () => {
 		const logs = containerLogs();
 		expect(logs).not.toContain("FATAL");
 		expect(logs).not.toContain("panic");
 	});
 
+	// ── vault mounts ──
+	it("vault is mounted and readable", () => {
+		expect(containerExec("cat /workspace/vault/Welcome.md")).toContain("Welcome");
+	});
+
+	it("vault write directory is writable", () => {
+		containerExec("touch /workspace/vault/agent-workspace/_integration_test");
+		containerExec("rm /workspace/vault/agent-workspace/_integration_test");
+	});
+
+	it("vault root is not writable", () => {
+		expect(() => containerExec("touch /workspace/vault/_should_fail")).toThrow();
+	});
+
+	// ── workspace tier (Tier 1) ──
 	it("workspace tier files are visible", () => {
 		expect(containerExec("test -f /workspace/CLAUDE.md && echo ok")).toBe("ok");
 		expect(containerExec("test -f /workspace/.mcp.json && echo ok")).toBe("ok");
@@ -99,36 +82,33 @@ describe.skipIf(SKIP_NO_IMAGE)("Container lifecycle", () => {
 	});
 
 	it("container/ infra is NOT visible (mount isolation)", () => {
-		expect(() => containerExec("ls /workspace/container 2>&1")).toThrow();
+		expect(() => containerExec("ls /workspace/container")).toThrow();
 	});
 
+	// ── env vars ──
+	it("MCP env vars are injected", () => {
+		expect(containerExec("bash -c 'echo $OAS_MCP_TOKEN'")).toBe("integration-test-token");
+		expect(containerExec("bash -c 'echo $OAS_MCP_PORT'")).toBe("38080");
+	});
+
+	// ── Claude Code ──
+	it("claude CLI is installed", () => {
+		expect(containerExec("claude --version")).toMatch(/\d+\.\d+/);
+	});
+
+	// ── sudo model ──
 	it("sudo is narrow (apt-get/apt only)", () => {
-		const output = containerExec("sudo -l -U claude 2>&1 || true");
+		const output = containerExec("sudo -l -U claude");
 		expect(output).toContain("/usr/bin/apt-get");
 		expect(output).toContain("/usr/bin/apt");
 		expect(output).not.toContain("NOPASSWD");
 	});
 
 	it("SUDO_PASSWORD env var is unset after entrypoint drops privileges", () => {
-		const output = containerExec("bash -c 'echo -n \"${SUDO_PASSWORD:-UNSET}\"'");
-		expect(output).toBe("UNSET");
-	});
-});
-
-describe.skipIf(SKIP_NO_IMAGE)("Docker resource naming (oas-test prefix in tests)", () => {
-	beforeAll(async () => {
-		containerUp();
-		await waitForHealth(`http://127.0.0.1:${TTYD_PORT}`, 60000);
-	}, 120000);
-
-	afterAll(() => {
-		try {
-			containerDown();
-		} catch {
-			// best effort
-		}
+		expect(containerExec("bash -c 'echo -n ${SUDO_PASSWORD:-UNSET}'")).toBe("UNSET");
 	});
 
+	// ── Docker resource naming ──
 	it("container uses the expected test name", () => {
 		const name = execSyncTrim("docker inspect --format '{{.Name}}' oas-test-sandbox");
 		expect(name.replace("/", "")).toBe("oas-test-sandbox");
