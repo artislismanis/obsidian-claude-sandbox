@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { execSync } from "child_process";
 import {
 	isDockerAvailable,
 	isImageBuilt,
@@ -9,6 +10,10 @@ import {
 	waitForHealth,
 	TTYD_PORT,
 } from "./helpers";
+
+function execSyncTrim(cmd: string): string {
+	return execSync(cmd, { stdio: "pipe" }).toString().trim();
+}
 
 const SKIP = !isDockerAvailable();
 const SKIP_NO_IMAGE = SKIP || !isImageBuilt();
@@ -85,5 +90,60 @@ describe.skipIf(SKIP_NO_IMAGE)("Container lifecycle", () => {
 		const logs = containerLogs();
 		expect(logs).not.toContain("FATAL");
 		expect(logs).not.toContain("panic");
+	});
+
+	it("workspace tier files are visible", () => {
+		expect(containerExec("test -f /workspace/CLAUDE.md && echo ok")).toBe("ok");
+		expect(containerExec("test -f /workspace/.mcp.json && echo ok")).toBe("ok");
+		expect(containerExec("test -f /workspace/.claude/settings.json && echo ok")).toBe("ok");
+	});
+
+	it("container/ infra is NOT visible (mount isolation)", () => {
+		expect(() => containerExec("ls /workspace/container 2>&1")).toThrow();
+	});
+
+	it("sudo is narrow (apt-get/apt only)", () => {
+		const output = containerExec("sudo -l -U claude 2>&1 || true");
+		expect(output).toContain("/usr/bin/apt-get");
+		expect(output).toContain("/usr/bin/apt");
+		expect(output).not.toContain("NOPASSWD");
+	});
+
+	it("SUDO_PASSWORD env var is unset after entrypoint drops privileges", () => {
+		const output = containerExec("bash -c 'echo -n \"${SUDO_PASSWORD:-UNSET}\"'");
+		expect(output).toBe("UNSET");
+	});
+});
+
+describe.skipIf(SKIP_NO_IMAGE)("Docker resource naming (oas-test prefix in tests)", () => {
+	beforeAll(async () => {
+		containerUp();
+		await waitForHealth(`http://127.0.0.1:${TTYD_PORT}`, 60000);
+	});
+
+	afterAll(() => {
+		try {
+			containerDown();
+		} catch {
+			// best effort
+		}
+	});
+
+	it("container uses the expected test name", () => {
+		const name = execSyncTrim("docker inspect --format '{{.Name}}' oas-test-sandbox");
+		expect(name.replace("/", "")).toBe("oas-test-sandbox");
+	});
+
+	it("image is oas-sandbox:latest", () => {
+		const image = execSyncTrim("docker inspect --format '{{.Config.Image}}' oas-test-sandbox");
+		expect(image).toBe("oas-sandbox:latest");
+	});
+
+	it("named volumes use test prefix", () => {
+		const mounts = execSyncTrim(
+			"docker inspect --format '{{range .Mounts}}{{.Name}} {{end}}' oas-test-sandbox",
+		);
+		expect(mounts).toContain("oas-test_oas-test-claude-config");
+		expect(mounts).toContain("oas-test_oas-test-shell-history");
 	});
 });
