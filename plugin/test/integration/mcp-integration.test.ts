@@ -2,14 +2,10 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import {
 	isDockerAvailable,
 	isImageBuilt,
-	containerUp,
-	containerDown,
 	containerExec,
-	waitForHealth,
 	httpPost,
 	httpGet,
 	parseJsonOrSse,
-	TTYD_PORT,
 	MCP_PORT,
 	MCP_TOKEN,
 } from "./helpers";
@@ -20,20 +16,8 @@ vi.mock("obsidian", () => ({
 
 const SKIP = !isDockerAvailable() || !isImageBuilt();
 
+// Container lifecycle is managed by globalSetup.ts.
 describe.skipIf(SKIP)("MCP server integration with container", () => {
-	beforeAll(async () => {
-		containerUp();
-		await waitForHealth(`http://127.0.0.1:${TTYD_PORT}`, 60000);
-	}, 120000);
-
-	afterAll(() => {
-		try {
-			containerDown();
-		} catch {
-			// best effort
-		}
-	});
-
 	it("container can resolve host.docker.internal", () => {
 		const output = containerExec("getent hosts host.docker.internal");
 		expect(output).toMatch(/\d+\.\d+\.\d+\.\d+/);

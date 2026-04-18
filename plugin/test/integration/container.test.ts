@@ -1,13 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import { execSync } from "child_process";
 import {
 	isDockerAvailable,
 	isImageBuilt,
-	containerUp,
-	containerDown,
 	containerExec,
 	containerLogs,
-	waitForHealth,
 	TTYD_PORT,
 } from "./helpers";
 
@@ -28,16 +25,8 @@ describe.skipIf(SKIP)("Container prerequisites", () => {
 	});
 });
 
+// Container lifecycle is managed by globalSetup.ts — we just run tests against it.
 describe.skipIf(SKIP_NO_IMAGE)("Container", () => {
-	beforeAll(async () => {
-		containerUp();
-		await waitForHealth(`http://127.0.0.1:${TTYD_PORT}`, 60000);
-	}, 120000);
-
-	afterAll(() => {
-		containerDown();
-	});
-
 	// ── lifecycle / health ──
 	it("is running and healthy", () => {
 		expect(containerExec("echo ok")).toBe("ok");

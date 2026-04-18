@@ -1,26 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import {
-	isDockerAvailable,
-	isImageBuilt,
-	containerUp,
-	containerDown,
-	containerExec,
-	waitForHealth,
-	TTYD_PORT,
-} from "./helpers";
+import { describe, it, expect } from "vitest";
+import { isDockerAvailable, isImageBuilt, containerExec, TTYD_PORT } from "./helpers";
 
 const SKIP = !isDockerAvailable() || !isImageBuilt();
 
+// Container lifecycle is managed by globalSetup.ts.
 describe.skipIf(SKIP)("Container — advanced (firewall, tmux, port remap)", () => {
-	beforeAll(async () => {
-		containerUp();
-		await waitForHealth(`http://127.0.0.1:${TTYD_PORT}`, 60000);
-	}, 120000);
-
-	afterAll(() => {
-		containerDown();
-	});
-
 	// ── tmux / persistent sessions ──
 	it("tmux is installed", () => {
 		expect(containerExec("tmux -V")).toMatch(/tmux/);

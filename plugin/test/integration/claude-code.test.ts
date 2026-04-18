@@ -1,46 +1,13 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import {
-	isDockerAvailable,
-	isImageBuilt,
-	hasLiveClaudeAuth,
-	seedClaudeAuth,
-	containerUp,
-	containerDown,
-	containerExec,
-	waitForHealth,
-	TTYD_PORT,
-} from "./helpers";
+import { describe, it, expect } from "vitest";
+import { isDockerAvailable, isImageBuilt, hasLiveClaudeAuth, containerExec } from "./helpers";
 
 const SKIP_DOCKER = !isDockerAvailable() || !isImageBuilt();
 
-// We need a running claude subscription to exercise `claude -p`.
-// If the user's live oas-claude-config volume is missing, there's no
-// auth to borrow and we skip these tests rather than fail.
+// Claude auth is seeded once in globalSetup. If the live oas-claude-config
+// volume didn't exist at setup time, auth wasn't seeded and these tests skip.
 const SKIP = SKIP_DOCKER || !hasLiveClaudeAuth();
 
 describe.skipIf(SKIP)("Claude Code — programmatic (authenticated from live volume)", () => {
-	beforeAll(async () => {
-		// Bring the test container up so the test volume is created
-		containerUp();
-		// Seed auth from the live volume into the test volume.
-		// Container sees new files immediately via the mount.
-		const seeded = seedClaudeAuth();
-		if (!seeded) {
-			throw new Error("Failed to seed Claude auth from live volume");
-		}
-		await waitForHealth(`http://127.0.0.1:${TTYD_PORT}`, 60000);
-	}, 120000);
-
-	afterAll(() => {
-		// docker compose down -v removes the test volume, so the
-		// copied auth is destroyed. Live volume is untouched.
-		try {
-			containerDown();
-		} catch {
-			// best effort
-		}
-	});
-
 	it("claude --version prints a version", () => {
 		const output = containerExec("claude --version");
 		expect(output).toMatch(/\d+\.\d+/);
