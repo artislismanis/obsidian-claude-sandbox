@@ -19,6 +19,10 @@ container/.env
 # Coverage
 coverage/
 
+# wdio-obsidian-service downloaded Obsidian binaries and test run logs
+plugin/.obsidian-cache/
+plugin/wdio-logs/
+
 # Docker auto-creates workspace/vault/ as a root-owned empty mount
 # point when `container/docker-compose.yml` bind-mounts the real vault
 # on top of /workspace/vault. It's shadowed by the mount while the
