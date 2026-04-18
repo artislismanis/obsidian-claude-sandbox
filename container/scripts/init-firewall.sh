@@ -130,9 +130,18 @@ iptables -A OUTPUT -m set --match-set allowed_ips dst -p tcp --dport 80 -j ACCEP
 # Block cloud metadata endpoint
 iptables -A OUTPUT -d 169.254.169.254 -j DROP
 
-# Docker gateway — always allowed (for host.docker.internal)
+# Docker gateway — always allowed (for container networking)
 GATEWAY=$(ip route | awk '/default/ {print $3}')
 [ -n "$GATEWAY" ] && iptables -A OUTPUT -d "$GATEWAY" -j ACCEPT
+
+# Obsidian MCP host — resolve host.docker.internal and allow the MCP port.
+# When OAS_HOST_IP is set, entrypoint.sh rewrites /etc/hosts so
+# host.docker.internal points to the Windows host rather than the Docker
+# bridge gateway. That IP is not covered by the gateway rule above.
+OAS_HOST=$(getent hosts host.docker.internal 2>/dev/null | awk '{print $1; exit}')
+if [ -n "$OAS_HOST" ] && [ "$OAS_HOST" != "$GATEWAY" ]; then
+    iptables -A OUTPUT -d "$OAS_HOST" -p tcp --dport "${OAS_MCP_PORT:-28080}" -j ACCEPT
+fi
 
 # Configurable private hosts (NAS, local services, etc.)
 if [ -n "${ALLOWED_PRIVATE_HOSTS:-}" ]; then
