@@ -62,6 +62,12 @@ Each terminal tab in Obsidian gets its own independent bash session — run mult
   networkingMode=mirrored
   ```
   Then restart WSL: `wsl --shutdown`
+- On Windows with **Rancher Desktop or Docker Desktop (WSL2 backend)**: the plugin's Obsidian MCP server (port 28080 by default) must be reachable from inside the container. The plugin automatically detects and injects the correct Windows host IP so the container can route to it. If MCP tools don't appear in Claude after starting the container, add a Windows Firewall inbound rule:
+  ```powershell
+  New-NetFirewallRule -DisplayName "Obsidian MCP Server (Docker)" `
+    -Direction Inbound -Protocol TCP -LocalPort 28080 -Action Allow
+  ```
+  To verify whether the rule is actually needed on your setup, disable it temporarily (`Disable-NetFirewallRule -DisplayName "Obsidian MCP Server (Docker)"`) and test MCP connectivity. Remove it permanently with `Remove-NetFirewallRule` if it makes no difference — Rancher Desktop and some Docker Desktop configurations already allow this traffic.
 - **Claude Code subscription** authenticated
 
 ## Quick start
