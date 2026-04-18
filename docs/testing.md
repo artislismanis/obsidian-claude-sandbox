@@ -33,9 +33,9 @@ After that, `npm run test:integration` will run the Claude -p tests.
 
 | Suite | Covers |
 |-------|--------|
-| **Unit** (`src/__tests__/`) | Validation, shell escaping, tool handlers, auth, path traversal, status bar, polling |
-| **Integration** (`test/integration/`) | Container health, verify.sh, vault mounts (ro/rw), mount isolation, sudo model, MCP env vars, MCP HTTP auth/routing, naming consistency, firewall, tmux sessions, port remapping |
-| **E2E** (`test/e2e/specs/`) | Plugin loads, ribbon icon, commands registered, settings tabs render, MCP tier toggles, token generation/regeneration, validation fields (font size, scrollback, port), bind address warning, restart labels, settings persistence across reload, disable/enable cycle |
+| **Unit** (`src/__tests__/`) | Validation, shell escaping, tool handlers (22 MCP tools), MCP auth, path traversal, status bar, polling |
+| **Integration** (`test/integration/`) | Container health, verify.sh, vault mounts (ro/rw), mount isolation, sudo narrow scope + password unset, MCP env vars, MCP HTTP auth/routing/CORS, naming consistency (oas-test prefix), firewall enable/allowlist/disable, tmux session create/list/persist, port remapping, Claude Code auth + prompt execution + MCP memory tool use + filesystem Read tool |
+| **E2E** (`test/e2e/specs/`) | Plugin loads + enabled, ribbon icon, status bar renders, 9 commands registered, 4 settings tabs render, 5 MCP permission tiers visible, token auto-generation/regeneration, font size/scrollback/MCP port validation with error styling, bind address 0.0.0.0 security warning toggle, per-setting restart labels, settings persistence across Obsidian reload, plugin survives disable/enable cycle |
 
 ---
 
@@ -47,8 +47,9 @@ These require human judgment, interactive LLM use, cross-process workflows, or e
 
 - [ ] WSL2 with Docker Engine and mirrored networking
 - [ ] OR Rancher Desktop / Docker Desktop with dockerd engine
-- [ ] Claude Code subscription authenticated inside container
 - [ ] `http://localhost:7681` reachable from both Obsidian and a host browser
+
+> Claude Code authentication inside the container is now **automatically verified** by the integration test suite whenever the live `oas-claude-config` volume exists. See "Claude Code authentication" above for the one-time setup.
 
 ### Visual rendering
 
@@ -58,11 +59,12 @@ These require human judgment, interactive LLM use, cross-process workflows, or e
 - [ ] Terminal resize: drag pane edge, content reflows cleanly
 - [ ] No unexpected errors in Obsidian DevTools (Ctrl+Shift+I) during a full session
 
-### Interactive Claude Code
+### Interactive Claude Code with the live Obsidian MCP server
 
-- [ ] `claude` authenticates via subscription
-- [ ] "What MCP tools do you have?" → lists `mcp__obsidian__vault_*` tools
-- [ ] "Search my vault for [term]" → calls `vault_search`, returns results
+The integration suite covers basic `claude -p` behavior (auth, prompt response, memory tool, filesystem Read). The manual tests below cover end-to-end interaction with the **Obsidian MCP server running in your real Obsidian** — that requires the plugin's MCP server to be listening, which integration tests don't set up.
+
+- [ ] "What MCP tools do you have?" → response includes `mcp__obsidian__vault_*` tools
+- [ ] "Search my vault for [term]" → Claude calls `vault_search`, returns results
 - [ ] "Create agent-workspace/test.md" → file appears in Obsidian
 - [ ] "Open Welcome.md" (Navigate tier) → file opens in editor
 - [ ] "Rename X to Y" (Manage tier) → file renamed, wikilinks updated
