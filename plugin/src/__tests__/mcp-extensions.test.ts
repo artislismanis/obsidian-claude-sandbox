@@ -135,3 +135,68 @@ describe("Canvas tools", () => {
 		expect(getTool(tools, "vault_canvas_modify").tier).toBe("extensions");
 	});
 });
+
+describe("Dataview integration", () => {
+	const initial = JSON.stringify({ nodes: [], edges: [] });
+
+	function appWithDataview(query: (s: string) => unknown) {
+		const { app } = mockApp(initial);
+		(app as unknown as { plugins: unknown }).plugins = {
+			getPlugin: (id: string) => (id === "dataview" ? { api: { query } } : null),
+			enabledPlugins: new Set(["dataview"]),
+		};
+		return app;
+	}
+
+	it("is absent when Dataview is not installed", () => {
+		const { app } = mockApp(initial);
+		const tools = buildTools(app as never, () => "agent-workspace");
+		expect(tools.find((t) => t.name === "vault_dataview_query")).toBeUndefined();
+	});
+
+	it("is absent when Dataview is installed but disabled", () => {
+		const { app } = mockApp(initial);
+		(app as unknown as { plugins: unknown }).plugins = {
+			getPlugin: (id: string) => (id === "dataview" ? { api: { query: () => null } } : null),
+			enabledPlugins: new Set(), // not enabled
+		};
+		const tools = buildTools(app as never, () => "agent-workspace");
+		expect(tools.find((t) => t.name === "vault_dataview_query")).toBeUndefined();
+	});
+
+	it("registers + returns serialized query value on success", async () => {
+		const app = appWithDataview(() => ({
+			successful: true,
+			value: { headers: ["file"], values: [["a.md"]] },
+		}));
+		const tools = buildTools(app as never, () => "agent-workspace");
+		const tool = getTool(tools, "vault_dataview_query");
+		expect(tool.tier).toBe("extensions");
+		const result = await tool.handler({ query: "TABLE FROM #x" });
+		expect(result.isError ?? false).toBe(false);
+		const body = JSON.parse((result.content[0] as { text: string }).text);
+		expect(body).toEqual({ headers: ["file"], values: [["a.md"]] });
+	});
+
+	it("surfaces Dataview failure as error result", async () => {
+		const app = appWithDataview(() => ({ successful: false, error: "parse error" }));
+		const tools = buildTools(app as never, () => "agent-workspace");
+		const result = await getTool(tools, "vault_dataview_query").handler({
+			query: "GARBAGE",
+		});
+		expect(result.isError).toBe(true);
+		expect((result.content[0] as { text: string }).text).toContain("parse error");
+	});
+
+	it("surfaces thrown exceptions as error result", async () => {
+		const app = appWithDataview(() => {
+			throw new Error("boom");
+		});
+		const tools = buildTools(app as never, () => "agent-workspace");
+		const result = await getTool(tools, "vault_dataview_query").handler({
+			query: "TABLE",
+		});
+		expect(result.isError).toBe(true);
+		expect((result.content[0] as { text: string }).text).toContain("boom");
+	});
+});

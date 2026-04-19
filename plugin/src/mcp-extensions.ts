@@ -141,7 +141,75 @@ export function registerCanvasTools(app: App, push: ToolPusher): void {
 	});
 }
 
+// ── Dataview ────────────────────────────────────────
+
+interface DataviewQueryResult {
+	successful: boolean;
+	value?: unknown;
+	error?: string;
+}
+
+interface DataviewPlugin {
+	api?: {
+		query?: (source: string) => Promise<DataviewQueryResult> | DataviewQueryResult;
+	};
+}
+
+/** Recognise an installed+enabled Dataview. Narrow runtime shape check. */
+function getDataview(app: App): DataviewPlugin | null {
+	type PluginsHost = {
+		plugins: {
+			getPlugin?: (id: string) => unknown;
+			plugins?: Record<string, unknown>;
+			enabledPlugins?: Set<string>;
+		};
+	};
+	const host = (app as unknown as PluginsHost).plugins;
+	if (!host) return null;
+	if (host.enabledPlugins && !host.enabledPlugins.has("dataview")) return null;
+	const plugin =
+		host.getPlugin?.("dataview") ?? (host.plugins && host.plugins["dataview"]) ?? null;
+	if (!plugin) return null;
+	const api = (plugin as DataviewPlugin).api;
+	if (!api || typeof api.query !== "function") return null;
+	return plugin as DataviewPlugin;
+}
+
+export function registerDataviewTools(app: App, push: ToolPusher): void {
+	if (!getDataview(app)) return;
+	push({
+		name: "vault_dataview_query",
+		tier: "extensions",
+		config: {
+			title: "Dataview query",
+			description:
+				"Run a Dataview Query Language (DQL) query against the vault. Requires the Dataview plugin to be installed and enabled. Returns the serialized result.",
+			inputSchema: {
+				query: z
+					.string()
+					.describe("Full DQL source (e.g. 'TABLE rating FROM #book SORT rating DESC')"),
+			},
+		},
+		handler: async (args) => {
+			const query = args.query as string;
+			const dv = getDataview(app);
+			if (!dv?.api?.query) return error("Dataview is not available.");
+			try {
+				const result = await dv.api.query(query);
+				if (!result.successful) {
+					return error(`Dataview query error: ${result.error ?? "(no message)"}`);
+				}
+				return text(JSON.stringify(result.value ?? null, null, 2));
+			} catch (e: unknown) {
+				const msg = e instanceof Error ? e.message : String(e);
+				return error(`Dataview threw: ${msg}`);
+			}
+		},
+	});
+}
+
 /** Register every plugin-integration tool whose target plugin is loaded. */
 export function registerExtensionTools(app: App, push: ToolPusher): void {
 	registerCanvasTools(app, push);
+	registerDataviewTools(app, push);
 }
