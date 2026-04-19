@@ -128,7 +128,15 @@ describe("MCP tool handlers", () => {
 			expect(names).toContain("vault_modify");
 			expect(names).toContain("vault_append");
 			expect(names).toContain("vault_frontmatter_set");
+			expect(names).toContain("vault_frontmatter_delete");
+			expect(names).toContain("vault_search_replace");
+			expect(names).toContain("vault_prepend");
+			expect(names).toContain("vault_patch");
 			expect(names).toContain("vault_create_anywhere");
+			expect(names).toContain("vault_frontmatter_delete_anywhere");
+			expect(names).toContain("vault_search_replace_anywhere");
+			expect(names).toContain("vault_prepend_anywhere");
+			expect(names).toContain("vault_patch_anywhere");
 			expect(names).toContain("vault_open");
 			expect(names).toContain("vault_rename");
 			expect(names).toContain("vault_move");
@@ -472,6 +480,254 @@ describe("MCP tool handlers", () => {
 			);
 			expect(r.isError).toBe(false);
 			expect(app.vault.createFolder).toHaveBeenCalledWith("new-folder");
+		});
+	});
+
+	describe("vault_frontmatter_delete", () => {
+		it("deletes existing property", async () => {
+			app.metadataCache.getFileCache.mockReturnValueOnce({
+				frontmatter: { title: "Hello", status: "active", position: {} },
+			});
+			const r = getResult(
+				await getTool(tools, "vault_frontmatter_delete").handler({
+					path: "agent-workspace/draft.md",
+					property: "status",
+				}),
+			);
+			expect(r.isError).toBe(false);
+			expect(r.text).toContain("Deleted status");
+		});
+
+		it("errors on missing property", async () => {
+			app.metadataCache.getFileCache.mockReturnValueOnce({
+				frontmatter: { title: "Hello" },
+			});
+			const r = getResult(
+				await getTool(tools, "vault_frontmatter_delete").handler({
+					path: "agent-workspace/draft.md",
+					property: "nonexistent",
+				}),
+			);
+			expect(r.isError).toBe(true);
+		});
+	});
+
+	describe("vault_search_replace", () => {
+		it("replaces literal text", async () => {
+			app.vault.read.mockResolvedValueOnce("hello world hello");
+			const r = getResult(
+				await getTool(tools, "vault_search_replace").handler({
+					path: "agent-workspace/draft.md",
+					search: "hello",
+					replace: "hi",
+				}),
+			);
+			expect(r.isError).toBe(false);
+			expect(r.text).toContain("2 occurrence(s)");
+			expect(app.vault.modify).toHaveBeenCalledWith(expect.anything(), "hi world hi");
+		});
+
+		it("replaces with regex", async () => {
+			app.vault.read.mockResolvedValueOnce("foo123 bar456");
+			const r = getResult(
+				await getTool(tools, "vault_search_replace").handler({
+					path: "agent-workspace/draft.md",
+					search: "([a-z]+)(\\d+)",
+					replace: "$2-$1",
+					regex: true,
+				}),
+			);
+			expect(r.isError).toBe(false);
+			expect(app.vault.modify).toHaveBeenCalledWith(expect.anything(), "123-foo 456-bar");
+		});
+
+		it("case-insensitive match", async () => {
+			app.vault.read.mockResolvedValueOnce("Hello HELLO hello");
+			const r = getResult(
+				await getTool(tools, "vault_search_replace").handler({
+					path: "agent-workspace/draft.md",
+					search: "hello",
+					replace: "hi",
+					caseSensitive: false,
+				}),
+			);
+			expect(r.isError).toBe(false);
+			expect(r.text).toContain("3 occurrence(s)");
+		});
+
+		it("errors on invalid regex", async () => {
+			app.vault.read.mockResolvedValueOnce("test");
+			const r = getResult(
+				await getTool(tools, "vault_search_replace").handler({
+					path: "agent-workspace/draft.md",
+					search: "[invalid",
+					replace: "x",
+					regex: true,
+				}),
+			);
+			expect(r.isError).toBe(true);
+			expect(r.text).toContain("Invalid regex");
+		});
+
+		it("errors when no matches found", async () => {
+			app.vault.read.mockResolvedValueOnce("nothing here");
+			const r = getResult(
+				await getTool(tools, "vault_search_replace").handler({
+					path: "agent-workspace/draft.md",
+					search: "missing",
+					replace: "x",
+				}),
+			);
+			expect(r.isError).toBe(true);
+			expect(r.text).toContain("No matches");
+		});
+	});
+
+	describe("vault_prepend", () => {
+		it("prepends to file without frontmatter", async () => {
+			app.vault.read.mockResolvedValueOnce("existing content");
+			app.metadataCache.getFileCache.mockReturnValueOnce(null);
+			const r = getResult(
+				await getTool(tools, "vault_prepend").handler({
+					path: "agent-workspace/draft.md",
+					content: "NEW LINE",
+				}),
+			);
+			expect(r.isError).toBe(false);
+			expect(app.vault.modify).toHaveBeenCalledWith(
+				expect.anything(),
+				"NEW LINE\nexisting content",
+			);
+		});
+
+		it("prepends after frontmatter", async () => {
+			app.vault.read.mockResolvedValueOnce("---\ntitle: Test\n---\nbody");
+			app.metadataCache.getFileCache.mockReturnValueOnce({
+				frontmatterPosition: { start: { line: 0 }, end: { line: 2 } },
+			});
+			const r = getResult(
+				await getTool(tools, "vault_prepend").handler({
+					path: "agent-workspace/draft.md",
+					content: "INSERTED",
+				}),
+			);
+			expect(r.isError).toBe(false);
+			const modified = (app.vault.modify.mock.calls[0] as unknown[])[1] as string;
+			expect(modified).toContain("---\ntitle: Test\n---\nINSERTED\nbody");
+		});
+	});
+
+	describe("vault_patch", () => {
+		it("inserts after a specific line", async () => {
+			app.vault.read.mockResolvedValueOnce("line1\nline2\nline3");
+			const r = getResult(
+				await getTool(tools, "vault_patch").handler({
+					path: "agent-workspace/draft.md",
+					content: "INSERTED",
+					line: 2,
+					position: "after",
+				}),
+			);
+			expect(r.isError).toBe(false);
+			expect(app.vault.modify).toHaveBeenCalledWith(
+				expect.anything(),
+				"line1\nline2\nINSERTED\nline3",
+			);
+		});
+
+		it("inserts before a specific line", async () => {
+			app.vault.read.mockResolvedValueOnce("line1\nline2\nline3");
+			const r = getResult(
+				await getTool(tools, "vault_patch").handler({
+					path: "agent-workspace/draft.md",
+					content: "INSERTED",
+					line: 2,
+					position: "before",
+				}),
+			);
+			expect(r.isError).toBe(false);
+			expect(app.vault.modify).toHaveBeenCalledWith(
+				expect.anything(),
+				"line1\nINSERTED\nline2\nline3",
+			);
+		});
+
+		it("replaces a specific line", async () => {
+			app.vault.read.mockResolvedValueOnce("line1\nline2\nline3");
+			const r = getResult(
+				await getTool(tools, "vault_patch").handler({
+					path: "agent-workspace/draft.md",
+					content: "REPLACED",
+					line: 2,
+					position: "replace",
+				}),
+			);
+			expect(r.isError).toBe(false);
+			expect(app.vault.modify).toHaveBeenCalledWith(
+				expect.anything(),
+				"line1\nREPLACED\nline3",
+			);
+		});
+
+		it("errors when no target specified", async () => {
+			app.vault.read.mockResolvedValueOnce("test");
+			const r = getResult(
+				await getTool(tools, "vault_patch").handler({
+					path: "agent-workspace/draft.md",
+					content: "x",
+				}),
+			);
+			expect(r.isError).toBe(true);
+			expect(r.text).toContain("heading");
+		});
+
+		it("errors on out-of-range line", async () => {
+			app.vault.read.mockResolvedValueOnce("line1\nline2");
+			const r = getResult(
+				await getTool(tools, "vault_patch").handler({
+					path: "agent-workspace/draft.md",
+					content: "x",
+					line: 99,
+				}),
+			);
+			expect(r.isError).toBe(true);
+			expect(r.text).toContain("out of range");
+		});
+
+		it("inserts after heading", async () => {
+			app.vault.read.mockResolvedValueOnce("# Title\nIntro\n## Details\nBody\n## Next");
+			app.metadataCache.getFileCache.mockReturnValueOnce({
+				headings: [
+					{ heading: "Title", level: 1, position: { start: { line: 0 } } },
+					{ heading: "Details", level: 2, position: { start: { line: 2 } } },
+					{ heading: "Next", level: 2, position: { start: { line: 4 } } },
+				],
+			});
+			const r = getResult(
+				await getTool(tools, "vault_patch").handler({
+					path: "agent-workspace/draft.md",
+					content: "ADDED",
+					heading: "## Details",
+					position: "after",
+				}),
+			);
+			expect(r.isError).toBe(false);
+			const modified = (app.vault.modify.mock.calls[0] as unknown[])[1] as string;
+			expect(modified).toContain("Body\nADDED\n## Next");
+		});
+
+		it("errors on nonexistent heading", async () => {
+			app.vault.read.mockResolvedValueOnce("no headings");
+			app.metadataCache.getFileCache.mockReturnValueOnce({ headings: [] });
+			const r = getResult(
+				await getTool(tools, "vault_patch").handler({
+					path: "agent-workspace/draft.md",
+					content: "x",
+					heading: "Missing",
+				}),
+			);
+			expect(r.isError).toBe(true);
+			expect(r.text).toContain("not found");
 		});
 	});
 });

@@ -440,6 +440,205 @@ export function buildTools(app: App, getWriteDir: () => string): McpToolDef[] {
 				return text(`Set ${prop} on ${f.path}`);
 			},
 		});
+
+		tools.push({
+			name: `vault_frontmatter_delete${suffix}`,
+			tier,
+			config: {
+				title: `Delete frontmatter property${scopeLabel}`,
+				description: `Remove a YAML frontmatter property from a file${scopeLabel}.`,
+				inputSchema: {
+					file: z.string().optional().describe("File name"),
+					path: z.string().optional().describe("Exact path from vault root"),
+					property: z.string().describe("Property name to delete"),
+				},
+			},
+			handler: async (args) => {
+				const result = resolveForWrite(args);
+				if ("isError" in result) return result as McpToolResult;
+				const f = result as TFile;
+				const prop = args.property as string;
+				const cache = app.metadataCache.getFileCache(f);
+				if (!cache?.frontmatter || !(prop in cache.frontmatter))
+					return error(`Property '${prop}' not found in frontmatter.`);
+				await app.fileManager.processFrontMatter(f, (fm) => {
+					delete fm[prop];
+				});
+				return text(`Deleted ${prop} from ${f.path}`);
+			},
+		});
+
+		tools.push({
+			name: `vault_search_replace${suffix}`,
+			tier,
+			config: {
+				title: `Search and replace${scopeLabel}`,
+				description: `Find and replace text within a file${scopeLabel}.`,
+				inputSchema: {
+					file: z.string().optional().describe("File name"),
+					path: z.string().optional().describe("Exact path from vault root"),
+					search: z.string().describe("Text or regex pattern to find"),
+					replace: z.string().describe("Replacement text"),
+					regex: z.boolean().optional().describe("Treat search as regex (default false)"),
+					caseSensitive: z
+						.boolean()
+						.optional()
+						.describe("Case-sensitive match (default true)"),
+				},
+			},
+			handler: async (args) => {
+				const result = resolveForWrite(args);
+				if ("isError" in result) return result as McpToolResult;
+				const f = result as TFile;
+				const content = await app.vault.read(f);
+				const search = args.search as string;
+				const replacement = args.replace as string;
+				const useRegex = (args.regex as boolean | undefined) ?? false;
+				const caseSensitive = (args.caseSensitive as boolean | undefined) ?? true;
+
+				let pattern: RegExp;
+				if (useRegex) {
+					try {
+						pattern = new RegExp(search, caseSensitive ? "g" : "gi");
+					} catch (e) {
+						return error(`Invalid regex: ${(e as Error).message}`);
+					}
+				} else {
+					const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+					pattern = new RegExp(escaped, caseSensitive ? "g" : "gi");
+				}
+
+				let count = 0;
+				const updated = content.replace(pattern, (...matchArgs) => {
+					count++;
+					return replacement.replace(/\$(\d+)/g, (_, n) => {
+						const idx = parseInt(n, 10);
+						return (matchArgs[idx] as string | undefined) ?? "";
+					});
+				});
+				if (count === 0) return error("No matches found.");
+				await app.vault.modify(f, updated);
+				return text(`Replaced ${count} occurrence(s) in ${f.path}`);
+			},
+		});
+
+		tools.push({
+			name: `vault_prepend${suffix}`,
+			tier,
+			config: {
+				title: `Prepend to file${scopeLabel}`,
+				description: `Insert content at the top of a file${scopeLabel}, after frontmatter if present.`,
+				inputSchema: {
+					file: z.string().optional().describe("File name"),
+					path: z.string().optional().describe("Exact path from vault root"),
+					content: z.string().describe("Content to prepend"),
+				},
+			},
+			handler: async (args) => {
+				const result = resolveForWrite(args);
+				if ("isError" in result) return result as McpToolResult;
+				const f = result as TFile;
+				const existing = await app.vault.read(f);
+				const cache = app.metadataCache.getFileCache(f);
+				const fmEnd = cache?.frontmatterPosition?.end;
+				let insertPos = 0;
+				if (fmEnd) {
+					const lines = existing.split("\n");
+					let charCount = 0;
+					for (let i = 0; i <= fmEnd.line && i < lines.length; i++) {
+						charCount += lines[i].length + 1;
+					}
+					insertPos = charCount;
+				}
+				const before = existing.slice(0, insertPos);
+				const after = existing.slice(insertPos);
+				const sep = insertPos > 0 && !before.endsWith("\n") ? "\n" : "";
+				const updated = before + sep + (args.content as string) + "\n" + after;
+				await app.vault.modify(f, updated);
+				return text(`Prepended to ${f.path}`);
+			},
+		});
+
+		tools.push({
+			name: `vault_patch${suffix}`,
+			tier,
+			config: {
+				title: `Patch file${scopeLabel}`,
+				description: `Insert or replace content at a specific location in a file${scopeLabel}.`,
+				inputSchema: {
+					file: z.string().optional().describe("File name"),
+					path: z.string().optional().describe("Exact path from vault root"),
+					content: z.string().describe("Content to insert"),
+					heading: z
+						.string()
+						.optional()
+						.describe("Target heading text (e.g. '## Details')"),
+					line: z.number().optional().describe("Target line number (1-based)"),
+					position: z
+						.enum(["before", "after", "replace"])
+						.optional()
+						.describe("Where to insert relative to target (default 'after')"),
+				},
+			},
+			handler: async (args) => {
+				const result = resolveForWrite(args);
+				if ("isError" in result) return result as McpToolResult;
+				const f = result as TFile;
+				const existing = await app.vault.read(f);
+				const lines = existing.split("\n");
+				const insertContent = args.content as string;
+				const position = (args.position as string | undefined) ?? "after";
+				const headingArg = args.heading as string | undefined;
+				const lineArg = args.line as number | undefined;
+
+				if (!headingArg && lineArg === undefined)
+					return error("Provide either 'heading' or 'line' target.");
+
+				let targetLine: number;
+
+				if (headingArg) {
+					const cache = app.metadataCache.getFileCache(f);
+					const headings = cache?.headings ?? [];
+					const match = headings.find(
+						(h) => h.heading === headingArg.replace(/^#+\s*/, ""),
+					);
+					if (!match) return error(`Heading '${headingArg}' not found.`);
+					targetLine = match.position.start.line;
+
+					if (position === "after") {
+						const matchLevel = match.level;
+						let endLine = lines.length;
+						const matchIdx = headings.indexOf(match);
+						const next = headings
+							.slice(matchIdx + 1)
+							.find((h) => h.level <= matchLevel);
+						if (next) endLine = next.position.start.line;
+						const updated = [
+							...lines.slice(0, endLine),
+							insertContent,
+							...lines.slice(endLine),
+						].join("\n");
+						await app.vault.modify(f, updated);
+						return text(`Patched ${f.path} after heading '${headingArg}'`);
+					}
+				} else {
+					targetLine = lineArg! - 1;
+					if (targetLine < 0 || targetLine > lines.length)
+						return error(`Line ${lineArg} is out of range (1-${lines.length}).`);
+				}
+
+				if (position === "before") {
+					lines.splice(targetLine, 0, insertContent);
+				} else if (position === "replace") {
+					lines.splice(targetLine, 1, insertContent);
+				} else {
+					lines.splice(targetLine + 1, 0, insertContent);
+				}
+
+				await app.vault.modify(f, lines.join("\n"));
+				return text(`Patched ${f.path} at line ${targetLine + 1}`);
+			},
+		});
 	}
 
 	addWriteTools(
