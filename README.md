@@ -53,6 +53,7 @@ Organized per [Diátaxis](https://diataxis.fr/): four quadrants by purpose.
 - [Add tools to the container](docs/how-to/add-tools-to-container.md)
 - [Customize the workspace](docs/how-to/customize-workspace.md)
 - [Update the plugin](docs/how-to/update-plugin.md)
+- [Release a new version](docs/how-to/release.md) — maintainers only
 
 ### Reference (working, theoretical)
 - [Commands](docs/reference/commands.md)
@@ -77,9 +78,21 @@ Organized per [Diátaxis](https://diataxis.fr/): four quadrants by purpose.
 - Docker (Docker Desktop / Rancher Desktop / native)
 - Windows: WSL2
 
+## Releases
+
+Tagged releases are automated via GitHub Actions. Full maintainer procedure in [`docs/how-to/release.md`](docs/how-to/release.md). Short version:
+
+```bash
+cd plugin
+npm version 0.2.0       # bumps package.json + manifest.json + versions.json, auto-tags 0.2.0
+git push && git push --tags
+```
+
+The `release.yml` workflow fires on the tag, builds, and uploads `main.js` / `manifest.json` / `styles.css` to a pre-release GitHub Release. BRAT users pick up updates on Obsidian start.
+
 ## Status
 
-Under active development, pre-1.0. Phase 4 (MCP server enhancements) and Phase 5 (UX depth) are complete. Phase 2 (BRAT release automation) and Phase 6 (community plugin submission) are next. See [roadmap](docs/roadmap.md).
+Under active development, pre-1.0. Phase 4 (MCP server enhancements) and Phase 5 (UX depth) are complete. Phase 2 release automation is scaffolded; the CI workflows need a maintainer push with `workflow` scope. Phase 6 (community plugin submission) follows beta stabilisation. See [roadmap](docs/roadmap.md).
 
 ## License
 

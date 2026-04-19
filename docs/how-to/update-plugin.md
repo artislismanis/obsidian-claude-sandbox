@@ -1,5 +1,7 @@
 # How to update the plugin
 
+*Maintainer cutting a new version? See [release.md](release.md) instead.*
+
 ## If you installed via BRAT
 
 BRAT auto-checks on Obsidian start. To force: command palette → **BRAT: Check for updates to beta plugins**.

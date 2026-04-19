@@ -343,6 +343,356 @@ These span process boundaries (full Obsidian close, not `browser.reloadObsidian`
 
 ---
 
+### Human-in-the-loop review modals
+
+Unit tests cover that every reviewed-tier write calls `reviewFn` and aborts on rejection, but the **modal's actual rendering** can only be judged by a human.
+
+#### Content diff preview renders correctly
+
+**Setup:** `writeReviewed` tier on. A file `notes/example.md` with at least 5 lines of content exists.
+
+**Actions:** Inside the container: `claude -p "Modify notes/example.md: change line 3 to 'EDITED'."`
+
+**Expected:** A modal appears with `Review: Modify file` as the title. The diff area shows:
+- Unchanged context lines prefixed `  ` (two spaces).
+- The old line prefixed `- ` in red.
+- The new line prefixed `+ ` in green.
+- Scroll works if the diff is taller than the panel.
+
+Approve → file is modified. Reject → file is untouched; Claude receives "Change rejected by user."
+
+#### Frontmatter review shows JSON diff
+
+**Setup:** `writeReviewed` on. File `notes/fm.md` with frontmatter `{ status: "draft" }`.
+
+**Actions:** `claude -p "Set frontmatter 'tags' to ['a', 'b'] on notes/fm.md"`
+
+**Expected:** Modal title is `Review: Set frontmatter`. Diff shows JSON-stringified old vs new FM (not the full file body). Approve → FM is set correctly, body untouched.
+
+#### Rename/move/delete shows affected-links list
+
+**Setup:** `writeReviewed` and `manage` tiers both on. `notes/old.md` has two other notes linking to it.
+
+**Actions:** `claude -p "Rename notes/old.md to notes/new.md"`
+
+**Expected:** Modal title is `Review: Rename file`. Description reads `Rename notes/old.md → notes/new.md`. Below the description, a list appears headed `2 note(s) link here:` listing both backlink paths. No content diff (rename doesn't change content).
+
+Approve → file renamed; backlinks automatically updated by `fileManager.renameFile`.
+
+#### Batch review checkboxes
+
+**Setup:** `writeReviewed` on. Three notes tagged `#test`.
+
+**Actions:** `claude -p "Use vault_batch_frontmatter to set property status=review on all files matching '#test' (dryRun false)."`
+
+**Expected:** `BatchReviewModal` appears listing all three paths with checkboxes (default on). Uncheck one. Click **Approve selected**. Only the two checked files get the frontmatter update; the unchecked one is untouched.
+
+---
+
+### Activity feedback
+
+#### Tab title + status bar update on Claude state
+
+**Setup:** Container running. Open a sandbox terminal, attach to a named session (e.g. `work`). Inside, start `claude`.
+
+**Actions:**
+1. Submit a long-running prompt in Claude.
+2. Wait for Claude to finish.
+
+**Expected:**
+- While Claude is working: tab title shows `⚙ Session: work`.
+- While Claude is idle (between prompts): tab title shows `Session: work`.
+- When Claude hits its "waiting for input" notification state: tab title shows `❓ Session: work` and the sandbox status-bar pill grows a `⚠` badge with tooltip "1 session awaiting input: work".
+
+Close and reopen Obsidian → badge clears (activity is ephemeral).
+
+#### Multiple sessions track independently
+
+**Setup:** Two named sessions open (`work` and `research`), both running `claude`.
+
+**Actions:** Submit a prompt in `work`, leave `research` idle.
+
+**Expected:** Only `work`'s tab title gets the `⚙` prefix. `research` stays plain. Badge count reflects only sessions awaiting input.
+
+#### Hook script fails silently when MCP is off
+
+**Setup:** Toggle MCP off in Settings. Attach to a session, open a terminal.
+
+**Actions:** `bash .claude/hooks/notify-status.sh awaiting_input`
+
+**Expected:** The script exits 0. No error messages. No plugin crash.
+
+---
+
+### Plugin API integrations (extensions tier)
+
+Unit tests stub each target plugin's API. **Real-plugin interaction** needs a vault with the target plugin installed.
+
+#### Dataview query returns real DQL results
+
+**Setup:** `extensions` tier on. Dataview plugin installed + enabled. A few notes with frontmatter `rating`.
+
+**Actions:** `claude -p "Run DQL: TABLE rating FROM \"\" SORT rating DESC LIMIT 5"`
+
+**Expected:** Claude calls `vault_dataview_query` and returns a JSON object with `headers` and `values` — the same data Dataview would render in a code block.
+
+With Dataview disabled, the tool should not appear in `tools/list`.
+
+#### Tasks toggle updates the file with recurring handling
+
+**Setup:** `extensions` on. Tasks plugin installed + enabled. A note containing a recurring task, e.g. `- [ ] weekly thing 🔁 every week 📅 2026-04-19`.
+
+**Actions:** `claude -p "Toggle the task at notes/recurring.md line 5"`
+
+**Expected:** `vault_tasks_toggle` delegates to `apiV1.executeToggleTaskDoneCommand`. The file now contains both the completed original and the next occurrence (per Tasks' recurring behaviour).
+
+#### Templater creates from a template
+
+**Setup:** `extensions` on. Templater installed + enabled. A template at `Templates/daily.md`.
+
+**Actions:** `claude -p "Create a note from Templater template Templates/daily.md named 2026-04-19 in folder Daily"`
+
+**Expected:** A new file `Daily/2026-04-19.md` exists with the template's content rendered (Templater's own tag expansion fires).
+
+#### Periodic Notes resolves + creates
+
+**Setup:** `extensions` on. Periodic Notes installed, daily notes configured with folder `Daily` and format `YYYY-MM-DD`.
+
+**Actions:**
+1. `claude -p "What's the path of today's daily note?"` — expect Claude to use `vault_periodic_note` with `periodicity=daily`. If today's note exists it says "Exists: ..."; otherwise error "Not found".
+2. `claude -p "Create today's daily note if missing"` — expect `vault_periodic_note` with `create=true` to succeed.
+
+**Expected:** Path matches the plugin's configured folder + date format. The template (if any) is seeded into the new file.
+
+#### Canvas read/modify round-trips
+
+**Setup:** `extensions` on. Create a canvas `board.canvas` in the vault via Obsidian UI with 2 nodes + 1 edge.
+
+**Actions:**
+1. `claude -p "Show me the JSON structure of board.canvas"` — `vault_canvas_read` returns the canvas document.
+2. `claude -p "Add a text node with id 'n3' to board.canvas"` — `vault_canvas_modify` writes the file.
+
+**Expected:** Opening `board.canvas` in Obsidian shows the new node. No target plugin required — this is Obsidian's native JSON format.
+
+#### Discovery tool reports available integrations
+
+**Actions:** `claude -p "List the plugin_extensions available"`
+
+**Expected:** `plugin_extensions_list` returns a line per integration with `enabled` / `not available` / `always (native format)`. Matches the actual plugin-enabled state.
+
+---
+
+### Symlink path resolution
+
+Unit tests cover `isRealPathWithinBase` with mocked realpath. **Real filesystem** verification requires creating an actual symlink.
+
+#### Read of escaping symlink is denied
+
+**Setup:** Container running, MCP on. Inside the vault (from a host shell):
+
+```bash
+cd <vault-root>
+ln -s /etc/hosts evil.md
+```
+
+**Actions:** `claude -p "Read the file evil.md"`
+
+**Expected:** `vault_read` returns "File not found." (symlink resolution detected the escape). The real `/etc/hosts` is never returned.
+
+Delete the symlink afterwards: `rm <vault-root>/evil.md`.
+
+#### Create into symlinked directory is denied
+
+**Setup:** Inside the vault, create a symlinked dir:
+
+```bash
+ln -s /tmp escape
+```
+
+**Actions:** `claude -p "Create a file escape/note.md with 'hi' content"`
+
+**Expected:** `vault_create` returns "Path resolves outside the vault (symlink)."
+
+Cleanup: `rm <vault-root>/escape`.
+
+---
+
+### Firewall allowlist extension
+
+Manual because it involves container network state.
+
+#### Plugin-setting domain reaches host
+
+**Setup:** `Additional firewall domains` = `example.com`. Restart container. Enable firewall.
+
+**Actions:** In a terminal: `curl -I https://example.com`
+
+**Expected:** Returns `HTTP/2 200`. A domain NOT in the allowlist (e.g. `curl -I https://example.org`) times out or is blocked by iptables.
+
+#### Host file entry works + isn't visible to Claude
+
+**Setup:** Edit `container/firewall-extras.txt` to add a line `internal.corp.example`. Restart container.
+
+**Actions:**
+1. In a terminal: `curl -I https://internal.corp.example` — reaches the host.
+2. `claude -p "Read the file /etc/oas/firewall-extras.txt"` — must fail (path outside `/workspace`).
+
+**Expected:** Route works; the source file is not reachable from Claude.
+
+#### --list-sources tags origins
+
+**Actions:** In a terminal: `sudo /usr/local/bin/init-firewall.sh --list-sources`
+
+**Expected:** Output lines prefixed with `[baseline]`, `[plugin]`, `[file]` matching the three configured sources. Settings tab's **Effective allowlist** (Refresh button) displays the same content.
+
+---
+
+### URI handlers + context menu
+
+#### obsidian:// open-terminal
+
+**Actions:** Paste `obsidian://agent-sandbox/open-terminal` into a browser URL bar (or trigger from an OS launcher).
+
+**Expected:** Obsidian focuses and opens a new terminal tab. Requires container running — otherwise a Notice explains it's not running.
+
+#### obsidian:// analyze
+
+**Actions:** `obsidian://agent-sandbox/analyze?path=notes/foo.md&template=summarize`
+
+**Expected:** Obsidian opens a new terminal. After Claude starts, the first line typed is the summarize template with `@notes/foo.md` substituted.
+
+#### Context menu: Analyze in Sandbox
+
+**Actions:** Right-click a vault note → **Analyze in Sandbox** → pick a template.
+
+**Expected:** New terminal opens; Claude starts with the templated prompt as its initial argument.
+
+With `workspace/.claude/prompts/` empty, the submenu collapses to a single **Custom prompt…** item that opens a modal — entering text and clicking Run injects a one-off prompt.
+
+---
+
+### Container improvements
+
+#### Out-of-band container recreation detected
+
+**Setup:** Container running.
+
+**Actions:** From a host shell: `cd container && docker compose down && docker compose up -d` (recreates the container out of the plugin's control).
+
+**Expected:** Within 30 s (next health poll), a Notice appears: "Sandbox container was recreated outside the plugin. Terminal sessions may be disconnected; reopen to reconnect." Open terminal tabs are detached.
+
+#### Port conflict pre-flight
+
+**Setup:** Occupy the MCP port before starting:
+
+```bash
+nc -l 28080 &
+```
+
+**Actions:** Click **Sandbox: Start Container**.
+
+**Expected:** A Notice "Port conflict: 28080 already in use on 127.0.0.1. Stop the other process or change the port in settings." The container does NOT start.
+
+Kill the `nc` process, retry — start succeeds.
+
+#### Clean up empty sessions
+
+**Setup:** Create two tmux sessions, attach to one in Obsidian, leave the other detached.
+
+**Actions:** Command palette → **Sandbox: Clean up empty sessions**.
+
+**Expected:** Modal lists only the detached session. Uncheck it to keep; check it to kill. Click **Kill selected**. Notice confirms `1/1 killed`.
+
+---
+
+### Agent output notices
+
+#### Debounced notice on burst creation
+
+**Setup:** `Notify on agent output` = `new`. Container running.
+
+**Actions:** `claude -p "Create three files under agent-workspace/: a.md b.md c.md each with just 'x'."`
+
+**Expected:** A single Notice appears ~2 s after the last create: "Agent output: 3 created" (not three separate notices). Further creates within 5 s are suppressed (rate limit).
+
+Toggle setting to `new_or_modified` → subsequent `vault_modify` calls also fire notices. Toggle to `off` → no notices.
+
+---
+
+### Session switcher
+
+**Setup:** Three terminal tabs open, two with session names, one without.
+
+**Actions:** Command palette → **Sandbox: Switch to Sandbox session…**.
+
+**Expected:** Modal lists all three (`Session: work`, `Session: research`, `Session: (unnamed)`). Typing filters the list. Enter or click activates the matching tab.
+
+---
+
+### Terminal polish
+
+#### Clipboard auto-copy opt-out
+
+**Setup:** Terminal open with some output.
+
+**Actions:**
+1. `Settings → Agent Sandbox → Terminal → Auto-copy on selection` = off.
+2. Select text in the terminal with mouse drag.
+
+**Expected:** Clipboard is NOT overwritten. `Ctrl+C` after selection still copies (that's xterm.js's explicit copy).
+
+#### Connection retry with exponential backoff
+
+**Setup:** Stop the container (`docker compose down`). Open a terminal tab in Obsidian (will fail to connect).
+
+**Actions:** Observe the loading status.
+
+**Expected:** Message updates like `Connecting to terminal… (attempt 2/15, retry in 0.8s)`. Intervals grow up to 5s. Starting the container mid-retry → connection establishes and the terminal renders.
+
+#### Startup progress indicator
+
+**Setup:** Obsidian closed, container stopped.
+
+**Actions:** Open Obsidian. Watch the status bar tooltip.
+
+**Expected:** Detail cycles through "Starting: checking Docker availability…" → "Starting: probing WSL (5s fast-fail)…" → "Starting: probing container status…" → (if auto-start) "Starting: docker compose up -d (auto-start)…".
+
+---
+
+### Release automation
+
+#### Check workflow runs on PRs
+
+**Setup:** CI workflows pushed to `main` (requires a PAT with `workflow` scope).
+
+**Actions:** Open a PR changing any file under `plugin/src/`.
+
+**Expected:** `plugin check` workflow runs, reports green. Modifications to other paths don't trigger it.
+
+#### Release workflow produces signed assets
+
+**Setup:** Maintainer ready to cut `0.2.0` per `docs/how-to/release.md`.
+
+**Actions:**
+
+```bash
+cd plugin
+npm version 0.2.0
+git push && git push --tags
+```
+
+**Expected:** `release` workflow runs; tag-vs-manifest check passes; build succeeds; a pre-release GitHub Release `0.2.0` appears with `main.js` + `manifest.json` + `styles.css` attached. `npm version` left the working tree clean (no stale uncommitted changes after `version-bump.mjs` ran).
+
+#### BRAT install from Release
+
+**Setup:** Clean Obsidian profile (no plugins). BRAT installed.
+
+**Actions:** **BRAT: Add a beta plugin for testing** → paste the repo URL.
+
+**Expected:** BRAT downloads the three assets from the latest Release. **Community plugins → enable Agent Sandbox**. Plugin loads; settings tab renders; ribbon icon appears.
+
+---
+
 ---
 
 ## Teardown
