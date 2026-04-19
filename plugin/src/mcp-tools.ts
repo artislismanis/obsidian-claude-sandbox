@@ -154,11 +154,66 @@ export type ReviewFn = (request: {
 	affectedLinks?: string[];
 }) => Promise<{ approved: boolean }>;
 
+/**
+ * Shared write boundary for tools that don't go through the writeScoped /
+ * writeReviewed / writeVault dispatch — specifically the `manage` and
+ * `extensions` tier tools that create or modify vault files. Honors the same
+ * VaultWriteMode semantics: writes inside the write directory always pass;
+ * writes outside require either `writeVault` (apply directly) or
+ * `writeReviewed` (prompt via review); otherwise reject.
+ */
+export async function gateVaultWrite(args: {
+	destPath: string;
+	operation: WriteOperation;
+	description: string;
+	writeDir: string;
+	enabledTiers: ReadonlySet<PermissionTier>;
+	review: ReviewFn | undefined;
+	apply: () => Promise<unknown>;
+	successMsg: string;
+	oldContent?: string;
+	newContent?: string;
+	affectedLinks?: string[];
+}): Promise<McpToolResult> {
+	const within = isPathWithinDir(args.destPath, args.writeDir);
+	if (within || args.enabledTiers.has("writeVault")) {
+		await args.apply();
+		return text(args.successMsg);
+	}
+	if (args.enabledTiers.has("writeReviewed") && args.review) {
+		const result = await args.review({
+			operation: args.operation,
+			filePath: args.destPath,
+			oldContent: args.oldContent,
+			newContent: args.newContent,
+			description: args.description,
+			affectedLinks: args.affectedLinks,
+		});
+		if (!result.approved) return error("Change rejected by user.");
+		await args.apply();
+		return text(args.successMsg);
+	}
+	return error(
+		`Path '${args.destPath}' is outside the write directory '${args.writeDir}'. Enable vault-wide or reviewed writes to operate here.`,
+	);
+}
+
 export type ReviewBatchFn = (request: {
 	operation: WriteOperation;
 	description: string;
 	items: Array<{ filePath: string; oldContent?: string; newContent?: string }>;
 }) => Promise<{ approved: boolean; approvedPaths: string[] }>;
+
+const ALL_TIERS: ReadonlySet<PermissionTier> = new Set<PermissionTier>([
+	"read",
+	"writeScoped",
+	"writeReviewed",
+	"writeVault",
+	"navigate",
+	"manage",
+	"extensions",
+	"agent",
+]);
 
 export function buildTools(
 	app: App,
@@ -168,6 +223,7 @@ export function buildTools(
 	cache?: { get<T>(key: string, compute: () => T): T },
 	reviewBatchFn?: ReviewBatchFn,
 	onActivity?: OnActivity,
+	enabledTiers: ReadonlySet<PermissionTier> = ALL_TIERS,
 ): McpToolDef[] {
 	const tools: McpToolDef[] = [];
 
@@ -1502,8 +1558,16 @@ export function buildTools(
 				const path = args.path as string;
 				if (!isVaultPathSafe(app, path))
 					return error("Path resolves outside the vault (symlink).");
-				await app.vault.createFolder(path);
-				return text(`Created folder ${path}`);
+				return gateVaultWrite({
+					destPath: path,
+					operation: "create",
+					description: `Create folder ${path}`,
+					writeDir: getWriteDir(),
+					enabledTiers,
+					review: reviewFn,
+					apply: () => app.vault.createFolder(path),
+					successMsg: `Created folder ${path}`,
+				});
 			},
 		}),
 	);
@@ -1608,7 +1672,7 @@ export function buildTools(
 
 	// ── Extensions tier (plugin integrations) ─────────
 
-	registerExtensionTools(app, (tool) => tools.push(tool));
+	registerExtensionTools(app, (tool) => tools.push(tool), getWriteDir, enabledTiers, reviewFn);
 
 	// ── Agent tier ────────────────────────────────────
 

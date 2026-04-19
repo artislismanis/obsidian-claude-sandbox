@@ -458,6 +458,208 @@ describe("Periodic Notes integration", () => {
 	});
 });
 
+describe("Write gate — extensions tier boundary enforcement", () => {
+	function appWithTemplater(createImpl: ReturnType<typeof vi.fn>) {
+		const { app } = mockApp("{}");
+		(app as unknown as { plugins: unknown }).plugins = {
+			getPlugin: (id: string) =>
+				id === "templater-obsidian"
+					? { templater: { create_new_note_from_template: createImpl } }
+					: null,
+			enabledPlugins: new Set(["templater-obsidian"]),
+		};
+		return app;
+	}
+
+	async function setupTemplaterApp() {
+		const { TFile: TFileClass } = await import("obsidian");
+		const templateFile = Object.assign(new (TFileClass as new () => object)(), {
+			path: "Templates/daily.md",
+			name: "daily.md",
+			basename: "daily",
+			extension: "md",
+		}) as unknown as TFile;
+		const create = vi.fn(async () => ({ path: "Out/note.md" }) as TFile);
+		const app = appWithTemplater(create);
+		(
+			app.vault as unknown as { getAbstractFileByPath: (p: string) => unknown }
+		).getAbstractFileByPath = vi.fn((p: string) =>
+			p === "Templates/daily.md" ? templateFile : null,
+		);
+		return { app, create };
+	}
+
+	it("scoped-only mode rejects templater writes outside the write directory", async () => {
+		const { app, create } = await setupTemplaterApp();
+		const tools = buildTools(
+			app as never,
+			() => "agent-workspace",
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			new Set(["read", "writeScoped", "extensions"]),
+		);
+		const r = await getTool(tools, "vault_templater_create").handler({
+			template: "Templates/daily.md",
+			folder: "OtherFolder",
+			filename: "x",
+		});
+		expect(r.isError).toBe(true);
+		expect((r.content[0] as { text: string }).text).toContain("outside the write directory");
+		expect(create).not.toHaveBeenCalled();
+	});
+
+	it("scoped-only mode allows templater writes inside the write directory", async () => {
+		const { app, create } = await setupTemplaterApp();
+		const tools = buildTools(
+			app as never,
+			() => "agent-workspace",
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			new Set(["read", "writeScoped", "extensions"]),
+		);
+		const r = await getTool(tools, "vault_templater_create").handler({
+			template: "Templates/daily.md",
+			folder: "agent-workspace/journal",
+			filename: "x",
+		});
+		expect(r.isError ?? false).toBe(false);
+		expect(create).toHaveBeenCalledTimes(1);
+	});
+
+	it("reviewed mode routes out-of-scope templater writes through review", async () => {
+		const { app, create } = await setupTemplaterApp();
+		const review = vi.fn(async () => ({ approved: true }));
+		const tools = buildTools(
+			app as never,
+			() => "agent-workspace",
+			undefined,
+			review,
+			undefined,
+			undefined,
+			undefined,
+			new Set(["read", "writeScoped", "writeReviewed", "extensions"]),
+		);
+		const r = await getTool(tools, "vault_templater_create").handler({
+			template: "Templates/daily.md",
+			folder: "OtherFolder",
+			filename: "x",
+		});
+		expect(r.isError ?? false).toBe(false);
+		expect(review).toHaveBeenCalledTimes(1);
+		expect(create).toHaveBeenCalledTimes(1);
+	});
+
+	it("reviewed mode aborts when the user rejects", async () => {
+		const { app, create } = await setupTemplaterApp();
+		const review = vi.fn(async () => ({ approved: false }));
+		const tools = buildTools(
+			app as never,
+			() => "agent-workspace",
+			undefined,
+			review,
+			undefined,
+			undefined,
+			undefined,
+			new Set(["read", "writeScoped", "writeReviewed", "extensions"]),
+		);
+		const r = await getTool(tools, "vault_templater_create").handler({
+			template: "Templates/daily.md",
+			folder: "OtherFolder",
+			filename: "x",
+		});
+		expect(r.isError).toBe(true);
+		expect(create).not.toHaveBeenCalled();
+	});
+
+	it("full vault-write mode allows templater writes anywhere without review", async () => {
+		const { app, create } = await setupTemplaterApp();
+		const review = vi.fn();
+		const tools = buildTools(
+			app as never,
+			() => "agent-workspace",
+			undefined,
+			review,
+			undefined,
+			undefined,
+			undefined,
+			new Set(["read", "writeScoped", "writeVault", "extensions"]),
+		);
+		const r = await getTool(tools, "vault_templater_create").handler({
+			template: "Templates/daily.md",
+			folder: "OtherFolder",
+			filename: "x",
+		});
+		expect(r.isError ?? false).toBe(false);
+		expect(review).not.toHaveBeenCalled();
+		expect(create).toHaveBeenCalledTimes(1);
+	});
+
+	it("scoped-only mode rejects canvas writes outside the write directory", async () => {
+		const initial = JSON.stringify({ nodes: [], edges: [] });
+		const { app, modify } = mockApp(initial);
+		const tools = buildTools(
+			app as never,
+			() => "agent-workspace",
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			new Set(["read", "writeScoped", "extensions"]),
+		);
+		const r = await getTool(tools, "vault_canvas_modify").handler({
+			path: "board.canvas",
+			changes: JSON.stringify({ addNodes: [{ id: "n2", type: "text" }] }),
+		});
+		expect(r.isError).toBe(true);
+		expect(modify).not.toHaveBeenCalled();
+	});
+
+	it("scoped-only mode rejects vault_create_folder outside write directory", async () => {
+		const { app } = mockApp("{}");
+		const tools = buildTools(
+			app as never,
+			() => "agent-workspace",
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			new Set(["read", "writeScoped", "manage"]),
+		);
+		const r = await getTool(tools, "vault_create_folder").handler({
+			path: "SomeOtherDir/subdir",
+		});
+		expect(r.isError).toBe(true);
+		expect(app.vault.createFolder).not.toHaveBeenCalled();
+	});
+
+	it("scoped-only mode allows vault_create_folder inside write directory", async () => {
+		const { app } = mockApp("{}");
+		const tools = buildTools(
+			app as never,
+			() => "agent-workspace",
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			new Set(["read", "writeScoped", "manage"]),
+		);
+		const r = await getTool(tools, "vault_create_folder").handler({
+			path: "agent-workspace/newdir",
+		});
+		expect(r.isError ?? false).toBe(false);
+		expect(app.vault.createFolder).toHaveBeenCalledWith("agent-workspace/newdir");
+	});
+});
+
 describe("plugin_extensions_list", () => {
 	it("reports native-canvas always + per-plugin detection", async () => {
 		const { app } = mockApp("{}");

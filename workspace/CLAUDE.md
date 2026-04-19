@@ -33,6 +33,13 @@ Three places configuration and capabilities can live. Put new things in the righ
 
 **Promotion path**: something useful starts in Tier 2 or Tier 3; once you want to share it, promote to Tier 1 via a git commit in `workspace/`.
 
+## MCP capabilities — check before acting
+
+The Obsidian plugin exposes vault access via MCP. Tool *names* appear in the deferred-tools list, but tiers, current write directory, enabled escalations, and rate limits are not visible until you ask.
+
+- Call `mcp__obsidian__mcp_capabilities` once at the start of any session that will touch the vault, and again after a permission error.
+- Work within what that response surfaces. Don't assume a tool is available or a path is writable just because the tool name exists — enabled tiers and the write directory change per-vault and per-user.
+
 ## Vault write rules
 
 The vault at `/workspace/vault/` is **read-only** at the filesystem level. The only writable path inside the vault is `/workspace/vault/$PKM_WRITE_DIR/` (the `PKM_WRITE_DIR` env var is set by the plugin; run `echo $PKM_WRITE_DIR` or `verify.sh` to see the current value).

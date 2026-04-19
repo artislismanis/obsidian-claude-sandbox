@@ -11,10 +11,16 @@
 import type { App, TFile } from "obsidian";
 import { TFile as TFileClass } from "obsidian";
 import { z } from "zod/v4";
-import type { McpToolDef } from "./mcp-tools";
-import { defineTool, text, error } from "./mcp-tools";
+import type { McpToolDef, PermissionTier, ReviewFn } from "./mcp-tools";
+import { defineTool, text, error, gateVaultWrite } from "./mcp-tools";
 
 type ToolPusher = (tool: McpToolDef) => void;
+
+export interface WriteGate {
+	getWriteDir: () => string;
+	enabledTiers: ReadonlySet<PermissionTier>;
+	review: ReviewFn | undefined;
+}
 
 type PluginsHost = {
 	plugins: {
@@ -68,7 +74,7 @@ function resolveCanvasFile(app: App, path: string): TFile | null {
 
 // ── Canvas ──────────────────────────────────────────
 
-export function registerCanvasTools(app: App, push: ToolPusher): void {
+export function registerCanvasTools(app: App, push: ToolPusher, gate: WriteGate): void {
 	push(
 		defineTool({
 			name: "vault_canvas_read",
@@ -163,7 +169,7 @@ export function registerCanvasTools(app: App, push: ToolPusher): void {
 				if (changes.addNodes) doc.nodes.push(...changes.addNodes);
 				if (changes.addEdges) doc.edges.push(...changes.addEdges);
 
-				await app.vault.modify(f, JSON.stringify(doc, null, 2));
+				const updated = JSON.stringify(doc, null, 2);
 				const summary = [
 					changes.addNodes?.length ? `+${changes.addNodes.length} nodes` : null,
 					removeNodeIds.size ? `-${removeNodeIds.size} nodes` : null,
@@ -172,7 +178,18 @@ export function registerCanvasTools(app: App, push: ToolPusher): void {
 				]
 					.filter(Boolean)
 					.join(", ");
-				return text(`Modified ${f.path} (${summary || "no-op"}).`);
+				return gateVaultWrite({
+					destPath: f.path,
+					operation: "modify",
+					description: `Modify canvas ${f.path} (${summary || "no-op"})`,
+					writeDir: gate.getWriteDir(),
+					enabledTiers: gate.enabledTiers,
+					review: gate.review,
+					oldContent: raw,
+					newContent: updated,
+					apply: () => app.vault.modify(f, updated),
+					successMsg: `Modified ${f.path} (${summary || "no-op"}).`,
+				});
 			},
 		}),
 	);
@@ -442,7 +459,7 @@ function getTemplater(app: App): TemplaterApi | null {
 	return plugin;
 }
 
-export function registerTemplaterTools(app: App, push: ToolPusher): void {
+export function registerTemplaterTools(app: App, push: ToolPusher, gate: WriteGate): void {
 	if (!getTemplater(app)) return;
 	push(
 		defineTool({
@@ -472,19 +489,31 @@ export function registerTemplaterTools(app: App, push: ToolPusher): void {
 					return error(
 						`Template not found at '${templatePath}'. Pass a vault-relative path to a markdown template file.`,
 					);
-				try {
-					const created = await plugin.templater.create_new_note_from_template(
-						templateFile,
-						folder,
-						filename,
-						false,
-					);
-					if (!created) return error("Templater returned no file.");
-					return text(`Created ${created.path}`);
-				} catch (e: unknown) {
-					const msg = e instanceof Error ? e.message : String(e);
-					return error(`Templater threw: ${msg}`);
-				}
+				// Predict Templater's destination path so we can gate before it writes.
+				// Templater itself provides no pre-flight API; replicate its naming:
+				// `<folder>/<filename>.md`, falling back to the template's basename and
+				// vault root when either is omitted.
+				const destFolder = (folder ?? "").replace(/^\/+|\/+$/g, "");
+				const destName = filename ?? (templateFile as TFile).basename;
+				const destPath = destFolder ? `${destFolder}/${destName}.md` : `${destName}.md`;
+				return gateVaultWrite({
+					destPath,
+					operation: "create",
+					description: `Create ${destPath} from template ${templatePath}`,
+					writeDir: gate.getWriteDir(),
+					enabledTiers: gate.enabledTiers,
+					review: gate.review,
+					apply: async () => {
+						const created = await plugin.templater!.create_new_note_from_template!(
+							templateFile,
+							folder,
+							filename,
+							false,
+						);
+						if (!created) throw new Error("Templater returned no file.");
+					},
+					successMsg: `Created ${destPath}`,
+				});
 			},
 		}),
 	);
@@ -512,7 +541,7 @@ function getPeriodicNotes(app: App): PeriodicNotesPlugin | null {
  * path from the plugin's stored settings (folder + format) and either open
  * the file or create it via the vault API.
  */
-export function registerPeriodicNotesTools(app: App, push: ToolPusher): void {
+export function registerPeriodicNotesTools(app: App, push: ToolPusher, gate: WriteGate): void {
 	if (!getPeriodicNotes(app)) return;
 
 	push(
@@ -566,8 +595,17 @@ export function registerPeriodicNotesTools(app: App, push: ToolPusher): void {
 						seed = await app.vault.read(tmplFile);
 					}
 				}
-				await app.vault.create(path, seed);
-				return text(`Created ${path}`);
+				return gateVaultWrite({
+					destPath: path,
+					operation: "create",
+					description: `Create periodic note ${path}`,
+					writeDir: gate.getWriteDir(),
+					enabledTiers: gate.enabledTiers,
+					review: gate.review,
+					newContent: seed,
+					apply: () => app.vault.create(path, seed),
+					successMsg: `Created ${path}`,
+				});
 			},
 		}),
 	);
@@ -656,11 +694,18 @@ export function registerExtensionsIntrospection(app: App, push: ToolPusher): voi
 }
 
 /** Register every plugin-integration tool whose target plugin is loaded. */
-export function registerExtensionTools(app: App, push: ToolPusher): void {
-	registerCanvasTools(app, push);
+export function registerExtensionTools(
+	app: App,
+	push: ToolPusher,
+	getWriteDir: () => string,
+	enabledTiers: ReadonlySet<PermissionTier>,
+	review: ReviewFn | undefined,
+): void {
+	const gate: WriteGate = { getWriteDir, enabledTiers, review };
+	registerCanvasTools(app, push, gate);
 	registerDataviewTools(app, push);
 	registerTasksTools(app, push);
-	registerTemplaterTools(app, push);
-	registerPeriodicNotesTools(app, push);
+	registerTemplaterTools(app, push, gate);
+	registerPeriodicNotesTools(app, push, gate);
 	registerExtensionsIntrospection(app, push);
 }

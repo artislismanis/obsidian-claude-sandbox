@@ -209,6 +209,7 @@ export class ObsidianMcpServer {
 			this.cache,
 			hooks.reviewBatch,
 			(update) => this.recordActivity(update),
+			this.config.enabledTiers,
 		).filter((t) => this.config.enabledTiers.has(t.tier));
 
 		this.startTime = Date.now();
