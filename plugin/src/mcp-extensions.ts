@@ -11,18 +11,52 @@
 import type { App, TFile } from "obsidian";
 import { z } from "zod/v4";
 import type { McpToolDef } from "./mcp-tools";
+import { text, error } from "./mcp-tools";
 
 type ToolPusher = (tool: McpToolDef) => void;
 
-function text(str: string): { content: Array<{ type: "text"; text: string }> } {
-	return { content: [{ type: "text", text: str }] };
+type PluginsHost = {
+	plugins: {
+		getPlugin?: (id: string) => unknown;
+		plugins?: Record<string, unknown>;
+		enabledPlugins?: Set<string>;
+	};
+};
+
+/**
+ * Look up an installed + enabled plugin by id. Returns null when the plugin
+ * isn't installed, isn't enabled, or the host shape isn't what we expect.
+ * Centralises the runtime shape check every integration would otherwise
+ * duplicate.
+ */
+function getInstalledPlugin<T>(app: App, pluginId: string): T | null {
+	const host = (app as unknown as PluginsHost).plugins;
+	if (!host) return null;
+	if (host.enabledPlugins && !host.enabledPlugins.has(pluginId)) return null;
+	const plugin = host.getPlugin?.(pluginId) ?? (host.plugins && host.plugins[pluginId]) ?? null;
+	return (plugin as T | null) ?? null;
 }
 
-function error(msg: string): {
-	content: Array<{ type: "text"; text: string }>;
-	isError: true;
-} {
-	return { content: [{ type: "text", text: msg }], isError: true };
+/**
+ * Parallel-chunked iteration over markdown files, short-circuiting when the
+ * handler returns `true`. Mirrors the helper in mcp-tools.ts; kept separate
+ * here so extensions don't cross-import private helpers from the main tool
+ * module.
+ */
+async function forEachMarkdownChunked(
+	app: App,
+	handler: (file: TFile, content: string) => boolean | void | Promise<boolean | void>,
+	files: TFile[] = app.vault.getMarkdownFiles(),
+	chunkSize = 20,
+): Promise<void> {
+	for (let i = 0; i < files.length; i += chunkSize) {
+		const chunk = files.slice(i, i + chunkSize);
+		const contents = await Promise.all(chunk.map((f) => app.vault.cachedRead(f)));
+		for (let j = 0; j < chunk.length; j++) {
+			const stop = await handler(chunk[j], contents[j]);
+			if (stop) return;
+		}
+	}
 }
 
 function resolveCanvasFile(app: App, path: string): TFile | null {
@@ -157,22 +191,9 @@ interface DataviewPlugin {
 
 /** Recognise an installed+enabled Dataview. Narrow runtime shape check. */
 function getDataview(app: App): DataviewPlugin | null {
-	type PluginsHost = {
-		plugins: {
-			getPlugin?: (id: string) => unknown;
-			plugins?: Record<string, unknown>;
-			enabledPlugins?: Set<string>;
-		};
-	};
-	const host = (app as unknown as PluginsHost).plugins;
-	if (!host) return null;
-	if (host.enabledPlugins && !host.enabledPlugins.has("dataview")) return null;
-	const plugin =
-		host.getPlugin?.("dataview") ?? (host.plugins && host.plugins["dataview"]) ?? null;
-	if (!plugin) return null;
-	const api = (plugin as DataviewPlugin).api;
-	if (!api || typeof api.query !== "function") return null;
-	return plugin as DataviewPlugin;
+	const plugin = getInstalledPlugin<DataviewPlugin>(app, "dataview");
+	if (!plugin?.api || typeof plugin.api.query !== "function") return null;
+	return plugin;
 }
 
 export function registerDataviewTools(app: App, push: ToolPusher): void {
@@ -219,22 +240,7 @@ interface TasksPlugin {
 }
 
 function getTasks(app: App): TasksPlugin | null {
-	type PluginsHost = {
-		plugins: {
-			getPlugin?: (id: string) => unknown;
-			plugins?: Record<string, unknown>;
-			enabledPlugins?: Set<string>;
-		};
-	};
-	const host = (app as unknown as PluginsHost).plugins;
-	if (!host) return null;
-	if (host.enabledPlugins && !host.enabledPlugins.has("obsidian-tasks-plugin")) return null;
-	const plugin =
-		host.getPlugin?.("obsidian-tasks-plugin") ??
-		(host.plugins && host.plugins["obsidian-tasks-plugin"]) ??
-		null;
-	if (!plugin) return null;
-	return plugin as TasksPlugin;
+	return getInstalledPlugin<TasksPlugin>(app, "obsidian-tasks-plugin");
 }
 
 interface TaskEntry {
@@ -320,25 +326,29 @@ export function registerTasksTools(app: App, push: ToolPusher): void {
 				.filter((f) => !folder || f.path.startsWith(folder + "/") || f.path === folder);
 
 			const results: TaskEntry[] = [];
-			for (const file of files) {
-				if (results.length >= limit) break;
-				const content = await app.vault.cachedRead(file);
-				const lines = content.split("\n");
-				for (let i = 0; i < lines.length; i++) {
-					const parsed = parseTaskLine(lines[i]);
-					if (!parsed) continue;
-					if (wantStatus !== "any" && parsed.status !== wantStatus) continue;
-					if (tagFilter && !parsed.tags.includes(tagFilter)) continue;
-					if (dueLimit && parsed.due && parsed.due > dueLimit) continue;
-					if (dueLimit && !parsed.due) continue;
-					if (minIdx >= 0) {
-						const pIdx = parsed.priority ? priorityOrder.indexOf(parsed.priority) : -1;
-						if (pIdx < minIdx) continue;
+			await forEachMarkdownChunked(
+				app,
+				(file, content) => {
+					const lines = content.split("\n");
+					for (let i = 0; i < lines.length; i++) {
+						const parsed = parseTaskLine(lines[i]);
+						if (!parsed) continue;
+						if (wantStatus !== "any" && parsed.status !== wantStatus) continue;
+						if (tagFilter && !parsed.tags.includes(tagFilter)) continue;
+						if (dueLimit && parsed.due && parsed.due > dueLimit) continue;
+						if (dueLimit && !parsed.due) continue;
+						if (minIdx >= 0) {
+							const pIdx = parsed.priority
+								? priorityOrder.indexOf(parsed.priority)
+								: -1;
+							if (pIdx < minIdx) continue;
+						}
+						results.push({ ...parsed, path: file.path, line: i + 1 });
+						if (results.length >= limit) return true;
 					}
-					results.push({ ...parsed, path: file.path, line: i + 1 });
-					if (results.length >= limit) break;
-				}
-			}
+				},
+				files,
+			);
 
 			if (results.length === 0) return text("(no matching tasks)");
 			const body = results
@@ -420,24 +430,10 @@ interface TemplaterApi {
 }
 
 function getTemplater(app: App): TemplaterApi | null {
-	type PluginsHost = {
-		plugins: {
-			getPlugin?: (id: string) => unknown;
-			plugins?: Record<string, unknown>;
-			enabledPlugins?: Set<string>;
-		};
-	};
-	const host = (app as unknown as PluginsHost).plugins;
-	if (!host) return null;
-	if (host.enabledPlugins && !host.enabledPlugins.has("templater-obsidian")) return null;
-	const plugin =
-		host.getPlugin?.("templater-obsidian") ??
-		(host.plugins && host.plugins["templater-obsidian"]) ??
-		null;
-	if (!plugin) return null;
-	const templater = (plugin as TemplaterApi).templater;
-	if (!templater || typeof templater.create_new_note_from_template !== "function") return null;
-	return plugin as TemplaterApi;
+	const plugin = getInstalledPlugin<TemplaterApi>(app, "templater-obsidian");
+	if (!plugin?.templater || typeof plugin.templater.create_new_note_from_template !== "function")
+		return null;
+	return plugin;
 }
 
 export function registerTemplaterTools(app: App, push: ToolPusher): void {
@@ -490,22 +486,7 @@ interface PeriodicNotesPlugin {
 }
 
 function getPeriodicNotes(app: App): PeriodicNotesPlugin | null {
-	type PluginsHost = {
-		plugins: {
-			getPlugin?: (id: string) => unknown;
-			plugins?: Record<string, unknown>;
-			enabledPlugins?: Set<string>;
-		};
-	};
-	const host = (app as unknown as PluginsHost).plugins;
-	if (!host) return null;
-	if (host.enabledPlugins && !host.enabledPlugins.has("periodic-notes")) return null;
-	const plugin =
-		host.getPlugin?.("periodic-notes") ??
-		(host.plugins && host.plugins["periodic-notes"]) ??
-		null;
-	if (!plugin) return null;
-	return plugin as PeriodicNotesPlugin;
+	return getInstalledPlugin<PeriodicNotesPlugin>(app, "periodic-notes");
 }
 
 /**

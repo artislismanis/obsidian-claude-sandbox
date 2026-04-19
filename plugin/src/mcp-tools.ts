@@ -37,17 +37,17 @@ export interface McpToolDef {
 	handler: (args: Record<string, unknown>) => Promise<McpToolResult>;
 }
 
-interface McpToolResult {
+export interface McpToolResult {
 	[key: string]: unknown;
 	content: Array<{ type: "text"; text: string }>;
 	isError?: boolean;
 }
 
-function text(str: string): McpToolResult {
+export function text(str: string): McpToolResult {
 	return { content: [{ type: "text", text: str }] };
 }
 
-function error(msg: string): McpToolResult {
+export function error(msg: string): McpToolResult {
 	return { content: [{ type: "text", text: msg }], isError: true };
 }
 

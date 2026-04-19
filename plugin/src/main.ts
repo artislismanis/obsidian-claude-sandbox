@@ -311,6 +311,10 @@ export default class AgentSandboxPlugin extends Plugin {
 
 	onunload() {
 		this.stopHealthPoll();
+		if (this.agentOutputDebounceId != null) {
+			window.clearTimeout(this.agentOutputDebounceId);
+			this.agentOutputDebounceId = null;
+		}
 		void this.mcpServer?.stop();
 		void this.saveData(this.settings);
 		this.app.workspace.detachLeavesOfType(VIEW_TYPE_TERMINAL);
