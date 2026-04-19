@@ -2,7 +2,13 @@ import type { App } from "obsidian";
 import { Modal, PluginSettingTab, Setting } from "obsidian";
 import type AgentSandboxPlugin from "./main";
 import type { PermissionTier } from "./mcp-tools";
-import { isValidBindAddress, isValidCpus, isValidMemory, isValidPrivateHosts } from "./validation";
+import {
+	isValidBindAddress,
+	isValidCpus,
+	isValidDomainList,
+	isValidMemory,
+	isValidPrivateHosts,
+} from "./validation";
 import { existsSync } from "fs";
 import { join } from "path";
 
@@ -24,6 +30,7 @@ export interface AgentSandboxSettings {
 	terminalFontSize: number;
 	terminalScrollback: number;
 	allowedPrivateHosts: string;
+	additionalFirewallDomains: string;
 	containerMemory: string;
 	containerCpus: string;
 	autoEnableFirewall: boolean;
@@ -117,6 +124,7 @@ export const DEFAULT_SETTINGS: AgentSandboxSettings = {
 	terminalFontSize: 14,
 	terminalScrollback: 10000,
 	allowedPrivateHosts: "",
+	additionalFirewallDomains: "",
 	containerMemory: "8G",
 	containerCpus: "4",
 	autoEnableFirewall: false,
@@ -672,6 +680,62 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 						}
 					});
 			});
+
+		new Setting(el)
+			.setName("Additional firewall domains")
+			.setDesc(
+				"Comma-separated domains to add to the firewall allowlist (e.g. api.atlassian.com, slack.com). " +
+					"Adds to — never overrides — the built-in baseline. For host-managed rules Claude cannot see, " +
+					"edit container/firewall-extras.txt instead. Requires restart.",
+			)
+			.addText((text) => {
+				text.setPlaceholder("e.g. api.atlassian.com, slack.com")
+					.setValue(this.plugin.settings.additionalFirewallDomains)
+					.onChange(async (value) => {
+						if (isValidDomainList(value)) {
+							this.plugin.settings.additionalFirewallDomains = value;
+							this.plugin.saveSettings();
+							this.markRestart();
+							text.inputEl.removeClass("sandbox-input-error");
+						} else {
+							text.inputEl.addClass("sandbox-input-error");
+						}
+					});
+			});
+
+		const sourcesBox = el.createDiv({ cls: "setting-item" });
+		sourcesBox.style.flexDirection = "column";
+		sourcesBox.style.alignItems = "stretch";
+		const sourcesHeader = sourcesBox.createDiv();
+		sourcesHeader.style.display = "flex";
+		sourcesHeader.style.justifyContent = "space-between";
+		sourcesHeader.style.alignItems = "center";
+		sourcesHeader.createEl("div", {
+			text: "Effective allowlist",
+			cls: "setting-item-name",
+		});
+		const refreshBtn = sourcesHeader.createEl("button", { text: "Refresh" });
+		const sourcesOutput = sourcesBox.createEl("pre");
+		sourcesOutput.style.marginTop = "8px";
+		sourcesOutput.style.maxHeight = "240px";
+		sourcesOutput.style.overflow = "auto";
+		sourcesOutput.style.fontSize = "11px";
+		sourcesOutput.style.padding = "8px";
+		sourcesOutput.style.backgroundColor = "var(--background-secondary)";
+		sourcesOutput.style.borderRadius = "4px";
+		sourcesOutput.setText(
+			"(Click Refresh to fetch the effective firewall allowlist from the container.)",
+		);
+		refreshBtn.addEventListener("click", async () => {
+			sourcesOutput.setText("Fetching…");
+			try {
+				const output = await this.plugin.firewallSources();
+				sourcesOutput.setText(output.trim() || "(empty)");
+			} catch (e: unknown) {
+				const msg = e instanceof Error ? e.message : String(e);
+				sourcesOutput.setText(`Error: ${msg}\n\nIs the container running?`);
+			}
+		});
 
 		new Setting(el)
 			.setName("Sudo password")

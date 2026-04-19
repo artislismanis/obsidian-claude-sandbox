@@ -68,6 +68,17 @@ export function isValidBindAddress(value: string): boolean {
 	return isValidIpAddress(value.trim());
 }
 
+const VALID_DOMAIN = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/i;
+
+/** Validates comma-separated list of domain names (e.g. "api.atlassian.com, slack.com"). Empty = valid. */
+export function isValidDomainList(value: string): boolean {
+	if (!value.trim()) return true;
+	return value.split(",").every((entry) => {
+		const trimmed = entry.trim();
+		return trimmed.length > 0 && VALID_DOMAIN.test(trimmed);
+	});
+}
+
 /**
  * Checks whether a path is allowed by the allowlist/blocklist rules.
  * - If allowlist is non-empty, the path must match at least one allowlist prefix.

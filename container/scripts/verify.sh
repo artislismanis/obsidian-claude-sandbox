@@ -108,6 +108,14 @@ write_check "/workspace/vault/${PKM_WRITE_DIR:-agent-workspace}"
 write_check "/workspace/vault/.oas"
 
 echo ""
+echo "── Firewall allowlist sources ─────────────────────"
+if [ -f /etc/oas/firewall-sources.tsv ]; then
+  awk -F'\t' '{printf "  [%-8s] %s\n", $1, $2}' /etc/oas/firewall-sources.tsv | sort -u
+else
+  echo "  (firewall not initialized in this container)"
+fi
+
+echo ""
 echo "── Container env ──────────────────────────────────"
 # Only env vars that docker-compose.yml actually injects into the
 # container (see container/docker-compose.yml `environment:` block).
@@ -117,7 +125,7 @@ echo "── Container env ─────────────────�
 # bindings — they're not exposed inside the container. Resource limits
 # are surfaced in the next section from cgroup; mount-source paths are
 # visible above in Mount points.
-for var in TERM TTYD_PORT PKM_WRITE_DIR MEMORY_FILE_NAME ALLOWED_PRIVATE_HOSTS MEMORY_FILE_PATH; do
+for var in TERM TTYD_PORT PKM_WRITE_DIR MEMORY_FILE_NAME ALLOWED_PRIVATE_HOSTS OAS_ALLOWED_DOMAINS MEMORY_FILE_PATH; do
   printf "  %-24s = %s\n" "$var" "${!var:-<unset>}"
 done
 

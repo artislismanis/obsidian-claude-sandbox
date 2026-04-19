@@ -1,0 +1,31 @@
+# Container firewall allowlist — host-managed extras.
+#
+# One entry per line: a domain name (DNS A record is resolved) or an
+# IPv4 CIDR block. Lines starting with `#` and blank lines are ignored.
+# Whitespace is trimmed.
+#
+# This file is mounted read-only into the container at
+# /etc/oas/firewall-extras.txt. Claude, running as the agent inside the
+# container, cannot see or modify it. Use this path for integration
+# domains you don't want the agent to know about (or to tamper with).
+#
+# For domains you're happy for the plugin UI to show, prefer the
+# "Additional firewall domains" setting in the Obsidian plugin — it's
+# discoverable, validated on input, and doesn't require editing files
+# on the host.
+#
+# Changes take effect on the next container start (or after rerunning
+# /usr/local/bin/init-firewall.sh inside the container).
+#
+# To keep your personal edits out of git after an initial clone:
+#     git update-index --skip-worktree container/firewall-extras.txt
+# To re-track:
+#     git update-index --no-skip-worktree container/firewall-extras.txt
+#
+# Example entries (uncomment to enable):
+#
+# api.atlassian.com
+# slack.com
+# api.slack.com
+# 192.168.1.100
+# 10.42.0.0/16

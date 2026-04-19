@@ -64,6 +64,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			ttydPort: this.settings.ttydPort,
 			ttydBindAddress: this.settings.ttydBindAddress,
 			allowedPrivateHosts: this.settings.allowedPrivateHosts,
+			additionalFirewallDomains: this.settings.additionalFirewallDomains,
 			containerMemory: this.settings.containerMemory,
 			containerCpus: this.settings.containerCpus,
 			sudoPassword: this.settings.sudoPassword,
@@ -232,6 +233,10 @@ export default class AgentSandboxPlugin extends Plugin {
 
 	isContainerRunning(): boolean {
 		return this.statusBar.getState() === "running";
+	}
+
+	async firewallSources(): Promise<string> {
+		return this.docker.firewallSources();
 	}
 
 	private async openTerminalOrPromptStart(): Promise<void> {

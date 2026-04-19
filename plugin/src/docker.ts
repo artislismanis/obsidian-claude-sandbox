@@ -10,7 +10,13 @@ const PROBE_TIMEOUT = 5_000;
 const SERVICE_NAME = "sandbox";
 
 import type { DockerMode } from "./settings";
-import { isValidWriteDir, isValidPrivateHosts, isValidMemory, isValidCpus } from "./validation";
+import {
+	isValidWriteDir,
+	isValidPrivateHosts,
+	isValidDomainList,
+	isValidMemory,
+	isValidCpus,
+} from "./validation";
 
 export interface DockerManagerSettings {
 	dockerMode: DockerMode;
@@ -22,6 +28,7 @@ export interface DockerManagerSettings {
 	ttydPort?: number;
 	ttydBindAddress?: string;
 	allowedPrivateHosts?: string;
+	additionalFirewallDomains?: string;
 	containerMemory?: string;
 	containerCpus?: string;
 	sudoPassword?: string;
@@ -141,6 +148,7 @@ export class DockerManager {
 			ttydPort,
 			ttydBindAddress,
 			allowedPrivateHosts,
+			additionalFirewallDomains,
 			containerMemory,
 			containerCpus,
 			sudoPassword,
@@ -184,6 +192,14 @@ export class DockerManager {
 				);
 			}
 			envVars.ALLOWED_PRIVATE_HOSTS = allowedPrivateHosts;
+		}
+		if (additionalFirewallDomains) {
+			if (!isValidDomainList(additionalFirewallDomains)) {
+				throw new Error(
+					"Invalid additional firewall domains. Use comma-separated domain names (e.g. api.atlassian.com, slack.com).",
+				);
+			}
+			envVars.OAS_ALLOWED_DOMAINS = additionalFirewallDomains;
 		}
 		if (containerMemory) {
 			if (!isValidMemory(containerMemory)) {
@@ -427,6 +443,13 @@ export class DockerManager {
 		} catch {
 			return false;
 		}
+	}
+
+	async firewallSources(): Promise<string> {
+		return this.run(
+			`docker compose exec --user root ${SERVICE_NAME} /usr/local/bin/init-firewall.sh --list-sources`,
+			PROBE_TIMEOUT,
+		);
 	}
 
 	async listSessions(): Promise<string[]> {

@@ -28,6 +28,10 @@ services:
       - ${PKM_VAULT_PATH:-../vault}/${PKM_WRITE_DIR:-agent-workspace}:/workspace/vault/${PKM_WRITE_DIR:-agent-workspace}:rw
       # Vault infrastructure — rw overlay, independent of write directory
       - ${PKM_VAULT_PATH:-../vault}/.oas:/workspace/vault/.oas:rw
+      # Host-managed firewall allowlist extras — read-only; Claude cannot
+      # see or modify this path. Mount target lives outside /workspace so
+      # it's not reachable through the vault read tools either.
+      - ./firewall-extras.txt:/etc/oas/firewall-extras.txt:ro
       # Named volumes (OAS-prefixed)
       - oas-claude-config:/home/claude/.claude
       - oas-shell-history:/home/claude/.shell-history
@@ -42,6 +46,7 @@ services:
       - OAS_MCP_TOKEN=${OAS_MCP_TOKEN:-}
       - OAS_MCP_PORT=${OAS_MCP_PORT:-28080}
       - OAS_HOST_IP=${OAS_HOST_IP:-}
+      - OAS_ALLOWED_DOMAINS=${OAS_ALLOWED_DOMAINS:-}
     sysctls:
       # IPv6 disabled — simplifies firewall (IPv4-only rules) and matches
       # common local network configs. All allowlisted domains resolve A records.

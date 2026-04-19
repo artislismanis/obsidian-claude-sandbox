@@ -159,11 +159,11 @@ Deeper Obsidian integration and workflow improvements.
 - [ ] Session cleanup / garbage collection for stale tmux sessions
 
 ### Firewall allowlist expansion
-The container's `init-firewall.sh` allowlist should cover the services we integrate with out of the box, with room to grow. Each entry is a documented, reversible opt-in — the default-deny posture is preserved.
-- [ ] Atlassian (Jira, Confluence) — `*.atlassian.net`, `*.atlassian.com`, MCP/API endpoints
-- [ ] Slack — `*.slack.com`, `slack.com/api`, MCP endpoints
-- [ ] Google (Workspace) — `*.googleapis.com`, `accounts.google.com`, Gmail/Calendar/Drive MCP endpoints
-- [ ] Document the allowlist extension point so users can add their own services without editing the shipped script
+The container's `init-firewall.sh` allowlist stays minimal by default (Anthropic, GitHub, npm, PyPI, CDNs, apt mirrors). Per-user expansion via two additive routes: a plugin setting and a host-managed config file.
+- [x] Plugin setting `additionalFirewallDomains` (validated domain list) → `OAS_ALLOWED_DOMAINS` env var tagged `[plugin]`.
+- [x] Host-managed `container/firewall-extras.txt` mounted read-only at `/etc/oas/firewall-extras.txt`, tagged `[file]`. Invisible to Claude.
+- [x] `init-firewall.sh --list-sources` inspects the effective allowlist grouped by origin; displayed in plugin Security tab (Refresh button) and `verify.sh`. No override semantics — all sources additive.
+- [x] `docs/how-to/configure-firewall.md` documents the three sources, when to use each, and skip-worktree for keeping personal edits out of git.
 
 ### Activity feedback
 Inspired by Windows Terminal's Claude Code status icon — show the user whether Claude is working or waiting for input without them having to look at the terminal tab.

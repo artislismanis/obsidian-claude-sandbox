@@ -3,7 +3,10 @@ set -euo pipefail
 
 # Allowlist-based outbound firewall for headless Claude Code usage.
 # Restricts outbound traffic to known-good domains only.
-# Usage: /usr/local/bin/init-firewall.sh [--disable|--status]
+# Usage: /usr/local/bin/init-firewall.sh [--disable|--status|--list-sources]
+
+SOURCES_FILE="/etc/oas/firewall-sources.tsv"
+EXTRAS_FILE="/etc/oas/firewall-extras.txt"
 
 case "${1:-}" in
   --disable)
@@ -21,9 +24,18 @@ case "${1:-}" in
     fi
     exit 0
     ;;
+  --list-sources)
+    if [ ! -f "$SOURCES_FILE" ]; then
+      echo "(no firewall-sources file — firewall has not been initialized in this container)" >&2
+      exit 1
+    fi
+    # Pretty-print grouped by source tag
+    awk -F'\t' '{printf "[%-8s] %s\n", $1, $2}' "$SOURCES_FILE" | sort
+    exit 0
+    ;;
 esac
 
-ALLOWED_DOMAINS=(
+BASELINE_DOMAINS=(
   # Anthropic
   api.anthropic.com
   statsig.anthropic.com
@@ -55,13 +67,55 @@ ALLOWED_DOMAINS=(
   security.ubuntu.com
   ports.ubuntu.com
   keyserver.ubuntu.com
-
-  # Atlassian — MCP server and Jira/Confluence API access
-  mcp.atlassian.com
-  auth.atlassian.com
-  api.atlassian.com
-  id.atlassian.com
 )
+
+# Assemble the effective allowlist from three sources. Record each
+# entry's origin for later inspection via --list-sources.
+# Sources are additive — no override semantics, duplicates are harmless.
+mkdir -p "$(dirname "$SOURCES_FILE")"
+: > "$SOURCES_FILE"
+
+declare -A SEEN
+declare -a ALLOWED_DOMAINS=()
+
+add_entry() {
+  local tag="$1"
+  local entry="$2"
+  # Trim whitespace
+  entry="${entry#"${entry%%[![:space:]]*}"}"
+  entry="${entry%"${entry##*[![:space:]]}"}"
+  [ -z "$entry" ] && return
+  # Skip duplicates but record the additional source tag
+  if [ -n "${SEEN[$entry]:-}" ]; then
+    printf '%s\t%s\n' "$tag" "$entry" >> "$SOURCES_FILE"
+    return
+  fi
+  SEEN[$entry]=1
+  ALLOWED_DOMAINS+=("$entry")
+  printf '%s\t%s\n' "$tag" "$entry" >> "$SOURCES_FILE"
+}
+
+# Baseline
+for d in "${BASELINE_DOMAINS[@]}"; do
+  add_entry baseline "$d"
+done
+
+# Plugin-supplied (comma-separated env var)
+if [ -n "${OAS_ALLOWED_DOMAINS:-}" ]; then
+  IFS=',' read -ra PLUGIN_EXTRAS <<< "$OAS_ALLOWED_DOMAINS"
+  for d in "${PLUGIN_EXTRAS[@]}"; do
+    add_entry plugin "$d"
+  done
+fi
+
+# Host-managed file (read-only mount, invisible to Claude)
+if [ -f "$EXTRAS_FILE" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    # Strip comments and trim
+    line="${line%%#*}"
+    add_entry file "$line"
+  done < "$EXTRAS_FILE"
+fi
 
 # Build a temporary ipset, then atomically swap to avoid races
 ipset create allowed_ips hash:net -exist
@@ -70,11 +124,18 @@ ipset flush allowed_ips_new
 
 echo "Resolving domains..."
 PIDS=()
-for domain in "${ALLOWED_DOMAINS[@]}"; do
+for entry in "${ALLOWED_DOMAINS[@]}"; do
+  # CIDR (e.g. 10.0.0.0/16) or bare IPv4 — add directly, no DNS needed.
+  if [[ "$entry" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}(/[0-9]{1,2})?$ ]]; then
+    cidr="$entry"
+    [[ "$cidr" != */* ]] && cidr="${cidr}/32"
+    ipset add allowed_ips_new "$cidr" -exist
+    continue
+  fi
   (
-    ips=$(dig +short A "$domain" 2>/dev/null | grep -E '^[0-9]+\.' || true)
+    ips=$(dig +short A "$entry" 2>/dev/null | grep -E '^[0-9]+\.' || true)
     if [ -z "$ips" ]; then
-      echo "WARNING: failed to resolve $domain" >&2
+      echo "WARNING: failed to resolve $entry" >&2
       exit 1
     fi
     for ip in $ips; do
