@@ -558,8 +558,7 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 			)
 			.addText((text) => {
 				text.setValue(this.plugin.settings.mcpToken).setDisabled(true);
-				text.inputEl.style.fontFamily = "monospace";
-				text.inputEl.style.fontSize = "11px";
+				text.inputEl.addClass("sandbox-settings-code-input");
 			})
 			.addButton((btn) =>
 				btn.setButtonText("Regenerate").onClick(async () => {
@@ -572,14 +571,14 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 
 		new Setting(el).setName("Always enabled").setHeading();
 
-		const alwaysBox = el.createDiv({ cls: "setting-item-description" });
-		alwaysBox.style.marginBottom = "12px";
+		const alwaysBox = el.createDiv({
+			cls: "setting-item-description sandbox-settings-section-margin",
+		});
 		alwaysBox.createEl("p", {
 			text: "These MCP tools are always available when MCP is enabled. They don't grant access beyond what Claude already has via the filesystem (RO vault, RW workspace) — they just offer a more ergonomic interface via Obsidian's metadata.",
 		});
 		const writeDir = this.plugin.settings.vaultWriteDir || "agent-workspace";
-		const list = alwaysBox.createEl("ul");
-		list.style.margin = "4px 0 0 16px";
+		const list = alwaysBox.createEl("ul", { cls: "sandbox-settings-info-list" });
 		list.createEl("li", {
 			text: "Read — search, read files, query metadata, tags, links, backlinks, frontmatter.",
 		});
@@ -589,8 +588,9 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 
 		new Setting(el).setName("Escalations").setHeading();
 
-		const escDesc = el.createDiv({ cls: "setting-item-description" });
-		escDesc.style.marginBottom = "12px";
+		const escDesc = el.createDiv({
+			cls: "setting-item-description sandbox-settings-section-margin",
+		});
 		escDesc.setText(
 			"These tiers grant Claude capabilities beyond its filesystem access. Enable only what you need.",
 		);
@@ -744,26 +744,16 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 					});
 			});
 
-		const sourcesBox = el.createDiv({ cls: "setting-item" });
-		sourcesBox.style.flexDirection = "column";
-		sourcesBox.style.alignItems = "stretch";
-		const sourcesHeader = sourcesBox.createDiv();
-		sourcesHeader.style.display = "flex";
-		sourcesHeader.style.justifyContent = "space-between";
-		sourcesHeader.style.alignItems = "center";
+		const sourcesBox = el.createDiv({ cls: "setting-item sandbox-settings-sources" });
+		const sourcesHeader = sourcesBox.createDiv({ cls: "sandbox-settings-sources-header" });
 		sourcesHeader.createEl("div", {
 			text: "Effective allowlist",
 			cls: "setting-item-name",
 		});
 		const refreshBtn = sourcesHeader.createEl("button", { text: "Refresh" });
-		const sourcesOutput = sourcesBox.createEl("pre");
-		sourcesOutput.style.marginTop = "8px";
-		sourcesOutput.style.maxHeight = "240px";
-		sourcesOutput.style.overflow = "auto";
-		sourcesOutput.style.fontSize = "11px";
-		sourcesOutput.style.padding = "8px";
-		sourcesOutput.style.backgroundColor = "var(--background-secondary)";
-		sourcesOutput.style.borderRadius = "4px";
+		const sourcesOutput = sourcesBox.createEl("pre", {
+			cls: "sandbox-settings-sources-output",
+		});
 		sourcesOutput.setText(
 			"(Click Refresh to fetch the effective firewall allowlist from the container.)",
 		);

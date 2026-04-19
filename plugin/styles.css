@@ -332,3 +332,114 @@
 .sandbox-input-error {
 	border-color: var(--text-error) !important;
 }
+
+/* ── Plugin modals (shared) ────────────────────────── */
+
+.sandbox-modal-input-full {
+	width: 100%;
+}
+
+.sandbox-modal-input-multiline {
+	width: 100%;
+	min-height: 80px;
+}
+
+.sandbox-modal-filter {
+	width: 100%;
+	margin-bottom: 8px;
+}
+
+.sandbox-modal-list {
+	max-height: 300px;
+	overflow: auto;
+}
+
+.sandbox-modal-list-tall {
+	max-height: 400px;
+	overflow: auto;
+	margin: 8px 0;
+}
+
+.sandbox-modal-row-clickable {
+	padding: 6px 8px;
+	cursor: pointer;
+	border-radius: 4px;
+}
+
+.sandbox-modal-row-clickable:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.sandbox-modal-check-list {
+	list-style: none;
+	padding: 0;
+}
+
+.sandbox-modal-check-row {
+	display: flex;
+	gap: 8px;
+	padding: 4px 0;
+	align-items: center;
+}
+
+/* ── Diff review modal ─────────────────────────────── */
+
+.sandbox-diff-affected-list {
+	max-height: 200px;
+	overflow: auto;
+	margin: 4px 0 12px 16px;
+}
+
+.sandbox-diff-pre {
+	max-height: 400px;
+	overflow: auto;
+	font-size: 12px;
+	font-family: var(--font-monospace);
+	padding: 8px;
+	border-radius: 4px;
+	background-color: var(--background-secondary);
+}
+
+.sandbox-diff-line-added {
+	color: var(--text-success);
+}
+
+.sandbox-diff-line-removed {
+	color: var(--text-error);
+}
+
+/* ── Settings blocks ───────────────────────────────── */
+
+.sandbox-settings-section-margin {
+	margin-bottom: 12px;
+}
+
+.sandbox-settings-info-list {
+	margin: 4px 0 0 16px;
+}
+
+.sandbox-settings-code-input {
+	font-family: monospace;
+	font-size: 11px;
+}
+
+.sandbox-settings-sources {
+	flex-direction: column;
+	align-items: stretch;
+}
+
+.sandbox-settings-sources-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+}
+
+.sandbox-settings-sources-output {
+	margin-top: 8px;
+	max-height: 240px;
+	overflow: auto;
+	font-size: 11px;
+	padding: 8px;
+	background-color: var(--background-secondary);
+	border-radius: 4px;
+}

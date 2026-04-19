@@ -464,9 +464,9 @@ export default class AgentSandboxPlugin extends Plugin {
 		modal.contentEl.createEl("p", {
 			text: `Prompt for ${vaultPath} — @${vaultPath} will be appended automatically.`,
 		});
-		const input = modal.contentEl.createEl("textarea");
-		input.style.width = "100%";
-		input.style.minHeight = "80px";
+		const input = modal.contentEl.createEl("textarea", {
+			cls: "sandbox-modal-input-multiline",
+		});
 		input.placeholder = "e.g. Summarize this note in 3 bullet points";
 		modal.contentEl.createDiv({ cls: "modal-button-container" }, (div) => {
 			div.createEl("button", { text: "Cancel", cls: "mod-muted" }, (btn) => {
@@ -984,13 +984,12 @@ export default class AgentSandboxPlugin extends Plugin {
 		}
 		const modal = new Modal(this.app);
 		modal.titleEl.setText("Switch to Sandbox session");
-		const input = modal.contentEl.createEl("input", { type: "text" }) as HTMLInputElement;
+		const input = modal.contentEl.createEl("input", {
+			type: "text",
+			cls: "sandbox-modal-filter",
+		}) as HTMLInputElement;
 		input.placeholder = "Filter sessions…";
-		input.style.width = "100%";
-		input.style.marginBottom = "8px";
-		const list = modal.contentEl.createEl("div");
-		list.style.maxHeight = "300px";
-		list.style.overflow = "auto";
+		const list = modal.contentEl.createEl("div", { cls: "sandbox-modal-list" });
 
 		const render = (filter: string) => {
 			list.empty();
@@ -1000,16 +999,7 @@ export default class AgentSandboxPlugin extends Plugin {
 				const name = view.getSessionName() ?? "(unnamed)";
 				const label = `Session: ${name}`;
 				if (needle && !label.toLowerCase().includes(needle)) continue;
-				const row = list.createEl("div");
-				row.style.padding = "6px 8px";
-				row.style.cursor = "pointer";
-				row.style.borderRadius = "4px";
-				row.addEventListener("mouseenter", () => {
-					row.style.backgroundColor = "var(--background-modifier-hover)";
-				});
-				row.addEventListener("mouseleave", () => {
-					row.style.backgroundColor = "";
-				});
+				const row = list.createEl("div", { cls: "sandbox-modal-row-clickable" });
 				row.setText(label);
 				row.addEventListener("click", () => {
 					modal.close();
@@ -1058,7 +1048,7 @@ export default class AgentSandboxPlugin extends Plugin {
 				placeholder: "e.g. work, research, debug",
 				value: defaultValue,
 			});
-			input.style.width = "100%";
+			input.addClass("sandbox-modal-input-full");
 			input.addEventListener("keydown", (e) => {
 				if (e.key === "Enter") {
 					const val = input.value.trim();
@@ -1137,14 +1127,9 @@ export default class AgentSandboxPlugin extends Plugin {
 			text: `${candidates.length} session(s) have no attached clients. Kill the selected ones?`,
 		});
 		const selected = new Set(candidates);
-		const list = modal.contentEl.createEl("ul");
-		list.style.listStyle = "none";
-		list.style.padding = "0";
+		const list = modal.contentEl.createEl("ul", { cls: "sandbox-modal-check-list" });
 		for (const name of candidates) {
-			const row = list.createEl("li");
-			row.style.display = "flex";
-			row.style.gap = "8px";
-			row.style.padding = "4px 0";
+			const row = list.createEl("li", { cls: "sandbox-modal-check-row" });
 			const cb = row.createEl("input", { type: "checkbox" }) as HTMLInputElement;
 			cb.checked = true;
 			cb.addEventListener("change", () => {

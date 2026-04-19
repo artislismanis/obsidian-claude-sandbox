@@ -116,10 +116,9 @@ export class DiffReviewModal extends Modal {
 		if (this.request.affectedLinks && this.request.affectedLinks.length > 0) {
 			const header = contentEl.createEl("div", { cls: "diff-review-affected-header" });
 			header.setText(`${this.request.affectedLinks.length} note(s) link here:`);
-			const list = contentEl.createEl("ul", { cls: "diff-review-affected-list" });
-			list.style.maxHeight = "200px";
-			list.style.overflow = "auto";
-			list.style.margin = "4px 0 12px 16px";
+			const list = contentEl.createEl("ul", {
+				cls: "diff-review-affected-list sandbox-diff-affected-list",
+			});
 			for (const link of this.request.affectedLinks) {
 				list.createEl("li", { text: link });
 			}
@@ -134,14 +133,7 @@ export class DiffReviewModal extends Modal {
 		}
 
 		if (this.request.oldContent !== undefined || this.request.newContent !== undefined) {
-			const diffEl = contentEl.createEl("pre", { cls: "diff-review-diff" });
-			diffEl.style.maxHeight = "400px";
-			diffEl.style.overflow = "auto";
-			diffEl.style.fontSize = "12px";
-			diffEl.style.fontFamily = "var(--font-monospace)";
-			diffEl.style.padding = "8px";
-			diffEl.style.borderRadius = "4px";
-			diffEl.style.backgroundColor = "var(--background-secondary)";
+			const diffEl = contentEl.createEl("pre", { cls: "diff-review-diff sandbox-diff-pre" });
 
 			const diff = computeUnifiedDiff(
 				this.request.oldContent ?? "",
@@ -151,9 +143,9 @@ export class DiffReviewModal extends Modal {
 				const lineEl = diffEl.createEl("div");
 				lineEl.textContent = line;
 				if (line.startsWith("+ ")) {
-					lineEl.style.color = "var(--text-success)";
+					lineEl.addClass("sandbox-diff-line-added");
 				} else if (line.startsWith("- ")) {
-					lineEl.style.color = "var(--text-error)";
+					lineEl.addClass("sandbox-diff-line-removed");
 				}
 			}
 		}
@@ -226,16 +218,13 @@ export class BatchReviewModal extends Modal {
 			text: `${this.request.items.length} file(s) affected. Uncheck any you want to skip.`,
 		});
 
-		const list = contentEl.createEl("div", { cls: "batch-review-list" });
-		list.style.maxHeight = "400px";
-		list.style.overflow = "auto";
-		list.style.margin = "8px 0";
+		const list = contentEl.createEl("div", {
+			cls: "batch-review-list sandbox-modal-list-tall",
+		});
 		for (const item of this.request.items) {
-			const row = list.createEl("label", { cls: "batch-review-row" });
-			row.style.display = "flex";
-			row.style.alignItems = "center";
-			row.style.gap = "8px";
-			row.style.padding = "4px 0";
+			const row = list.createEl("label", {
+				cls: "batch-review-row sandbox-modal-check-row",
+			});
 			const checkbox = row.createEl("input", { type: "checkbox" }) as HTMLInputElement;
 			checkbox.checked = true;
 			checkbox.addEventListener("change", () => {
