@@ -3,12 +3,11 @@ import { ItemView, Scope } from "obsidian";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { TerminalSettings, TerminalThemeMode } from "./settings";
-import { pollUntilReady, buildWsUrl } from "./ttyd-client";
+import { pollUntilReady, buildWsUrl, exponentialBackoff } from "./ttyd-client";
 
 export const VIEW_TYPE_TERMINAL = "agent-sandbox-terminal-view";
 
-const MAX_RETRIES = 30;
-const RETRY_DELAY_MS = 1000;
+const MAX_RETRIES = 15;
 
 // ttyd protocol command characters. Server↔client share ASCII values by direction:
 // server-to-client and client-to-server use disjoint meanings for the same chars.
@@ -180,8 +179,14 @@ export class TerminalView extends ItemView {
 			const connected = await pollUntilReady(
 				settings.ttydPort,
 				MAX_RETRIES,
-				RETRY_DELAY_MS,
+				exponentialBackoff,
 				() => gen !== this.generation,
+				(attempt, waitMs) => {
+					if (gen !== this.generation) return;
+					loading.setText(
+						`Connecting to terminal… (attempt ${attempt + 2}/${MAX_RETRIES}, retry in ${Math.round(waitMs / 100) / 10}s)`,
+					);
+				},
 			);
 
 			if (gen !== this.generation) return;
@@ -303,9 +308,10 @@ export class TerminalView extends ItemView {
 			/* container may not be visible yet */
 		}
 
-		// Clipboard: auto-copy on selection, Ctrl+Shift+V to paste
+		// Clipboard: auto-copy on selection (opt-out via setting), Ctrl+Shift+V to paste
 		this.termDisposables.push(
 			term.onSelectionChange(() => {
+				if (!this.getSettings().clipboardAutoCopy) return;
 				const selection = term.getSelection();
 				if (selection) {
 					navigator.clipboard.writeText(selection).catch(() => {});

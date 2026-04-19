@@ -174,9 +174,9 @@ Inspired by Windows Terminal's Claude Code status icon — show the user whether
 - [ ] Optional audible or tray notification when Claude transitions to "awaiting input" after a long-running task (deferred to a follow-up).
 
 ### Terminal Polish
-- [ ] Clipboard auto-copy opt-out setting
-- [ ] Connection retry with exponential backoff
-- [ ] Startup progress indicator (elapsed time or step description)
+- [x] Clipboard auto-copy opt-out setting — `clipboardAutoCopy` (default on) gates `onSelectionChange` handler in TerminalView.
+- [x] Connection retry with exponential backoff — 500 ms × 1.5ⁿ capped at 5 s, max 15 attempts (was fixed 1 s × 30). Retry UI surfaces the current wait (`attempt 3/15, retry in 1.1s`).
+- [x] Startup progress indicator — status-bar detail cycles through "checking Docker availability… → probing WSL… → probing container status… → docker compose up -d (auto-start)…" instead of a static "checking".
 
 ## Phase 6: Community Plugin Submission
 

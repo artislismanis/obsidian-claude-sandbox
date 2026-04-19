@@ -29,6 +29,7 @@ export interface AgentSandboxSettings {
 	terminalFont: string;
 	terminalFontSize: number;
 	terminalScrollback: number;
+	clipboardAutoCopy: boolean;
 	allowedPrivateHosts: string;
 	additionalFirewallDomains: string;
 	containerMemory: string;
@@ -106,7 +107,12 @@ export function enabledTiersFromSettings(settings: AgentSandboxSettings): Set<Pe
 
 export type TerminalSettings = Pick<
 	AgentSandboxSettings,
-	"ttydPort" | "terminalTheme" | "terminalFont" | "terminalFontSize" | "terminalScrollback"
+	| "ttydPort"
+	| "terminalTheme"
+	| "terminalFont"
+	| "terminalFontSize"
+	| "terminalScrollback"
+	| "clipboardAutoCopy"
 >;
 
 export const DEFAULT_SETTINGS: AgentSandboxSettings = {
@@ -123,6 +129,7 @@ export const DEFAULT_SETTINGS: AgentSandboxSettings = {
 	terminalFont: "",
 	terminalFontSize: 14,
 	terminalScrollback: 10000,
+	clipboardAutoCopy: true,
 	allowedPrivateHosts: "",
 	additionalFirewallDomains: "",
 	containerMemory: "8G",
@@ -474,6 +481,18 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 						}
 					});
 			});
+
+		new Setting(el)
+			.setName("Auto-copy on selection")
+			.setDesc(
+				"Copy selected terminal text to the clipboard automatically. Disable if selecting text for reading surprises you by overwriting the clipboard.",
+			)
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.clipboardAutoCopy).onChange(async (value) => {
+					this.plugin.settings.clipboardAutoCopy = value;
+					this.plugin.saveSettings();
+				}),
+			);
 	}
 
 	private renderMcp(el: HTMLElement): void {

@@ -92,6 +92,7 @@ export default class AgentSandboxPlugin extends Plugin {
 				terminalFont: this.settings.terminalFont,
 				terminalFontSize: this.settings.terminalFontSize,
 				terminalScrollback: this.settings.terminalScrollback,
+				clipboardAutoCopy: this.settings.clipboardAutoCopy,
 			}));
 			view.onRenameSession = async () => {
 				const oldName = (view.getState().sessionName as string) ?? "";
@@ -642,9 +643,10 @@ export default class AgentSandboxPlugin extends Plugin {
 
 	private async backgroundStartup(): Promise<void> {
 		this.statusBar.setState("checking");
-		this.statusBar.setDetails("Checking Docker availability...");
+		this.statusBar.setDetails("Starting: checking Docker availability…");
 
 		try {
+			this.statusBar.setDetails("Starting: probing WSL (5s fast-fail)…");
 			await this.docker.ensureWslReady();
 		} catch (error: unknown) {
 			this.statusBar.setState("error");
@@ -656,6 +658,7 @@ export default class AgentSandboxPlugin extends Plugin {
 		}
 
 		try {
+			this.statusBar.setDetails("Starting: probing container status…");
 			const output = await this.docker.probeStatus();
 			const isRunning = DockerManager.parseIsRunning(output);
 			if (!isRunning) {
@@ -664,6 +667,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			await this.syncStatusBar(isRunning);
 
 			if (this.settings.autoStartContainer && !isRunning) {
+				this.statusBar.setDetails("Starting: docker compose up -d (auto-start)…");
 				await this.startContainer();
 			}
 

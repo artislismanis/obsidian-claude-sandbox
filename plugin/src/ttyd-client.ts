@@ -33,8 +33,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 export async function pollUntilReady(
 	port: number,
 	maxRetries: number,
-	retryDelayMs: number,
+	backoff: number | ((attemptIdx: number) => number),
 	isAborted: () => boolean,
+	onAttempt?: (attemptIdx: number, waitMs: number) => void,
 ): Promise<boolean> {
 	for (let i = 0; i < maxRetries; i++) {
 		if (isAborted()) return false;
@@ -53,9 +54,16 @@ export async function pollUntilReady(
 
 		if (isAborted()) return false;
 
-		await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+		const waitMs = typeof backoff === "number" ? backoff : backoff(i);
+		onAttempt?.(i, waitMs);
+		await new Promise((resolve) => setTimeout(resolve, waitMs));
 	}
 	return false;
+}
+
+/** Exponential backoff: 500 ms × 1.5^n, capped at 5 s. Matches the terminal-view retry schedule. */
+export function exponentialBackoff(attemptIdx: number): number {
+	return Math.min(5000, Math.round(500 * Math.pow(1.5, attemptIdx)));
 }
 
 export function buildWsUrl(port: number): string {
