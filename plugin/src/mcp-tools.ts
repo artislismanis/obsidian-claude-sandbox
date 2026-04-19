@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 import { isPathWithinDir, isPathAllowed, isRealPathWithinBase } from "./validation";
 import { FileSystemAdapter } from "obsidian";
 import type { WriteOperation } from "./diff-review-modal";
+import { registerExtensionTools } from "./mcp-extensions";
 
 export type { WriteOperation };
 
@@ -1527,6 +1528,10 @@ export function buildTools(
 			return text(`${label} on ${targets.length} file(s).`);
 		},
 	});
+
+	// ── Extensions tier (plugin integrations) ─────────
+
+	registerExtensionTools(app, (tool) => tools.push(tool));
 
 	// ── Agent tier ────────────────────────────────────
 
