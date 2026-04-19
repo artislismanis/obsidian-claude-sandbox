@@ -35,35 +35,35 @@ Enable managed beta testing via Obsidian BRAT.
 Restructure docs for beta tester audience using the Diátaxis framework.
 
 ### Tutorials (learning, practical)
-- [ ] `docs/tutorials/getting-started.md` — first-time setup through running Claude
-- [ ] `docs/tutorials/first-agent-task.md` — walk through a real Claude + vault task
+- [x] `docs/tutorials/getting-started.md` — first-time setup through running Claude
+- [x] `docs/tutorials/first-agent-task.md` — walk through a real Claude + vault task
 
 ### How-to Guides (working, practical)
-- [ ] `docs/how-to/install-via-brat.md`
-- [ ] `docs/how-to/configure-firewall.md`
-- [ ] `docs/how-to/persistent-sessions.md`
-- [ ] `docs/how-to/use-multiple-terminals.md`
-- [ ] `docs/how-to/add-tools-to-container.md`
-- [ ] `docs/how-to/customize-workspace.md`
-- [ ] `docs/how-to/update-plugin.md`
+- [x] `docs/how-to/install-via-brat.md`
+- [x] `docs/how-to/configure-firewall.md`
+- [x] `docs/how-to/persistent-sessions.md`
+- [x] `docs/how-to/use-multiple-terminals.md`
+- [x] `docs/how-to/add-tools-to-container.md`
+- [x] `docs/how-to/customize-workspace.md`
+- [x] `docs/how-to/update-plugin.md`
 
 ### Reference (working, theoretical)
-- [ ] `docs/reference/commands.md`
-- [ ] `docs/reference/settings.md`
-- [ ] `docs/reference/keyboard-shortcuts.md`
-- [ ] `docs/reference/docker-resources.md`
-- [ ] `docs/reference/project-structure.md`
+- [x] `docs/reference/commands.md`
+- [x] `docs/reference/settings.md`
+- [x] `docs/reference/keyboard-shortcuts.md`
+- [x] `docs/reference/docker-resources.md`
+- [x] `docs/reference/project-structure.md`
 
 ### Explanation (learning, theoretical)
-- [ ] Move `docs/architecture.md` → `docs/explanation/architecture.md`
-- [ ] `docs/explanation/security-model.md`
-- [ ] `docs/explanation/container-lifecycle.md`
-- [ ] `docs/explanation/design-decisions.md`
+- [x] Moved `docs/architecture.md` → `docs/explanation/architecture.md`
+- [x] `docs/explanation/security-model.md`
+- [x] `docs/explanation/container-lifecycle.md`
+- [x] `docs/explanation/design-decisions.md`
 
 ### README
-- [ ] Add GIF/screenshot of core workflow at top
-- [ ] Slim down — move detailed sections into docs/ tree
-- [ ] Add link grid to docs/ structure
+- [ ] Add GIF/screenshot of core workflow at top (follow-up — needs capture)
+- [x] Slim down — moved detailed sections into docs/ tree
+- [x] Added link grid to docs/ structure (Diátaxis quadrants)
 
 ## Phase 4: MCP Server Enhancements
 

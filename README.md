@@ -1,363 +1,86 @@
 # Agent Sandbox
 
-An Obsidian plugin and containerized sandbox for working with Obsidian vaults using AI coding agents. Start/stop the sandbox, monitor status, and open multiple independent embedded terminals — all without leaving your vault.
+An Obsidian plugin and containerized sandbox for working with your vault through AI coding agents. Start/stop the sandbox, manage terminals, and let Claude Code (or any MCP-capable agent) read/write vault content with human-in-the-loop review — all without leaving Obsidian.
 
-## How it works
+## What it does
 
-```
-Obsidian (Windows / Linux / Mac)
-  └── Plugin
-        ├── Shell commands → docker compose up/down (via WSL or local)
-        ├── xterm.js → ttyd WebSocket (port 7681) inside container
-        └── Status bar showing container state
+- **Embedded terminals.** xterm.js tabs inside Obsidian, each connected to a long-lived container shell or tmux session.
+- **Sandboxed agent.** The vault is mounted read-only except for one write directory. Outbound traffic is firewalled to a curated allowlist. The agent can't escape its cage.
+- **MCP integration.** A local HTTP MCP server exposes ~40 tools for searching, reading, writing, and navigating the vault with Obsidian-metadata awareness (tags, backlinks, frontmatter, the graph).
+- **Human-in-the-loop writes.** Enable `writeReviewed` and every write outside the workspace dir pops an Obsidian modal with a diff. Approve or reject per operation.
+- **Plugin API bridge.** Tools for Dataview, Tasks, Templater, Periodic Notes, and Canvas — delegated to the target plugin's own API when it's installed.
+- **Activity feedback.** Claude Code reports working/idle/awaiting-input state via MCP; the terminal tab prefix and status bar show which session needs your attention.
 
-Sandbox Container
-  ├── ttyd (web terminal on port 7681)
-  ├── bash login shell per connection
-  ├── Claude Code CLI + MCP servers (memory)
-  └── /workspace/vault (read-only mount, writable subfolder)
-```
-
-Each terminal tab in Obsidian gets its own independent bash session — run multiple agent instances in parallel.
-
-## Features
-
-**Plugin:**
-- **Container management** — Start, stop, restart, and check status via the command palette
-- **Status bar** — Shows container state (stopped/starting/running/error)
-- **Multiple terminals** — Each tab gets an independent session in the main editor area
-- **Terminal theming** — Follow Obsidian theme, or force dark/light
-- **Clipboard** — Auto-copy on select, `Ctrl+Shift+V` to paste
-- **Auto-lifecycle** — Optionally start/stop the container with plugin load/unload
-- **Vault path injection** — Auto-detects vault path and passes it to Docker
-- **Docker mode** — WSL (Windows) or Local (Linux/Mac/native Docker)
-
-**Container:**
-- **Web terminal** — ttyd accessible at `http://localhost:7681`
-- **Read-only vault** — Vault mounted read-only; agents can only write to a designated folder (`agent-workspace/` by default)
-- **Claude Code CLI** — Pre-installed and ready to use
-- **Memory MCP** — `@modelcontextprotocol/server-memory` preinstalled, memory file stored in `vault/.oas/` (independent of the write directory)
-- **Dev tools** — Node 22, Python 3.12, ripgrep, fd, atuin, jq, gh
-- **Shell history (atuin)** — Commands are recorded by [atuin](https://atuin.sh) into a persistent SQLite DB on the `oas-shell-history` named volume. Press **Ctrl+R** to open atuin's search UI (scoped by cwd, exit code, session, time). To seed atuin with existing bash history on first run, open a terminal and run `atuin import bash` once.
-- **Network sandboxing** — Optional allowlist-based firewall
-
-## Security
-
-- **Read-only vault** — mounted read-only; only the write directory is writable
-- **Read-only source** — container tooling at /workspace is read-only
-- **Localhost-only terminal** — ttyd binds to 127.0.0.1 by default
-- **Firewall toggle** — enable/disable allowlist-based outbound firewall from the status bar (shield icon) or command palette. Auto-enable on start via Advanced settings. Restricts traffic to: Anthropic, npm, GitHub, PyPI, CDNs. Configure `ALLOWED_PRIVATE_HOSTS` for local services (NAS, etc.)
-- **No remote access by default** — ttyd only accepts local connections
-- **Resource limits** — memory and CPU capped by default (configurable)
-
-> **WSL2 note:** Docker inside WSL2 is also limited by `.wslconfig` memory settings.
-> Ensure WSL2 allocation >= container memory limit.
-
-## Prerequisites
-
-- **Docker Engine** installed (inside WSL2 on Windows, or natively on Linux/Mac)
-- On Windows: **WSL2 mirrored networking** — add to `%USERPROFILE%\.wslconfig`:
-  ```ini
-  [wsl2]
-  networkingMode=mirrored
-  ```
-  Then restart WSL: `wsl --shutdown`
-- On Windows with **Rancher Desktop or Docker Desktop (WSL2 backend)**: the plugin's Obsidian MCP server (port 28080 by default) must be reachable from inside the container. The plugin automatically detects and injects the correct Windows host IP so the container can route to it. If MCP tools don't appear in Claude after starting the container, add a Windows Firewall inbound rule:
-  ```powershell
-  New-NetFirewallRule -DisplayName "Obsidian MCP Server (Docker)" `
-    -Direction Inbound -Protocol TCP -LocalPort 28080 -Action Allow
-  ```
-  To verify whether the rule is actually needed on your setup, disable it temporarily (`Disable-NetFirewallRule -DisplayName "Obsidian MCP Server (Docker)"`) and test MCP connectivity. Remove it permanently with `Remove-NetFirewallRule` if it makes no difference — Rancher Desktop and some Docker Desktop configurations already allow this traffic.
-- **Claude Code subscription** authenticated
-
-## Quick start
-
-### 1. Clone the repo
-
-```bash
-git clone https://github.com/artislismanis/obsidian-agent-sandbox.git
-cd obsidian-agent-sandbox/container
-```
-
-### 2. Build the container
-
-```bash
-docker compose build
-```
-
-This produces the `oas-sandbox:latest` image. All Docker resources created by this project use the `oas-` prefix (image `oas-sandbox`, container `oas-sandbox`, volumes `oas-claude-config` and `oas-shell-history`) so you can see everything at a glance with `docker ps | grep oas-`.
-
-> **Important:** Start the container from the Obsidian plugin (step 4), not from the command line. The plugin passes required environment variables (`PKM_VAULT_PATH`, `PKM_WRITE_DIR`, etc.) automatically. Running `docker compose up -d` manually without a configured `.env` file will result in missing vault mounts and unexpected behaviour.
-
-### 3. Build and install the plugin
-
-```bash
-cd ../plugin
-npm install
-npm run build
-```
-
-Copy the contents of `plugin/dist/` to your vault's `.obsidian/plugins/obsidian-agent-sandbox/` directory:
-```bash
-mkdir -p /path/to/vault/.obsidian/plugins/obsidian-agent-sandbox
-cp dist/* /path/to/vault/.obsidian/plugins/obsidian-agent-sandbox/
-```
-
-### 4. Configure and use
-
-1. Restart Obsidian and enable **Agent Sandbox** in Settings > Community Plugins
-2. Set **Docker mode** (WSL or Local)
-3. Set **Docker Compose path** to the path of the `container/` directory
-4. Open the command palette (`Ctrl+P`) and run **Sandbox: Start Container**
-5. Click the terminal icon in the ribbon or run **Open Sandbox Terminal**
-
-## Terminal keyboard shortcuts
-
-| Action | Shortcut |
-|--------|----------|
-| **Copy** | Select text with mouse — auto-copied to clipboard |
-| **Copy word** | Right-click a word |
-| **Paste** | `Ctrl+Shift+V` |
-| **Interrupt (SIGINT)** | `Ctrl+C` |
-| **Scroll** | Mouse wheel (10000 lines of scrollback) |
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| **Open Sandbox Terminal** | Open a new terminal tab in the main editor area |
-| **Sandbox: Start Container** | Run `docker compose up -d` |
-| **Sandbox: Stop Container** | Run `docker compose down` |
-| **Sandbox: Container Status** | Show `docker compose ps` output |
-| **Sandbox: Restart Container** | Run `docker compose restart` |
-| **Sandbox: Toggle Firewall** | Enable or disable the outbound firewall |
-
-## Settings
-
-Settings are organized into three tabs:
-
-**General:**
-| Setting | Default | Description |
-|---------|---------|-------------|
-| Docker mode | `WSL` | WSL (Windows) or Local (Linux/Mac/native Docker) |
-| Docker Compose path | *(empty)* | Path to the directory containing docker-compose.yml |
-| WSL distribution | `Ubuntu` | WSL distribution for Docker commands (WSL mode only) |
-| Vault write directory | `agent-workspace` | Folder inside vault where the container can write files |
-| Memory file name | `memory.json` | Filename for the memory MCP, stored in `vault/.oas/` |
-| Auto-start on load | `off` | Start container when plugin loads |
-| Auto-stop on unload | `off` | Stop container when plugin is disabled |
-
-**Terminal:**
-| Setting | Default | Description |
-|---------|---------|-------------|
-| Port | `7681` | Host port mapped to ttyd |
-| Bind address | `127.0.0.1` | IP address ttyd binds to (set 0.0.0.0 for network access) |
-| Terminal theme | Follow Obsidian | Follow Obsidian theme, Dark, or Light |
-| Terminal font | *(auto)* | Custom font family (falls back through common monospace fonts) |
-
-**Advanced:**
-| Setting | Default | Description |
-|---------|---------|-------------|
-| Memory limit | `8G` | Maximum container memory |
-| CPU limit | `4` | Maximum container CPU cores |
-| Auto-enable firewall | `off` | Enable outbound firewall on container start |
-| Allowed private hosts | *(empty)* | Comma-separated IPs/CIDRs for firewall allowlist |
-
-## Project structure
+## Architecture in one picture
 
 ```
-obsidian-agent-sandbox/
-├── plugin/                          Obsidian plugin (TypeScript, xterm.js, esbuild)
-│   ├── src/
-│   │   ├── main.ts                  Plugin entry point, lifecycle, commands
-│   │   ├── settings.ts              Settings interface and UI tab
-│   │   ├── docker.ts                Container management via WSL or local Docker
-│   │   ├── status-bar.ts            Status bar indicator
-│   │   ├── terminal-view.ts         xterm.js terminal with ttyd WebSocket
-│   │   ├── ttyd-client.ts           ttyd polling and URL construction
-│   │   └── __tests__/               Vitest unit tests
-│   ├── styles.css                   Plugin and xterm.js styles
-│   ├── manifest.json                Obsidian plugin manifest
-│   └── package.json
-│
-├── container/                       Infra — Ubuntu 24.04, ttyd, Claude Code, MCP
-│   ├── Dockerfile                   Container image
-│   ├── docker-compose.yml           Service, ports, volumes, OAS naming
-│   ├── .env.example                 Environment template (optional with plugin)
-│   └── scripts/
-│       ├── entrypoint.sh            Sets sudo password, drops to claude, runs ttyd
-│       ├── session.sh               Starts a login bash per ttyd connection
-│       ├── verify.sh                Environment verification / runtime manifest
-│       └── init-firewall.sh         Allowlist-based outbound firewall
-│
-├── workspace/                       Claude's domain — mounted rw at /workspace/ inside container
-│   ├── .claude/settings.json        Claude Code project settings (Tier 1)
-│   ├── .mcp.json                    MCP server configuration (memory, etc.)
-│   └── CLAUDE.md                    Rules for Claude operating inside the sandbox
-│
-└── docs/
-    ├── architecture.md              Rationale for container/workspace split + tier model
-    └── testing.md                   Manual testing checklist
+Obsidian (host)
+  ├── Plugin
+  │    ├── Terminal views (xterm.js)          → ttyd in container
+  │    ├── MCP HTTP server :28080             ← container calls back
+  │    ├── Review modals, status bar, skills
+  │    └── docker compose up/down, firewall ctl
+  └── Vault files
+        └── ro mount in container, except $PKM_WRITE_DIR (rw)
+
+Container (oas-sandbox)
+  ├── Claude Code CLI + skills + hooks
+  ├── tmux, ttyd, Node 22, Python 3.12
+  ├── Outbound firewall (allowlist)
+  └── Workspace files (rw, committable)
 ```
 
-The split between `container/` (infra, not mounted inside) and `workspace/` (Claude's domain, mounted rw) is deliberate. See `docs/architecture.md` for the full rationale.
+## Getting started
 
-## Development
+The tutorials are the fastest way in:
 
-### Plugin development
+- [**Getting started**](docs/tutorials/getting-started.md) — first-time setup through running Claude.
+- [**First agent task**](docs/tutorials/first-agent-task.md) — walk through a real Claude + vault task, including the review flow.
 
-```bash
-cd plugin
-npm install
-npm run dev          # Watch mode
-npm run check        # Lint + format + typecheck + tests
-npm run test         # Tests only
-```
+## Documentation
 
-See `plugin/CLAUDE.md` for architecture details and conventions.
+Organized per [Diátaxis](https://diataxis.fr/): four quadrants by purpose.
 
-### Container lifecycle
+### Tutorials (learning, practical)
+- [Getting started](docs/tutorials/getting-started.md)
+- [First agent task](docs/tutorials/first-agent-task.md)
 
-The plugin's container start/stop model is built on `docker compose up -d`'s native idempotency rather than destroy-and-recreate:
+### How-to guides (working, practical)
+- [Install via BRAT](docs/how-to/install-via-brat.md)
+- [Configure the firewall](docs/how-to/configure-firewall.md)
+- [Keep sessions alive across restarts](docs/how-to/persistent-sessions.md)
+- [Use multiple terminals](docs/how-to/use-multiple-terminals.md)
+- [Add tools to the container](docs/how-to/add-tools-to-container.md)
+- [Customize the workspace](docs/how-to/customize-workspace.md)
+- [Update the plugin](docs/how-to/update-plugin.md)
 
-- **Start** (command or auto-start on load) runs `docker compose up -d`. If a container is already running with matching config, it's reused instantly — no recreate, no downtime. If the config has changed (e.g. you edited a setting that flows through an env var), compose detects the drift and recreates. No need to explicitly stop first.
-- **Stop** (command or auto-stop on exit) runs `docker compose down`. Named volumes (`oas-claude-config`, `oas-shell-history`) persist across this.
-- **Restart** (command) explicitly runs `down` then `up -d`. Use this when you want to discard in-container runtime state (tmpfs files, background processes, interactive `sudo apt-get install`s) — not needed for config changes, which the normal Start handles.
-- **Plugin disable** always runs `down` (detached, fire-and-forget). Disabling the plugin is a deliberate "I'm done" signal regardless of the auto-stop setting.
-- **Auto-stop on exit (off by default)** — with the setting off, the container keeps running between Obsidian sessions. Reopening Obsidian is instant (just an idempotent `up -d`), previously-persisted terminal tabs re-attach to the still-running ttyd, and any background processes (long Claude loops, watch tasks) continue. Turn it on if you'd rather free the container's memory/CPU when you close Obsidian and accept a fresh container on next open.
-- **Shell session persistence across Obsidian disconnects** — regular terminal tabs are ephemeral: close the tab or Obsidian and ttyd kills the bash PTY along with anything running inside it. For long-running work (Claude loops, watch tasks, multi-hour builds), wrap the shell in a named tmux session so it survives the disconnect:
-  ```bash
-  session work            # create or reattach to a named persistent shell
-  claude -p "long task"   # anything inside survives disconnect
-  ```
-  Detach explicitly with `Ctrl-\`, or implicitly by closing the tab or Obsidian. Reattach later with `session work` from any new terminal tab. List active sessions with `sessions`. Multiple clients (e.g. two Obsidian tabs, or Obsidian + a browser on ttyd) can attach to the same session simultaneously with live-synced output. Sessions are ephemeral across container restarts (Restart = clean slate). tmux runs with a minimal no-UI config (mouse off, status off, no prefix key) so the feel is indistinguishable from plain bash.
+### Reference (working, theoretical)
+- [Commands](docs/reference/commands.md)
+- [Settings](docs/reference/settings.md)
+- [Keyboard shortcuts](docs/reference/keyboard-shortcuts.md)
+- [Docker resources](docs/reference/docker-resources.md)
+- [Project structure](docs/reference/project-structure.md)
 
-### Docker resource naming
+### Explanation (learning, theoretical)
+- [Architecture](docs/explanation/architecture.md)
+- [Security model](docs/explanation/security-model.md)
+- [Container lifecycle](docs/explanation/container-lifecycle.md)
+- [Design decisions](docs/explanation/design-decisions.md)
 
-All Docker resources use the `oas-` prefix (Obsidian Agent Sandbox). Quick checks:
+### Project docs
+- [Roadmap](docs/roadmap.md)
+- [Testing](docs/testing.md) — three automated layers (unit / integration / e2e)
 
-```bash
-docker ps --format '{{.Names}}' | grep oas-
-docker volume ls --format '{{.Name}}' | grep oas-
-docker images --format '{{.Repository}}:{{.Tag}}' | grep oas-sandbox
-```
+## Requirements
 
-The image is `oas-sandbox:latest`, the container is `oas-sandbox`, and named volumes are `oas-claude-config` (Claude Code auth and config) and `oas-shell-history` (persistent shell history).
+- Obsidian ≥ 1.5
+- Docker (Docker Desktop / Rancher Desktop / native)
+- Windows: WSL2
 
-### Ephemeral container filesystem
+## Status
 
-The container filesystem is **ephemeral**: every time the container is recreated (rebuild, `docker compose down && up`, or any plugin-driven restart that recreates the container), everything reverts to the exact state baked into the image. Only these paths persist across recreations:
-
-| Path inside container | Backed by | What it's for |
-|---|---|---|
-| `/workspace` | bind mount → host `workspace/` | Claude's domain — `.claude/`, `.mcp.json`, skills, agents, commands |
-| `/workspace/vault` | bind mount → host vault (ro) | Read-only view of your Obsidian vault |
-| `/workspace/vault/<write dir>` | bind mount (rw) | The only vault path the agent can write to |
-| `/home/claude/.claude` | named volume `oas-claude-config` | Claude Code authentication, `.claude.json`, project config |
-| `/home/claude/.shell-history` | named volume `oas-shell-history` | atuin SQLite DB (`atuin/history.db`) |
-
-Everything else — `apt`-installed packages, files in `/home/claude/` outside `.claude/` and `.shell-history/`, `/tmp`, `/usr/local`, shell config outside what the Dockerfile wrote — is discarded on every container recreation.
-
-**Practical implication:** `sudo apt-get install` inside a live session is strictly for testing. If a tool proves valuable, it **must** be added to `container/Dockerfile` to survive. Same rule for any config file, binary, or system change you want to keep.
-
-### Sudo password and the apt-get escape hatch
-
-The `claude` user inside the container has narrow sudo for `apt-get` and `apt` only, gated by a password. This lets you test-install tools in a live session before deciding whether to add them to the image permanently — but remember, installs do not survive container recreation (see above).
-
-**Default password**: `sandbox` (set in `container/.env.example`).
-
-**Overriding**:
-- Edit `SUDO_PASSWORD` in `container/.env` (copy from `.env.example` first), **or**
-- Use the plugin's "Sudo password" field in Settings > Agent Sandbox > Advanced (takes precedence over `.env`)
-
-**Example** — test installing `htop` during a ttyd session:
-
-```bash
-sudo apt-get update
-sudo apt-get install -y htop
-htop
-```
-
-When prompted, enter the password.
-
-**Trust model**: this is a human-intent gate, not a security boundary. The password is visible in plugin settings and `container/.env` on the host, but **not** inside the container — `entrypoint.sh` unsets `SUDO_PASSWORD` before dropping privileges. Claude is instructed (via `workspace/CLAUDE.md`) not to use sudo; if it needs a system package, it asks. The narrow sudoers scope (`apt-get`/`apt` only) limits blast radius even if sudo is misused. If you need stricter isolation, set `SUDO_PASSWORD` to an empty string in `container/.env` to disable interactive sudo entirely.
-
-### Adding OS-level tools to the Dockerfile
-
-If a tool proves valuable during a `sudo apt-get` test (see ephemeral filesystem note above), promote it to the Dockerfile so every build includes it:
-
-1. Edit `container/Dockerfile` — add the package to the existing `apt-get install` block (keep the list alphabetized).
-2. If the tool needs network access at runtime, add the relevant domains to the allowlist in `container/scripts/init-firewall.sh`.
-3. Rebuild the image: `cd container && docker compose build`
-4. Restart the container: `docker compose down && docker compose up -d` (or via the plugin)
-5. Verify with `verify.sh`: `docker compose exec sandbox verify.sh | grep <tool>`
-6. Commit the Dockerfile change on a feature branch and open a PR.
-
-**Node global packages**: don't go in the Dockerfile unless they're needed at build time. Prefer `npm install -g <pkg>` at runtime — the global prefix is inside the persisted `oas-claude-config` volume, so installs survive container restarts without a rebuild.
-
-**Python packages**: same principle — use `uv pip install` or `pipx install` for runtime installs.
-
-### PR workflow for workspace changes
-
-`workspace/` is Claude's domain — the config, skills, agents, and commands it uses inside the sandbox. You can let Claude edit these files freely during a session; all commits happen on the host.
-
-Claude running inside the container **cannot run git** — no `.git` is visible at or above `/workspace/`. This is intentional: commits to `workspace/` are always deliberate human actions, and there's no risk of Claude accidentally committing to `main` from inside the sandbox.
-
-**Recommended workflow (branch-first)**:
-
-```bash
-# Before starting the Claude session, on the host
-git checkout -b feature/<what-you-plan-to-change>
-
-# Start the container via the Obsidian plugin, run your Claude session
-# Claude edits files under workspace/
-
-# After the session, on the host
-git status                         # see what changed
-git diff workspace/                # review the edits
-git add workspace/
-git commit -m "<clear description>"
-git push -u origin feature/<what-you-plan-to-change>
-gh pr create                       # or open via GitHub UI
-```
-
-**If you forgot to branch first**:
-
-```bash
-# You're on main, Claude has already made edits (git status shows them)
-git checkout -b feature/<what-you-did>   # git carries unstaged changes to the new branch
-git add workspace/
-git commit -m "..."
-git push -u origin feature/<what-you-did>
-gh pr create
-```
-
-Your `main` is still clean — nothing was committed to it.
-
-**To throw away Claude's changes**:
-
-```bash
-git restore workspace/
-```
-
-**Branch protection**: we recommend enabling GitHub branch protection on `main` (Settings > Branches > Add rule > Require pull request before merging). This enforces the PR workflow at the remote level, so even an accidental `git push origin main` gets rejected.
-
-## Upgrading
-
-### Memory file moved out of write directory
-
-The memory MCP file previously lived at `vault/<write-dir>/memory.json`. It now lives at `vault/.oas/memory.json`, independent of the write directory setting. If you have an existing memory file, move it:
-
-```bash
-# On the host, from your vault root:
-mkdir -p .oas
-mv agent-workspace/memory.json .oas/memory.json
-```
-
-## Troubleshooting
-
-The plugin shows brief error messages in Obsidian notifications. For detailed technical errors, open the developer console (`Ctrl+Shift+I` on Windows/Linux, `Cmd+Option+I` on Mac) and look for entries prefixed with `[Agent Sandbox]`.
+Under active development, pre-1.0. Phase 4 (MCP server enhancements) and Phase 5 (UX depth) are complete. Phase 2 (BRAT release automation) and Phase 6 (community plugin submission) are next. See [roadmap](docs/roadmap.md).
 
 ## License
 
-MIT
+See `LICENSE`.
