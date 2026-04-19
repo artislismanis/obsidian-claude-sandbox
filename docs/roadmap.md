@@ -189,6 +189,17 @@ Prepare for the official Obsidian community plugin directory.
 - [ ] Add root-level manifest.json if required by community review
 - [ ] Respond to review feedback
 
+## Remaining items across phases
+
+Quick rollup so it's easy to see what's actually left:
+
+- **Phase 2:** cut the first BRAT-compatible release (`npm version 0.2.0` + push tags; follow `docs/how-to/release.md`).
+- **Phase 3:** capture a GIF/screenshot of the core workflow for the README.
+- **Phase 5 Activity feedback:** optional audible or tray notification on transitions to `awaiting_input` (deferred follow-up).
+- **Phase 6:** all six items — follows Phase 2 stabilisation and beta feedback.
+
+Everything else on the roadmap is delivered.
+
 ## Completed
 
 - [x] Windows Local Docker mode (buildLocalWindowsCommand)
@@ -206,8 +217,10 @@ Prepare for the official Obsidian community plugin directory.
 - [x] Test automation documentation (docs/testing.md — three layers, prerequisites, coverage)
 - [x] Phase 1 UX Quick Wins: font size, scrollback, auto-start prompt, per-setting restart labels, bind address warning, compose path validation
 - [x] Phase 4H MCP simplification pass: tier restructure (capabilities vs escalations), review-bypass fix across 8 write handlers, `runWrite` + `forEachMarkdownChunked` helpers, VaultCache wired into link graph, ttyd protocol enum cleanup, `addWriteTools` config object, event-driven firewall refresh, status-bar change detection, vault_search/suggest_links/batch_frontmatter chunked parallelism
-- [x] Initial skill set: `research-topic`, `link-hygiene`, `reviewed-edit`
-- [x] Tests grown from 233 → 255 (review coverage, tier derivation, chunked early-exit, cache invalidation)
+- [x] Full skill set: `research-topic`, `link-hygiene`, `reviewed-edit`, `tag-audit`, `daily-review`, `note-refactor`
+- [x] `/simplify` S1–S6 series: `McpServerConfig.hooks` consolidation; inline modal/settings styles → CSS classes; `ActivityUi` + `AgentOutputNotifier` extracted to `src/activity.ts`; `AnalyzeManager` extracted to `src/analyze.ts`; `showSessionPicker` + `showSessionCleanup` extracted to `src/session-ui.ts`; `defineTool` helper wraps all tool registrations in runtime zod parsing for typed handler args.
+- [x] Post-review bug fixes: `ActivityUi` tooltip reset on attention-count 1→0 (and on `clear()`); `AgentOutputNotifier` re-arms debounce under rate-limit instead of dropping buffered events; `AnalyzeManager` pre-warms template cache at onload so context-menu submenu has no async-after-render race; `showSessionPicker` re-queries leaves per render + revalidates at click; `VIEW_TYPE_TERMINAL` moved to `src/view-types.ts` so activity/session-ui are importable from tests without xterm.
+- [x] Tests grown from 233 → 326 (review coverage, tier derivation, chunked early-exit, cache invalidation, `agent_status_set` + ActivityUi transitions + AgentOutputNotifier debounce/rate-limit + AnalyzeManager template loading/caching/substitution, symlink path validation, batch-review, rename/move/delete affectedLinks, Canvas/Dataview/Tasks/Templater/Periodic-Notes integration handlers).
 
 ## Ecosystem References
 

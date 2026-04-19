@@ -693,6 +693,76 @@ git push && git push --tags
 
 ---
 
+### Post-review bug fixes (from `/review` follow-up)
+
+Manual verification of behaviour that was fixed after the S1–S6 refactor round.
+
+#### Attention-badge tooltip clears when sessions return to idle
+
+**Setup:** `writeReviewed` + `agent` tiers on (agent is always on). Two terminal sessions `a` and `b` attached.
+
+**Actions:**
+1. In session `a`, trigger Claude to emit `awaiting_input` (e.g. ask a question that requires approval).
+2. Hover the sandbox status-bar pill — tooltip should read "Sandbox running. 1 session(s) awaiting input: a".
+3. In session `a`, answer the question so the agent transitions back to `idle`.
+4. Hover the sandbox status-bar pill again.
+
+**Expected:** The `⚠` badge is gone and the tooltip has reverted to the default running-tooltip (container/MCP/firewall status). Pre-fix it kept the stale "1 session(s) awaiting input: a" text until something else overwrote it.
+
+Also check that toggling MCP off via **Sandbox: Toggle MCP Server** while a session is `awaiting_input` clears the badge AND the tooltip.
+
+#### Agent output notices don't drop under bursts
+
+**Setup:** `agentOutputNotify` = `new`. Container running.
+
+**Actions:** Within a ~3 s window, have Claude create ~5 files under `$PKM_WRITE_DIR` across two separate invocations (so the second batch lands inside the 5 s rate-limit window after the first notice).
+
+**Expected:**
+- First batch surfaces a Notice ~2 s after the last create (e.g. "Agent output: 3 created").
+- Second batch arriving inside the rate-limit window is **not** lost. About 5 s after the first notice, a second Notice appears reporting the batched remainder (e.g. "Agent output: 2 created").
+
+Pre-fix: the second batch was silently dropped.
+
+#### "Analyze in Sandbox" submenu shows templates on first open
+
+**Setup:** `workspace/.claude/prompts/` populated with the four shipped templates. Fresh Obsidian reload.
+
+**Actions:** Immediately after Obsidian finishes loading, right-click a vault note → **Analyze in Sandbox**.
+
+**Expected:** Submenu shows all configured template labels (Summarize, Critique, Explain, Extract TODOs, plus "Custom prompt…"). Pre-fix the first right-click often showed only "Custom prompt…" because the async template load raced against menu render.
+
+#### Session picker handles tabs closed mid-session
+
+**Setup:** Two terminal tabs open with distinct session names.
+
+**Actions:**
+1. Run **Sandbox: Switch to Sandbox session…**.
+2. While the modal is open, type to filter so both rows are visible.
+3. Close one of the tabs (`Ctrl+W` or tab X) from a different pane **without** dismissing the modal.
+4. Click the row for the now-closed tab.
+
+**Expected:** A Notice "That session has closed." appears. The modal closes cleanly. No crash or stale leaf activation.
+
+#### MCP tool calls with malformed arguments return a clear error
+
+**Setup:** Container running, MCP on.
+
+**Actions:** Via an MCP client (or inside Claude Code), invoke a tool with a deliberately wrong argument type, e.g. `vault_search` with `{ "query": 123 }` or `vault_read` with `{}` (no file / path).
+
+**Expected:** The tool returns an `isError: true` result with a message starting `Invalid arguments:` followed by the zod validation detail. Pre-`defineTool`, these would silently cast to `undefined` and downstream handlers would hit confusing errors like "File not found" for a missing path.
+
+Valid calls behave identically to before — schema validation is a guard, not a new gate.
+
+#### Failed tmux kills are logged
+
+**Setup:** Two empty tmux sessions. One of them has a name with a character that tmux will reject (e.g. you manually `docker compose exec sandbox tmux rename-session -t X "weird\x00name"` outside the normal flow).
+
+**Actions:** Run **Sandbox: Clean up empty sessions** → check both → Kill selected.
+
+**Expected:** The valid one is killed; the invalid one's failure is logged to DevTools console (`[Agent Sandbox] failed to kill tmux session '...':`). The aggregate Notice reports `1/2 session(s)` killed instead of silently omitting the failure.
+
+---
+
 ---
 
 ## Teardown
