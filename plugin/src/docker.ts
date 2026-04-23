@@ -113,17 +113,44 @@ export function buildLocalWindowsCommand(
 	return `${envPart}cd /d "${escapedPath}" && ${dockerCmd}`;
 }
 
-// Returns the IP of the first Windows vEthernet WSL adapter, or undefined
-// when not on Windows or when no WSL adapter is found.
-function getWslHostIp(): string | undefined {
+// Returns "mirrored", "nat", or undefined when wslinfo is unavailable
+// (older WSL, non-Windows, or distro not running).
+export async function getWslNetworkingMode(wslDistro: string): Promise<string | undefined> {
+	if (process.platform !== "win32") return undefined;
+	if (!VALID_DISTRO_NAME.test(wslDistro)) return undefined;
+	try {
+		const { stdout } = await exec(`wsl.exe -d ${wslDistro} -- wslinfo --networking-mode`, {
+			timeout: PROBE_TIMEOUT,
+			windowsHide: true,
+		});
+		return stdout.trim().toLowerCase();
+	} catch {
+		return undefined;
+	}
+}
+
+// Returns the Windows host IP the container should use to reach services on
+// the host, or undefined when not on Windows / no suitable adapter is found.
+// In WSL mirrored mode, eth0 inside WSL carries the Windows LAN IP, so the
+// plugin picks the primary LAN adapter. In NAT mode (and when the mode can't
+// be detected), picks the vEthernet(WSL) adapter — the legacy behaviour.
+export function getWslHostIp(mode: string | undefined): string | undefined {
 	if (process.platform !== "win32") return undefined;
 	const nets = networkInterfaces();
-	for (const [name, addrs] of Object.entries(nets)) {
-		if (!name.toLowerCase().includes("wsl")) continue;
-		const addr = addrs?.find((a) => a.family === "IPv4" && !a.internal);
-		if (addr) return addr.address;
+
+	const pick = (predicate: (name: string) => boolean): string | undefined => {
+		for (const [name, addrs] of Object.entries(nets)) {
+			if (!predicate(name)) continue;
+			const addr = addrs?.find((a) => a.family === "IPv4" && !a.internal);
+			if (addr) return addr.address;
+		}
+		return undefined;
+	};
+
+	if (mode === "mirrored") {
+		return pick((n) => !/wsl|vethernet|loopback/i.test(n));
 	}
-	return undefined;
+	return pick((n) => n.toLowerCase().includes("wsl"));
 }
 
 export class DockerManager {
@@ -233,9 +260,19 @@ export class DockerManager {
 		// (192.168.127.x) that host-gateway resolves to inside WSL2 is not
 		// reachable from within the container. The vEthernet WSL adapter IP
 		// (typically 172.20.x.1) is the correct gateway.
-		const wslHostIp = getWslHostIp();
+		//
+		// Mirrored mode is different: there is no vEthernet(WSL) adapter path
+		// to the host — the primary LAN adapter is. And Docker's default
+		// MASQUERADE rewrites the container source IP to that same LAN IP,
+		// which Windows' Hyper-V firewall (allowlist: 172.16.0.0/12) then
+		// drops. So disable masquerade on the bridge in mirrored mode only.
+		const wslMode = await getWslNetworkingMode(wslDistro);
+		const wslHostIp = getWslHostIp(wslMode);
 		if (wslHostIp) {
 			envVars.OAS_HOST_IP = wslHostIp;
+		}
+		if (wslMode === "mirrored") {
+			envVars.OAS_IP_MASQ = "false";
 		}
 
 		const command =
