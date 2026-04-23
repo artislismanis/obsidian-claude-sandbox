@@ -1,9 +1,67 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { NetworkInterfaceInfo } from "os";
+import type * as OsModule from "os";
+import type * as ChildProcessModule from "child_process";
+import type * as UtilModule from "util";
+
+// Mutable state for mocked modules. Must be declared before vi.mock factories
+// (vi.mock is hoisted, so factories need access via getters, not closures over
+// values that might not be initialised yet — hence the wrapper objects).
+const osState: { interfaces: NodeJS.Dict<NetworkInterfaceInfo[]> } = {
+	interfaces: {},
+};
+const execState: {
+	impl: (cmd: string) => { stdout: string; stderr: string } | Error;
+} = {
+	impl: () => new Error("exec not configured"),
+};
+
+vi.mock("os", async () => {
+	const actual = await vi.importActual<typeof OsModule>("os");
+	return {
+		...actual,
+		networkInterfaces: () => osState.interfaces,
+	};
+});
+
+vi.mock("child_process", async () => {
+	const actual = await vi.importActual<typeof ChildProcessModule>("child_process");
+	const { promisify } = await vi.importActual<typeof UtilModule>("util");
+	const execMock = (
+		cmd: string,
+		_opts: unknown,
+		cb: (err: Error | null, stdout: string, stderr: string) => void,
+	) => {
+		const result = execState.impl(cmd);
+		if (result instanceof Error) {
+			cb(result, "", "");
+		} else {
+			cb(null, result.stdout, result.stderr);
+		}
+		return {} as ReturnType<typeof actual.exec>;
+	};
+	// Match Node's real exec: promisify resolves to { stdout, stderr } via
+	// util.promisify.custom. Without this, destructuring stdout fails.
+	(execMock as unknown as Record<symbol, unknown>)[promisify.custom] = (
+		cmd: string,
+		opts: unknown,
+	) =>
+		new Promise((resolve, reject) => {
+			execMock(cmd, opts, (err, stdout, stderr) => {
+				if (err) reject(err);
+				else resolve({ stdout, stderr });
+			});
+		});
+	return { ...actual, exec: execMock };
+});
+
 import {
 	buildWslCommand,
 	buildLocalCommand,
 	buildLocalWindowsCommand,
 	windowsToWslPath,
+	getWslHostIp,
+	getWslNetworkingMode,
 } from "../docker";
 
 describe("buildWslCommand", () => {
@@ -240,5 +298,104 @@ describe("windowsToWslPath", () => {
 		expect(windowsToWslPath("C:\\Users\\My User\\My Vault")).toBe(
 			"/mnt/c/Users/My User/My Vault",
 		);
+	});
+});
+
+const iface = (address: string, internal = false): NetworkInterfaceInfo => ({
+	address,
+	family: "IPv4",
+	internal,
+	netmask: "255.255.255.0",
+	mac: "00:00:00:00:00:00",
+	cidr: `${address}/24`,
+});
+
+const setPlatform = (p: NodeJS.Platform) => {
+	Object.defineProperty(process, "platform", { value: p, configurable: true });
+};
+
+describe("getWslHostIp", () => {
+	const originalPlatform = process.platform;
+
+	beforeEach(() => {
+		osState.interfaces = {
+			"vEthernet (WSL)": [iface("172.25.144.1")],
+			"vEthernet (Default Switch)": [iface("172.30.0.1")],
+			"Wi-Fi": [iface("192.168.86.64")],
+			"Loopback Pseudo-Interface 1": [iface("127.0.0.1", true)],
+		};
+	});
+
+	afterEach(() => {
+		setPlatform(originalPlatform);
+	});
+
+	it("returns undefined on non-Windows platforms", () => {
+		setPlatform("linux");
+		expect(getWslHostIp("nat")).toBeUndefined();
+		expect(getWslHostIp("mirrored")).toBeUndefined();
+		expect(getWslHostIp(undefined)).toBeUndefined();
+	});
+
+	it("picks primary LAN adapter in mirrored mode", () => {
+		setPlatform("win32");
+		expect(getWslHostIp("mirrored")).toBe("192.168.86.64");
+	});
+
+	it("picks vEthernet(WSL) adapter in nat mode", () => {
+		setPlatform("win32");
+		expect(getWslHostIp("nat")).toBe("172.25.144.1");
+	});
+
+	it("falls back to vEthernet(WSL) when mode is undefined (old WSL / wslinfo unavailable)", () => {
+		setPlatform("win32");
+		expect(getWslHostIp(undefined)).toBe("172.25.144.1");
+	});
+
+	it("returns undefined in mirrored mode if no LAN adapter is present", () => {
+		setPlatform("win32");
+		osState.interfaces = {
+			"vEthernet (WSL)": [iface("172.25.144.1")],
+		};
+		expect(getWslHostIp("mirrored")).toBeUndefined();
+	});
+});
+
+describe("getWslNetworkingMode", () => {
+	const originalPlatform = process.platform;
+
+	afterEach(() => {
+		setPlatform(originalPlatform);
+		execState.impl = () => new Error("exec not configured");
+	});
+
+	it("returns undefined on non-Windows platforms", async () => {
+		setPlatform("linux");
+		expect(await getWslNetworkingMode("Ubuntu")).toBeUndefined();
+	});
+
+	it("returns undefined for invalid distro names (shell-injection guard)", async () => {
+		setPlatform("win32");
+		expect(await getWslNetworkingMode("bad name; rm -rf")).toBeUndefined();
+		expect(await getWslNetworkingMode("")).toBeUndefined();
+		expect(await getWslNetworkingMode("a&&b")).toBeUndefined();
+	});
+
+	it("returns 'mirrored' when wslinfo reports mirrored", async () => {
+		setPlatform("win32");
+		execState.impl = () => ({ stdout: "mirrored\n", stderr: "" });
+		expect(await getWslNetworkingMode("Ubuntu")).toBe("mirrored");
+	});
+
+	it("returns 'nat' when wslinfo reports nat", async () => {
+		setPlatform("win32");
+		execState.impl = () => ({ stdout: "NAT\n", stderr: "" });
+		expect(await getWslNetworkingMode("Ubuntu")).toBe("nat");
+	});
+
+	it("returns undefined when wsl.exe fails (old WSL / distro not running)", async () => {
+		setPlatform("win32");
+		execState.impl = () => new Error("wslinfo: command not found");
+		expect(await getWslNetworkingMode("Ubuntu")).toBeUndefined();
 	});
 });

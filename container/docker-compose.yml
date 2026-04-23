@@ -68,6 +68,20 @@ services:
           memory: ${CONTAINER_MEMORY:-8G}
           cpus: "${CONTAINER_CPUS:-4}"
 
+networks:
+  default:
+    driver: bridge
+    driver_opts:
+      # Default true (Docker's normal behavior). Plugin sets OAS_IP_MASQ=false
+      # in WSL mirrored mode so container source IPs reach Windows un-NAT'd
+      # and match the Hyper-V firewall allowlist (172.16.0.0/12). In NAT mode
+      # leaving masquerade on is required — Windows has no return route to the
+      # docker bridge subnets.
+      # NOTE: driver_opts only take effect on network creation — switching
+      # modes requires `docker compose down && docker compose up -d` so the
+      # network is recreated with the new opt.
+      com.docker.network.bridge.enable_ip_masquerade: "${OAS_IP_MASQ:-true}"
+
 volumes:
   oas-claude-config:
   oas-shell-history:
