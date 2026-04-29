@@ -9,6 +9,7 @@ import { TerminalView, VIEW_TYPE_TERMINAL } from "./terminal-view";
 import { isValidWriteDir } from "./validation";
 import { ObsidianMcpServer, generateToken } from "./mcp-server";
 import type { PermissionTier } from "./mcp-tools";
+import { logger } from "./logger";
 
 function toErrorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
@@ -406,6 +407,7 @@ export default class AgentSandboxPlugin extends Plugin {
 
 	private async startMcpServer(): Promise<void> {
 		if (this.mcpServer?.isRunning()) return;
+		logger.info("Plugin", "Starting MCP server...");
 		try {
 			const allowlist = this.settings.mcpPathAllowlist
 				.split(",")
@@ -430,6 +432,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			});
 			await this.mcpServer.start();
 		} catch (error: unknown) {
+			logger.error("Plugin", "MCP server failed to start", error);
 			new Notice(`MCP server failed to start: ${toErrorMessage(error)}`);
 		}
 	}

@@ -6,6 +6,9 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { randomUUID, timingSafeEqual } from "crypto";
 import type { PermissionTier, McpToolDef, PathFilter, ReviewFn } from "./mcp-tools";
 import { buildTools } from "./mcp-tools";
+import { logger } from "./logger";
+
+const C = "MCP";
 
 export interface McpServerConfig {
 	port: number;
@@ -124,21 +127,39 @@ export class ObsidianMcpServer {
 		this.startTime = Date.now();
 
 		this.httpServer = createServer((req, res) => {
-			void this.handleRequest(req, res);
+			this.handleRequest(req, res).catch((err) => {
+				logger.error(C, "Unhandled error in request handler", err);
+				if (!res.headersSent) {
+					res.writeHead(500, { "Content-Type": "application/json" });
+					res.end(JSON.stringify({ error: "Internal server error" }));
+				}
+			});
+		});
+
+		this.httpServer.on("clientError", (err) => {
+			logger.warn(C, "Client error", err.message);
 		});
 
 		await new Promise<void>((resolve, reject) => {
 			this.httpServer!.listen(this.config.port, "0.0.0.0", () => resolve());
 			this.httpServer!.on("error", reject);
 		});
+
+		logger.info(C, `Started on port ${this.config.port} with ${this.tools.length} tools`);
 	}
 
 	async stop(): Promise<void> {
+		logger.info(C, "Stopping server...");
+
 		for (const timeout of this.sessionTimeouts.values()) clearTimeout(timeout);
 		this.sessionTimeouts.clear();
 
-		for (const transport of this.transports.values()) {
-			await transport.close?.();
+		for (const [sid, transport] of this.transports.entries()) {
+			try {
+				await transport.close?.();
+			} catch (err) {
+				logger.warn(C, `Error closing transport ${sid}`, err);
+			}
 		}
 		this.transports.clear();
 
@@ -148,6 +169,8 @@ export class ObsidianMcpServer {
 			});
 			this.httpServer = null;
 		}
+
+		logger.info(C, "Server stopped");
 	}
 
 	private resetSessionTimeout(sid: string): void {
@@ -156,6 +179,7 @@ export class ObsidianMcpServer {
 		this.sessionTimeouts.set(
 			sid,
 			setTimeout(() => {
+				logger.debug(C, `Session ${sid.slice(0, 8)}… timed out`);
 				const transport = this.transports.get(sid);
 				if (transport) void transport.close?.();
 				this.transports.delete(sid);
@@ -165,6 +189,7 @@ export class ObsidianMcpServer {
 	}
 
 	private cleanupSession(sid: string): void {
+		logger.debug(C, `Session ${sid.slice(0, 8)}… closed`);
 		this.transports.delete(sid);
 		const timeout = this.sessionTimeouts.get(sid);
 		if (timeout) clearTimeout(timeout);
@@ -199,6 +224,7 @@ export class ObsidianMcpServer {
 		}
 
 		if (!this.checkAuth(req)) {
+			logger.debug(C, `Auth failed: ${req.method} ${req.url}`);
 			res.writeHead(401, { "Content-Type": "application/json" });
 			res.end(JSON.stringify({ error: "Unauthorized" }));
 			return;
@@ -222,15 +248,25 @@ export class ObsidianMcpServer {
 			return;
 		}
 
-		if (req.method === "POST") {
-			await this.handlePost(req, res);
-		} else if (req.method === "GET") {
-			await this.handleGet(req, res);
-		} else if (req.method === "DELETE") {
-			await this.handleDelete(req, res);
-		} else {
-			res.writeHead(405);
-			res.end("Method Not Allowed");
+		logger.debug(C, `${req.method} /mcp`);
+
+		try {
+			if (req.method === "POST") {
+				await this.handlePost(req, res);
+			} else if (req.method === "GET") {
+				await this.handleGet(req, res);
+			} else if (req.method === "DELETE") {
+				await this.handleDelete(req, res);
+			} else {
+				res.writeHead(405);
+				res.end("Method Not Allowed");
+			}
+		} catch (err) {
+			logger.error(C, `Error handling ${req.method} /mcp`, err);
+			if (!res.headersSent) {
+				res.writeHead(500, { "Content-Type": "application/json" });
+				res.end(JSON.stringify({ error: "Internal server error" }));
+			}
 		}
 	}
 
@@ -240,6 +276,7 @@ export class ObsidianMcpServer {
 			JSON.stringify({
 				status: "ok",
 				tools: this.tools.length,
+				sessions: this.transports.size,
 				uptimeMs: Date.now() - this.startTime,
 			}),
 		);
@@ -291,6 +328,7 @@ export class ObsidianMcpServer {
 		for (const tool of this.tools) {
 			server.registerTool(tool.name, tool.config, async (args) => {
 				if (!this.rateLimiter.check(tool.name, tool.tier)) {
+					logger.warn(C, `Rate limit exceeded: ${tool.name}`);
 					return {
 						content: [
 							{
@@ -308,6 +346,7 @@ export class ObsidianMcpServer {
 					const result = await tool.handler(args as Record<string, unknown>);
 					const text = result.content?.[0]?.text;
 					if (text && Buffer.byteLength(text) > MAX_RESPONSE_BYTES) {
+						logger.debug(C, `Truncating response from ${tool.name}`);
 						result.content[0].text =
 							text.slice(0, MAX_RESPONSE_BYTES) + "\n\n[truncated]";
 					}
@@ -316,17 +355,20 @@ export class ObsidianMcpServer {
 				} catch (err: unknown) {
 					success = false;
 					const msg = err instanceof Error ? err.message : String(err);
+					logger.error(C, `Tool ${tool.name} threw`, err);
 					return {
 						content: [{ type: "text" as const, text: `Error: ${msg}` }],
 						isError: true,
 					};
 				} finally {
+					const duration = Date.now() - start;
 					this.auditLog.record({
 						timestamp: Date.now(),
 						tool: tool.name,
 						success,
-						durationMs: Date.now() - start,
+						durationMs: duration,
 					});
+					logger.debug(C, `${tool.name} ${success ? "ok" : "err"} ${duration}ms`);
 				}
 			});
 		}
@@ -341,13 +383,20 @@ export class ObsidianMcpServer {
 		if (sessionId && this.transports.has(sessionId)) {
 			this.resetSessionTimeout(sessionId);
 			const transport = this.transports.get(sessionId)!;
-			await transport.handleRequest(req, res, body);
+			try {
+				await transport.handleRequest(req, res, body);
+			} catch (err) {
+				logger.error(C, `Transport error (session ${sessionId.slice(0, 8)}…)`, err);
+				this.cleanupSession(sessionId);
+				throw err;
+			}
 			return;
 		}
 
 		const transport = new StreamableHTTPServerTransport({
 			sessionIdGenerator: () => randomUUID(),
 			onsessioninitialized: (sid: string) => {
+				logger.info(C, `New session ${sid.slice(0, 8)}…`);
 				this.transports.set(sid, transport);
 				this.resetSessionTimeout(sid);
 			},
@@ -358,9 +407,16 @@ export class ObsidianMcpServer {
 			if (sid) this.cleanupSession(sid);
 		};
 
-		const server = this.createMcpServer();
-		await server.connect(transport);
-		await transport.handleRequest(req, res, body);
+		try {
+			const server = this.createMcpServer();
+			await server.connect(transport);
+			await transport.handleRequest(req, res, body);
+		} catch (err) {
+			logger.error(C, "Failed to initialize MCP session", err);
+			const sid = transport.sessionId;
+			if (sid) this.cleanupSession(sid);
+			throw err;
+		}
 	}
 
 	private async handleGet(req: IncomingMessage, res: ServerResponse): Promise<void> {
