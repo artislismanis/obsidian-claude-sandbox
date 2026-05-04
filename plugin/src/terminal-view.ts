@@ -412,10 +412,13 @@ export class TerminalView extends ItemView {
 		};
 
 		ws.onclose = (event) => {
-			logger.warn(
-				"Terminal",
-				`WebSocket closed (gen ${gen}, code ${event.code}, reason: ${event.reason || "none"})`,
-			);
+			const msg = `WebSocket closed (gen ${gen}, code ${event.code}, reason: ${event.reason || "none"})`;
+			const normal = event.code === 1000 || event.code === 1001 || event.code === 1005;
+			if (normal) {
+				logger.debug("Terminal", msg);
+			} else {
+				logger.warn("Terminal", msg);
+			}
 			if (gen === this.generation) {
 				this.showError(container, "Connection closed. The container may have stopped.");
 			}
