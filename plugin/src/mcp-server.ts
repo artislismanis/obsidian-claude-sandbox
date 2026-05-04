@@ -52,6 +52,7 @@ const RATE_LIMIT_READ = 60;
 const RATE_LIMIT_WRITE = 20;
 const AUDIT_MAX_ENTRIES = 200;
 const TOOL_TIMEOUT_MS = 10_000;
+const REVIEW_TIMEOUT_MS = 180_000;
 
 // ── Rate limiter ─────────────────────────────────────
 
@@ -494,15 +495,21 @@ export class ObsidianMcpServer {
 				try {
 					const handlerPromise = tool.handler(args as Record<string, unknown>);
 					let timer: ReturnType<typeof setTimeout> | undefined;
+					const mayTriggerReview =
+						tool.tier === "writeReviewed" ||
+						(tool.tier === "manage" && this.config.enabledTiers.has("writeReviewed"));
+					const timeoutMs = mayTriggerReview ? REVIEW_TIMEOUT_MS : TOOL_TIMEOUT_MS;
 					const timeout = new Promise<never>((_, reject) => {
 						timer = setTimeout(
 							() =>
 								reject(
 									new Error(
-										`Tool '${tool.name}' did not respond within ${TOOL_TIMEOUT_MS / 1000}s`,
+										tool.tier === "writeReviewed"
+											? `Review timed out for '${tool.name}' — user did not respond within ${REVIEW_TIMEOUT_MS / 1000}s. The review modal may have been dismissed.`
+											: `Tool '${tool.name}' did not respond within ${TOOL_TIMEOUT_MS / 1000}s`,
 									),
 								),
-							TOOL_TIMEOUT_MS,
+							timeoutMs,
 						);
 					});
 					const result = await Promise.race([handlerPromise, timeout]).finally(() => {
