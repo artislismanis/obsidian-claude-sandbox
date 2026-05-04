@@ -13,6 +13,7 @@ import { TFile as TFileClass } from "obsidian";
 import { z } from "zod/v4";
 import type { McpToolDef, PermissionTier, ReviewFn } from "./mcp-tools";
 import { defineTool, text, error, gateVaultWrite } from "./mcp-tools";
+import { logger } from "./logger";
 
 type ToolPusher = (tool: McpToolDef) => void;
 
@@ -38,9 +39,22 @@ type PluginsHost = {
  */
 function getInstalledPlugin<T>(app: App, pluginId: string): T | null {
 	const host = (app as unknown as PluginsHost).plugins;
-	if (!host) return null;
-	if (host.enabledPlugins && !host.enabledPlugins.has(pluginId)) return null;
+	if (!host) {
+		logger.debug("Extensions", `${pluginId}: no plugins host`);
+		return null;
+	}
+	if (host.enabledPlugins && !host.enabledPlugins.has(pluginId)) {
+		logger.debug(
+			"Extensions",
+			`${pluginId}: not in enabledPlugins (${host.enabledPlugins.size} enabled: ${[...host.enabledPlugins].join(", ")})`,
+		);
+		return null;
+	}
 	const plugin = host.getPlugin?.(pluginId) ?? (host.plugins && host.plugins[pluginId]) ?? null;
+	logger.debug(
+		"Extensions",
+		`${pluginId}: ${plugin ? "found" : "not found via getPlugin/plugins"}`,
+	);
 	return (plugin as T | null) ?? null;
 }
 
