@@ -614,13 +614,38 @@ export function registerPeriodicNotesTools(app: App, push: ToolPusher, gate: Wri
 				if (existing) return text(`Exists: ${path}`);
 				if (!create) return error(`Not found: ${path}`);
 
-				// Seed with template if Periodic Notes has one configured.
+				// Use Templater's API if available — it processes tp.* variables.
+				// Falls back to raw template content if Templater isn't installed.
+				const templater = getTemplater(app);
+				const tmplPath = periodicSettings.template;
+				const tmplFile = tmplPath ? app.vault.getFileByPath(tmplPath) : null;
+
+				if (templater?.templater?.create_new_note_from_template && tmplFile) {
+					const folderParts = path.split("/");
+					const filename = folderParts.pop()!.replace(/\.md$/, "");
+					const folder = folderParts.join("/") || "/";
+					return gateVaultWrite({
+						destPath: path,
+						operation: "create",
+						description: `Create periodic note ${path} (via Templater)`,
+						writeDir: gate.getWriteDir(),
+						enabledTiers: gate.enabledTiers,
+						review: gate.review,
+						apply: async () => {
+							await templater.templater!.create_new_note_from_template!(
+								tmplFile,
+								folder,
+								filename,
+								false,
+							);
+						},
+						successMsg: `Created ${path} (Templater processed)`,
+					});
+				}
+
 				let seed = "";
-				if (periodicSettings.template) {
-					const tmplFile = app.vault.getFileByPath(periodicSettings.template);
-					if (tmplFile) {
-						seed = await app.vault.read(tmplFile);
-					}
+				if (tmplFile) {
+					seed = await app.vault.read(tmplFile);
 				}
 				return gateVaultWrite({
 					destPath: path,
@@ -663,17 +688,21 @@ function formatDateByPattern(date: Date, pattern: string): string {
 	const m = date.getMonth() + 1;
 	const d = date.getDate();
 	const w = getIsoWeek(date);
+	const isoY = getIsoWeekYear(date);
 	const q = Math.floor((m - 1) / 3) + 1;
-	return pattern.replace(/\[([^\]]+)\]|YYYY|gggg|MM|DD|ww|Q/g, (match, literal) => {
+	return pattern.replace(/\[([^\]]+)\]|GGGG|YYYY|gggg|MM|DD|WW|ww|Q/g, (match, literal) => {
 		if (literal) return literal;
 		switch (match) {
 			case "YYYY":
-			case "gggg":
 				return String(y);
+			case "GGGG":
+			case "gggg":
+				return String(isoY);
 			case "MM":
 				return pad(m);
 			case "DD":
 				return pad(d);
+			case "WW":
 			case "ww":
 				return pad(w);
 			case "Q":
@@ -691,6 +720,13 @@ function getIsoWeek(date: Date): number {
 	const firstThursday = new Date(Date.UTC(target.getUTCFullYear(), 0, 4));
 	const diff = (target.getTime() - firstThursday.getTime()) / 86400000;
 	return 1 + Math.round((diff - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
+}
+
+function getIsoWeekYear(date: Date): number {
+	const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+	const dayNr = (target.getUTCDay() + 6) % 7;
+	target.setUTCDate(target.getUTCDate() - dayNr + 3);
+	return target.getUTCFullYear();
 }
 
 // ── Discovery / introspection ───────────────────────
