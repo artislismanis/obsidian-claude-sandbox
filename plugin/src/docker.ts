@@ -166,7 +166,7 @@ export class DockerManager {
 		return this.busy;
 	}
 
-	private async run(dockerCmd: string, timeout = EXEC_TIMEOUT): Promise<string> {
+	private async run(dockerCmd: string, timeout = EXEC_TIMEOUT, quiet = false): Promise<string> {
 		const {
 			dockerMode,
 			composePath,
@@ -290,8 +290,7 @@ export class DockerManager {
 			const detail = err.stderr || err.message || String(error);
 			const combined = (err.stderr || "") + (err.message || "");
 
-			// eslint-disable-next-line no-console
-			console.error("[Agent Sandbox] Docker command failed:", detail);
+			if (!quiet) logger.error("Docker", `Command failed: ${detail}`);
 
 			if (combined.includes("is not recognized")) {
 				throw new Error(
@@ -532,6 +531,7 @@ export class DockerManager {
 			const output = await this.run(
 				`docker compose exec --user claude ${SERVICE_NAME} tmux list-sessions -F "#{session_name}"`,
 				PROBE_TIMEOUT,
+				true,
 			);
 			return output
 				.split("\n")
@@ -552,6 +552,7 @@ export class DockerManager {
 			const output = await this.run(
 				`docker compose exec --user claude ${SERVICE_NAME} tmux list-sessions -F "#{session_name}:#{session_attached}"`,
 				PROBE_TIMEOUT,
+				true,
 			);
 			return output
 				.split("\n")
