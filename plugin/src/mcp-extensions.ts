@@ -575,16 +575,29 @@ export function registerPeriodicNotesTools(app: App, push: ToolPusher, gate: Wri
 
 			handler: async (args) => {
 				const plugin = getPeriodicNotes(app);
-				if (!plugin?.instance?.settings)
-					return error("Periodic Notes plugin is not available.");
+				if (!plugin) return error("Periodic Notes plugin is not installed or enabled.");
+				const raw = plugin as Record<string, unknown>;
+				const settings =
+					(raw.instance as Record<string, unknown> | undefined)?.settings ??
+					(raw.settings as Record<string, unknown> | undefined);
+				if (!settings) {
+					logger.error(
+						"Extensions",
+						"periodic-notes: found plugin but no settings. Top-level keys:",
+						Object.keys(raw),
+					);
+					return error(
+						"Periodic Notes plugin found but settings structure is unexpected. Check DevTools for details.",
+					);
+				}
 				const periodicity = args.periodicity as Periodicity;
 				const dateArg = args.date as string | undefined;
 				const create = (args.create as boolean | undefined) ?? false;
 
-				const settings = plugin.instance.settings[periodicity] as
+				const periodicSettings = (settings as Record<string, unknown>)[periodicity] as
 					| { enabled?: boolean; folder?: string; format?: string; template?: string }
 					| undefined;
-				if (!settings || settings.enabled === false)
+				if (!periodicSettings || periodicSettings.enabled === false)
 					return error(`Periodic Notes: ${periodicity} is not enabled.`);
 
 				const date = dateArg ? new Date(dateArg + "T00:00:00") : new Date();
@@ -592,9 +605,9 @@ export function registerPeriodicNotesTools(app: App, push: ToolPusher, gate: Wri
 
 				const filename = formatDateByPattern(
 					date,
-					settings.format || defaultFormat(periodicity),
+					periodicSettings.format || defaultFormat(periodicity),
 				);
-				const folder = (settings.folder || "").replace(/^\/+|\/+$/g, "");
+				const folder = (periodicSettings.folder || "").replace(/^\/+|\/+$/g, "");
 				const path = folder ? `${folder}/${filename}.md` : `${filename}.md`;
 
 				const existing = app.vault.getFileByPath(path);
@@ -603,8 +616,8 @@ export function registerPeriodicNotesTools(app: App, push: ToolPusher, gate: Wri
 
 				// Seed with template if Periodic Notes has one configured.
 				let seed = "";
-				if (settings.template) {
-					const tmplFile = app.vault.getFileByPath(settings.template);
+				if (periodicSettings.template) {
+					const tmplFile = app.vault.getFileByPath(periodicSettings.template);
 					if (tmplFile) {
 						seed = await app.vault.read(tmplFile);
 					}
