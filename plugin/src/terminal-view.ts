@@ -11,6 +11,10 @@ export { VIEW_TYPE_TERMINAL };
 
 const MAX_RETRIES = 15;
 
+// Auto-reconnect on abnormal close: a few quick attempts before surfacing an
+// error. Container is almost always still running; the WebSocket just dropped.
+const RECONNECT_BACKOFF_MS = [500, 1000, 2000, 4000, 8000];
+
 // ttyd protocol command characters. Server↔client share ASCII values by direction:
 // server-to-client and client-to-server use disjoint meanings for the same chars.
 const SERVER_MSG = { OUTPUT: "0", TITLE: "1", PREFERENCES: "2" } as const;
@@ -19,6 +23,72 @@ const CLIENT_MSG = { INPUT: "0", RESIZE: "1" } as const;
 const textEncoder = new TextEncoder();
 
 let nextInstanceId = 1;
+
+// WebSocket close-code → human label. Helps interpret container-side drops.
+function closeCodeName(code: number): string {
+	switch (code) {
+		case 1000:
+			return "normal";
+		case 1001:
+			return "going-away";
+		case 1002:
+			return "protocol-error";
+		case 1003:
+			return "unsupported-data";
+		case 1005:
+			return "no-status";
+		case 1006:
+			return "abnormal-no-close-frame";
+		case 1007:
+			return "invalid-payload";
+		case 1008:
+			return "policy-violation";
+		case 1009:
+			return "message-too-big";
+		case 1011:
+			return "internal-error";
+		case 1012:
+			return "service-restart";
+		case 1013:
+			return "try-again-later";
+		case 1015:
+			return "tls-handshake";
+		default:
+			return `code-${code}`;
+	}
+}
+
+export interface TerminalConnectionEvent {
+	at: number;
+	instanceId: number;
+	gen: number;
+	kind: "open" | "close" | "error" | "reconnect";
+	code?: number;
+	codeName?: string;
+	reason?: string;
+	durationMs?: number;
+	rxBytes?: number;
+	txBytes?: number;
+	rxMsgs?: number;
+	idleMsBeforeClose?: number;
+	attempt?: number;
+}
+
+// Process-wide ring buffer of recent connection events. Surfaced via the
+// "Sandbox: Copy terminal connection log" command for postmortem of drops.
+const CONNECTION_LOG_MAX = 200;
+const connectionLog: TerminalConnectionEvent[] = [];
+
+function pushConnectionEvent(ev: TerminalConnectionEvent): void {
+	connectionLog.push(ev);
+	if (connectionLog.length > CONNECTION_LOG_MAX) {
+		connectionLog.splice(0, connectionLog.length - CONNECTION_LOG_MAX);
+	}
+}
+
+export function getTerminalConnectionLog(): TerminalConnectionEvent[] {
+	return connectionLog.slice();
+}
 
 export type ActivityPrefix = "working" | "awaiting_input" | null;
 
@@ -40,6 +110,18 @@ export class TerminalView extends ItemView {
 	private resizeObserver: ResizeObserver | null = null;
 	private resizeRafId: number | null = null;
 	private termDisposables: { dispose(): void }[] = [];
+	private wsDisposables: { dispose(): void }[] = [];
+
+	// Lifecycle stats — reset per WS attach. Used for close diagnostics.
+	private wsConnectStartedAt = 0;
+	private wsOpenedAt = 0;
+	private wsLastRxAt = 0;
+	private wsRxBytes = 0;
+	private wsTxBytes = 0;
+	private wsRxMsgs = 0;
+	private reconnectAttempt = 0;
+	private reconnectTimer: number | null = null;
+	private statusBanner: HTMLDivElement | null = null;
 
 	onRenameSession: (() => void) | null = null;
 	private initialPrompt: string | null = null;
@@ -347,20 +429,105 @@ export class TerminalView extends ItemView {
 		this.term = term;
 		this.fitAddon = fitAddon;
 
+		// Forward xterm I/O to the *current* websocket via this.ws so a reconnect
+		// (which swaps this.ws) keeps working without re-registering listeners.
+		this.termDisposables.push(
+			term.onData((input) => {
+				const ws = this.ws;
+				if (ws && ws.readyState === WebSocket.OPEN) {
+					const payload = new Uint8Array(input.length * 3 + 1);
+					payload[0] = CLIENT_MSG.INPUT.charCodeAt(0);
+					const { written } = textEncoder.encodeInto(input, payload.subarray(1));
+					this.wsTxBytes += (written ?? 0) + 1;
+					ws.send(payload.subarray(0, (written ?? 0) + 1));
+				}
+			}),
+		);
+
+		this.termDisposables.push(
+			term.onResize(({ cols, rows }) => {
+				const ws = this.ws;
+				if (ws && ws.readyState === WebSocket.OPEN) {
+					const msg = CLIENT_MSG.RESIZE + JSON.stringify({ columns: cols, rows: rows });
+					const bytes = textEncoder.encode(msg);
+					this.wsTxBytes += bytes.length;
+					ws.send(bytes);
+				}
+			}),
+		);
+
+		this.resizeObserver = new ResizeObserver(() => {
+			this.scheduleFit();
+		});
+		this.resizeObserver.observe(wrapper);
+
+		this.attachWebSocket(container, gen, /*isReconnect*/ false);
+	}
+
+	private attachWebSocket(container: HTMLElement, gen: number, isReconnect: boolean): void {
+		const term = this.term;
+		if (!term) return;
+
+		// Tear down any prior socket listeners so close handlers don't fire twice.
+		for (const d of this.wsDisposables) d.dispose();
+		this.wsDisposables = [];
+		if (this.ws) {
+			try {
+				this.ws.close();
+			} catch {
+				/* already closing */
+			}
+		}
+
+		const settings = this.getSettings();
 		const wsUrl = buildWsUrl(settings.ttydPort);
 		const ws = new WebSocket(wsUrl, ["tty"]);
 		ws.binaryType = "arraybuffer";
 		this.ws = ws;
-		logger.info("Terminal", `WebSocket connecting to ${wsUrl} (gen ${gen})`);
 
-		ws.onopen = () => {
-			logger.info("Terminal", `WebSocket open (gen ${gen})`);
-			const msg = JSON.stringify({
-				columns: term.cols,
-				rows: term.rows,
+		this.wsConnectStartedAt = Date.now();
+		this.wsOpenedAt = 0;
+		this.wsLastRxAt = 0;
+		this.wsRxBytes = 0;
+		this.wsTxBytes = 0;
+		this.wsRxMsgs = 0;
+
+		logger.info(
+			"Terminal",
+			`WebSocket connecting to ${wsUrl} (gen ${gen}, instance ${this.instanceId}${isReconnect ? `, reconnect attempt ${this.reconnectAttempt}` : ""})`,
+		);
+
+		const onOpen = () => {
+			this.wsOpenedAt = Date.now();
+			const connectMs = this.wsOpenedAt - this.wsConnectStartedAt;
+			logger.info(
+				"Terminal",
+				`WebSocket open (gen ${gen}, instance ${this.instanceId}, connect ${connectMs}ms${isReconnect ? `, reconnect ${this.reconnectAttempt}` : ""})`,
+			);
+			pushConnectionEvent({
+				at: this.wsOpenedAt,
+				instanceId: this.instanceId,
+				gen,
+				kind: "open",
+				durationMs: connectMs,
+				attempt: isReconnect ? this.reconnectAttempt : 0,
 			});
-			ws.send(textEncoder.encode(msg));
+			this.reconnectAttempt = 0;
+			this.clearStatusBanner();
+
+			const msg = JSON.stringify({ columns: term.cols, rows: term.rows });
+			const handshake = textEncoder.encode(msg);
+			this.wsTxBytes += handshake.length;
+			ws.send(handshake);
 			term.focus();
+
+			if (isReconnect) {
+				// Tell user that the WS reconnected; tmux/bash already preserves
+				// shell state on the container side so no command replay is needed.
+				term.writeln("");
+				term.writeln("\x1b[33m[agent-sandbox] terminal reconnected\x1b[0m");
+				return;
+			}
 
 			// Inject `session <name>` command to attach to a tmux session.
 			// The 300ms delay gives bash time to render the prompt.
@@ -371,6 +538,7 @@ export class TerminalView extends ItemView {
 						const payload = new Uint8Array(cmd.length + 1);
 						payload[0] = CLIENT_MSG.INPUT.charCodeAt(0);
 						textEncoder.encodeInto(cmd, payload.subarray(1));
+						this.wsTxBytes += cmd.length + 1;
 						ws.send(payload.subarray(0, cmd.length + 1));
 					}
 				}, 300);
@@ -387,6 +555,7 @@ export class TerminalView extends ItemView {
 						const payload = new Uint8Array(cmd.length + 1);
 						payload[0] = CLIENT_MSG.INPUT.charCodeAt(0);
 						textEncoder.encodeInto(cmd, payload.subarray(1));
+						this.wsTxBytes += cmd.length + 1;
 						ws.send(payload.subarray(0, cmd.length + 1));
 						this.initialPrompt = null;
 					}
@@ -394,8 +563,11 @@ export class TerminalView extends ItemView {
 			}
 		};
 
-		ws.onmessage = (event) => {
+		const onMessage = (event: MessageEvent) => {
 			const rawData = event.data as ArrayBuffer;
+			this.wsLastRxAt = Date.now();
+			this.wsRxBytes += rawData.byteLength;
+			this.wsRxMsgs++;
 			const cmd = String.fromCharCode(new Uint8Array(rawData)[0]);
 
 			switch (cmd) {
@@ -411,52 +583,136 @@ export class TerminalView extends ItemView {
 			}
 		};
 
-		ws.onclose = (event) => {
-			const msg = `WebSocket closed (gen ${gen}, code ${event.code}, reason: ${event.reason || "none"})`;
+		const onClose = (event: CloseEvent) => {
+			const now = Date.now();
+			const opened = this.wsOpenedAt > 0;
+			const sessionMs = opened ? now - this.wsOpenedAt : now - this.wsConnectStartedAt;
+			const idleMs = this.wsLastRxAt > 0 ? now - this.wsLastRxAt : -1;
+			const codeName = closeCodeName(event.code);
+			const detail =
+				`code=${event.code} (${codeName}) reason="${event.reason || ""}" wasClean=${event.wasClean} ` +
+				`opened=${opened} sessionMs=${sessionMs} idleMsBeforeClose=${idleMs} ` +
+				`rxBytes=${this.wsRxBytes} rxMsgs=${this.wsRxMsgs} txBytes=${this.wsTxBytes} ` +
+				`gen=${gen} instance=${this.instanceId}`;
 			const normal = event.code === 1000 || event.code === 1001 || event.code === 1005;
 			if (normal) {
-				logger.debug("Terminal", msg);
+				logger.debug("Terminal", `WebSocket closed cleanly — ${detail}`);
 			} else {
-				logger.warn("Terminal", msg);
+				logger.warn("Terminal", `WebSocket dropped — ${detail}`);
 			}
-			if (gen === this.generation) {
+			pushConnectionEvent({
+				at: now,
+				instanceId: this.instanceId,
+				gen,
+				kind: "close",
+				code: event.code,
+				codeName,
+				reason: event.reason || undefined,
+				durationMs: sessionMs,
+				rxBytes: this.wsRxBytes,
+				txBytes: this.wsTxBytes,
+				rxMsgs: this.wsRxMsgs,
+				idleMsBeforeClose: idleMs >= 0 ? idleMs : undefined,
+			});
+
+			if (gen !== this.generation) return;
+			this.ws = null;
+
+			if (normal) {
+				// Server closed cleanly (e.g. container stop). Don't auto-reconnect.
 				this.showError(container, "Connection closed. The container may have stopped.");
+				return;
 			}
+
+			// Abnormal close — try to reconnect a few times before surfacing error.
+			this.scheduleReconnect(container, gen);
 		};
 
-		ws.onerror = () => {
-			logger.error("Terminal", `WebSocket error (gen ${gen})`);
+		const onError = () => {
+			logger.error("Terminal", `WebSocket error (gen ${gen}, instance ${this.instanceId})`);
+			pushConnectionEvent({
+				at: Date.now(),
+				instanceId: this.instanceId,
+				gen,
+				kind: "error",
+			});
 		};
 
-		this.termDisposables.push(
-			term.onData((input) => {
-				if (ws.readyState === WebSocket.OPEN) {
-					const payload = new Uint8Array(input.length * 3 + 1);
-					payload[0] = CLIENT_MSG.INPUT.charCodeAt(0);
-					const { written } = textEncoder.encodeInto(input, payload.subarray(1));
-					ws.send(payload.subarray(0, (written ?? 0) + 1));
-				}
-			}),
-		);
-
-		this.termDisposables.push(
-			term.onResize(({ cols, rows }) => {
-				if (ws.readyState === WebSocket.OPEN) {
-					const msg = CLIENT_MSG.RESIZE + JSON.stringify({ columns: cols, rows: rows });
-					ws.send(textEncoder.encode(msg));
-				}
-			}),
-		);
-
-		this.resizeObserver = new ResizeObserver(() => {
-			this.scheduleFit();
+		ws.addEventListener("open", onOpen);
+		ws.addEventListener("message", onMessage);
+		ws.addEventListener("close", onClose);
+		ws.addEventListener("error", onError);
+		this.wsDisposables.push({
+			dispose: () => {
+				ws.removeEventListener("open", onOpen);
+				ws.removeEventListener("message", onMessage);
+				ws.removeEventListener("close", onClose);
+				ws.removeEventListener("error", onError);
+			},
 		});
-		this.resizeObserver.observe(wrapper);
+	}
+
+	private scheduleReconnect(container: HTMLElement, gen: number): void {
+		if (gen !== this.generation) return;
+		if (this.reconnectAttempt >= RECONNECT_BACKOFF_MS.length) {
+			logger.warn(
+				"Terminal",
+				`Reconnect gave up after ${this.reconnectAttempt} attempts (instance ${this.instanceId})`,
+			);
+			this.showError(
+				container,
+				`Connection lost — could not reconnect after ${this.reconnectAttempt} attempts.`,
+			);
+			return;
+		}
+		const waitMs = RECONNECT_BACKOFF_MS[this.reconnectAttempt];
+		this.reconnectAttempt++;
+		this.showStatusBanner(
+			`Connection dropped — reconnecting (attempt ${this.reconnectAttempt}/${RECONNECT_BACKOFF_MS.length}, in ${Math.round(waitMs / 100) / 10}s)…`,
+		);
+		pushConnectionEvent({
+			at: Date.now(),
+			instanceId: this.instanceId,
+			gen,
+			kind: "reconnect",
+			attempt: this.reconnectAttempt,
+		});
+		this.reconnectTimer = window.setTimeout(() => {
+			this.reconnectTimer = null;
+			if (gen !== this.generation) return;
+			this.attachWebSocket(container, gen, /*isReconnect*/ true);
+		}, waitMs);
+	}
+
+	private showStatusBanner(text: string): void {
+		const wrapper = this.contentEl.querySelector(".sandbox-terminal-container");
+		if (!wrapper || !(wrapper instanceof HTMLElement)) return;
+		if (!this.statusBanner) {
+			this.statusBanner = wrapper.createDiv({
+				cls: "sandbox-terminal-status",
+			}) as HTMLDivElement;
+		}
+		this.statusBanner.setText(text);
+	}
+
+	private clearStatusBanner(): void {
+		if (this.statusBanner) {
+			this.statusBanner.remove();
+			this.statusBanner = null;
+		}
 	}
 
 	private dispose(): void {
 		for (const d of this.termDisposables) d.dispose();
 		this.termDisposables = [];
+		for (const d of this.wsDisposables) d.dispose();
+		this.wsDisposables = [];
+		if (this.reconnectTimer != null) {
+			window.clearTimeout(this.reconnectTimer);
+			this.reconnectTimer = null;
+		}
+		this.reconnectAttempt = 0;
+		this.clearStatusBanner();
 		if (this.resizeRafId != null) {
 			cancelAnimationFrame(this.resizeRafId);
 			this.resizeRafId = null;

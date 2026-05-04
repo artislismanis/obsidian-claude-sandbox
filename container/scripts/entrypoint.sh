@@ -84,4 +84,9 @@ fi
 
 # Drop to the claude user and run ttyd. TTYD_PORT falls through from
 # docker-compose.yml (defaults to 7681).
-exec gosu claude ttyd -W -p "${TTYD_PORT:-7681}" /usr/local/bin/session.sh
+#
+# -d 6 raises ttyd's log level from the default (notice) to info, so each
+# WebSocket open/close lands in `docker logs oas-sandbox` with timestamp
+# and remote addr. Override via TTYD_DEBUG (1=err … 7=debug) if you need
+# more detail; ttyd's WS ping interval defaults to 5s and is fine.
+exec gosu claude ttyd -W -d "${TTYD_DEBUG:-6}" -p "${TTYD_PORT:-7681}" /usr/local/bin/session.sh

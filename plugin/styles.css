@@ -200,6 +200,7 @@
  * ============================================================ */
 
 .sandbox-terminal-container {
+	position: relative;
 	display: flex;
 	flex-direction: column;
 	width: 100%;
@@ -252,6 +253,20 @@
 
 .sandbox-terminal-error button:hover {
 	background-color: var(--interactive-accent-hover);
+}
+
+.sandbox-terminal-status {
+	position: absolute;
+	top: 6px;
+	right: 8px;
+	z-index: 5;
+	padding: 3px 8px;
+	border-radius: var(--radius-s);
+	background-color: var(--background-modifier-error-rgb, var(--background-secondary));
+	color: var(--text-on-accent, var(--text-normal));
+	font-size: var(--font-ui-smaller);
+	pointer-events: none;
+	opacity: 0.9;
 }
 
 /* ── Settings warning callout ─────────────────────── */

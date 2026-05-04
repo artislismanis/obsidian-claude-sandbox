@@ -15,6 +15,7 @@ Every command registered by the plugin. Access via Obsidian's command palette (`
 | Sandbox: Toggle MCP Server | `sandbox-toggle-mcp` | Start / stop the in-plugin MCP HTTP server. |
 | Sandbox: Clean up empty sessions | `sandbox-cleanup-sessions` | Lists unattached tmux sessions, confirmation modal, kills selected. |
 | Sandbox: Switch to Sandbox session… | `sandbox-switch-session` | Modal picker over currently open terminal tabs. |
+| Sandbox: Copy terminal connection log | `sandbox-copy-terminal-connection-log` | Copies the in-memory ring buffer of recent WS open/close/reconnect events to the clipboard. See [Troubleshoot terminal disconnects](../how-to/troubleshoot-terminal-disconnects.md). |
 
 ## URI handlers
 

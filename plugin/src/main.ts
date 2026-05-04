@@ -11,7 +11,7 @@ import {
 import { DockerManager } from "./docker";
 import type { ContainerState } from "./status-bar";
 import { FirewallStatusBar, StatusBarManager } from "./status-bar";
-import { TerminalView, VIEW_TYPE_TERMINAL } from "./terminal-view";
+import { TerminalView, VIEW_TYPE_TERMINAL, getTerminalConnectionLog } from "./terminal-view";
 import { isValidWriteDir } from "./validation";
 import { setLogLevel, logger } from "./logger";
 import { ObsidianMcpServer, generateToken } from "./mcp-server";
@@ -211,6 +211,36 @@ export default class AgentSandboxPlugin extends Plugin {
 			id: "sandbox-toggle-mcp",
 			name: "Sandbox: Toggle MCP Server",
 			callback: () => this.toggleMcpServer(),
+		});
+
+		this.addCommand({
+			id: "sandbox-copy-terminal-connection-log",
+			name: "Sandbox: Copy terminal connection log",
+			callback: async () => {
+				const events = getTerminalConnectionLog();
+				if (events.length === 0) {
+					new Notice("No terminal connection events recorded yet.");
+					return;
+				}
+				const lines = events.map((e) => {
+					const ts = new Date(e.at).toISOString();
+					const head = `${ts}  inst=${e.instanceId} gen=${e.gen} ${e.kind}`;
+					const parts: string[] = [];
+					if (e.code != null) parts.push(`code=${e.code}(${e.codeName})`);
+					if (e.reason) parts.push(`reason="${e.reason}"`);
+					if (e.durationMs != null) parts.push(`duration=${e.durationMs}ms`);
+					if (e.idleMsBeforeClose != null)
+						parts.push(`idleBeforeClose=${e.idleMsBeforeClose}ms`);
+					if (e.rxBytes != null) parts.push(`rx=${e.rxBytes}b/${e.rxMsgs}msgs`);
+					if (e.txBytes != null) parts.push(`tx=${e.txBytes}b`);
+					if (e.attempt) parts.push(`attempt=${e.attempt}`);
+					return parts.length ? `${head}  ${parts.join(" ")}` : head;
+				});
+				const text = lines.join("\n");
+				await navigator.clipboard.writeText(text);
+				logger.info("Terminal", `Connection log (${events.length} events):\n${text}`);
+				new Notice(`Copied ${events.length} terminal connection events to clipboard.`);
+			},
 		});
 
 		this.addCommand({

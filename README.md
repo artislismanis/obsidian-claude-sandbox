@@ -53,6 +53,7 @@ Organized per [Diátaxis](https://diataxis.fr/): four quadrants by purpose.
 - [Add tools to the container](docs/how-to/add-tools-to-container.md)
 - [Customize the workspace](docs/how-to/customize-workspace.md)
 - [Update the plugin](docs/how-to/update-plugin.md)
+- [Troubleshoot terminal disconnects](docs/how-to/troubleshoot-terminal-disconnects.md)
 - [Release a new version](docs/how-to/release.md) — maintainers only
 
 ### Reference (working, theoretical)
