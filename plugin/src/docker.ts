@@ -2,6 +2,7 @@ import { exec as execCb, spawn } from "child_process";
 import { createServer } from "net";
 import { networkInterfaces } from "os";
 import { promisify } from "util";
+import { logger } from "./logger";
 
 const exec = promisify(execCb);
 
@@ -536,7 +537,11 @@ export class DockerManager {
 				.split("\n")
 				.map((s) => s.trim())
 				.filter(Boolean);
-		} catch {
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			if (!msg.includes("No such file or directory") && !msg.includes("no server running")) {
+				logger.warn("Docker", `listSessions failed: ${msg}`);
+			}
 			return [];
 		}
 	}
