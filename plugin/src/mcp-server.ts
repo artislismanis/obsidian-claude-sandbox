@@ -42,6 +42,8 @@ export interface McpServerConfig {
 	getWriteDir: () => string;
 	pathFilter?: PathFilter;
 	hooks?: McpServerHooks;
+	toolTimeoutMs?: number;
+	reviewTimeoutMs?: number;
 }
 
 const SESSION_TIMEOUT_MS = 10 * 60_000;
@@ -498,7 +500,9 @@ export class ObsidianMcpServer {
 					const mayTriggerReview =
 						tool.tier === "writeReviewed" ||
 						(tool.tier === "manage" && this.config.enabledTiers.has("writeReviewed"));
-					const timeoutMs = mayTriggerReview ? REVIEW_TIMEOUT_MS : TOOL_TIMEOUT_MS;
+					const toolTimeout = this.config.toolTimeoutMs ?? TOOL_TIMEOUT_MS;
+					const reviewTimeout = this.config.reviewTimeoutMs ?? REVIEW_TIMEOUT_MS;
+					const timeoutMs = mayTriggerReview ? reviewTimeout : toolTimeout;
 					const timeout = new Promise<never>((_, reject) => {
 						timer = setTimeout(
 							() =>

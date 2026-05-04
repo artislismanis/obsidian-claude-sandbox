@@ -561,6 +561,8 @@ export default class AgentSandboxPlugin extends Plugin {
 							: undefined,
 					onActivity: (update) => this.activityUi.route(update),
 				},
+				toolTimeoutMs: this.settings.mcpToolTimeout * 1000,
+				reviewTimeoutMs: this.settings.mcpReviewTimeout * 1000,
 			});
 			await this.mcpServer.start();
 		} catch (error: unknown) {

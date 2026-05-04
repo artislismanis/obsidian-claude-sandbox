@@ -56,6 +56,8 @@ export interface AgentSandboxSettings {
 	mcpPathBlocklist: string;
 	agentOutputNotify: "new" | "new_or_modified" | "off";
 	logLevel: "debug" | "info" | "warn" | "error";
+	mcpToolTimeout: number;
+	mcpReviewTimeout: number;
 }
 
 /**
@@ -131,6 +133,8 @@ export const DEFAULT_SETTINGS: AgentSandboxSettings = {
 	mcpPathBlocklist: "",
 	agentOutputNotify: "new",
 	logLevel: "info",
+	mcpToolTimeout: 10,
+	mcpReviewTimeout: 180,
 };
 
 type TabId = "general" | "terminal" | "advanced" | "mcp";
@@ -642,6 +646,48 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 						this.plugin.saveSettings();
 					}),
 			);
+
+		new Setting(el).setName("Timeouts").setHeading();
+
+		new Setting(el)
+			.setName("Tool timeout (seconds)")
+			.setDesc("Max time for a normal MCP tool call to complete before failing.")
+			.addText((text) => {
+				text.setPlaceholder("10")
+					.setValue(String(this.plugin.settings.mcpToolTimeout))
+					.onChange(async (value) => {
+						const n = parseInt(value, 10);
+						if (n > 0 && n <= 300) {
+							this.plugin.settings.mcpToolTimeout = n;
+							this.plugin.saveSettings();
+							text.inputEl.removeClass("sandbox-input-error");
+						} else {
+							text.inputEl.addClass("sandbox-input-error");
+						}
+					});
+				text.inputEl.style.width = "60px";
+			});
+
+		new Setting(el)
+			.setName("Review timeout (seconds)")
+			.setDesc(
+				"How long you have to approve or reject a write in the review modal before it times out.",
+			)
+			.addText((text) => {
+				text.setPlaceholder("180")
+					.setValue(String(this.plugin.settings.mcpReviewTimeout))
+					.onChange(async (value) => {
+						const n = parseInt(value, 10);
+						if (n > 0 && n <= 600) {
+							this.plugin.settings.mcpReviewTimeout = n;
+							this.plugin.saveSettings();
+							text.inputEl.removeClass("sandbox-input-error");
+						} else {
+							text.inputEl.addClass("sandbox-input-error");
+						}
+					});
+				text.inputEl.style.width = "60px";
+			});
 	}
 
 	private renderAdvanced(el: HTMLElement): void {
