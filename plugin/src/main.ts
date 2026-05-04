@@ -13,7 +13,7 @@ import type { ContainerState } from "./status-bar";
 import { FirewallStatusBar, StatusBarManager } from "./status-bar";
 import { TerminalView, VIEW_TYPE_TERMINAL } from "./terminal-view";
 import { isValidWriteDir } from "./validation";
-import { setLogLevel } from "./logger";
+import { setLogLevel, logger } from "./logger";
 import { ObsidianMcpServer, generateToken } from "./mcp-server";
 import type { PermissionTier } from "./mcp-tools";
 import { ActivityUi, AgentOutputNotifier } from "./activity";
@@ -343,9 +343,13 @@ export default class AgentSandboxPlugin extends Plugin {
 			"The container is not running. Start it now?",
 		);
 		if (!confirmed) return;
+		logger.info("Plugin", "Auto-starting container from terminal prompt");
 		await this.startContainer();
 		if (this.isContainerRunning()) {
+			logger.info("Plugin", "Container started — opening terminal");
 			await this.activateTerminalView();
+		} else {
+			logger.warn("Plugin", "Container not running after startContainer — skipping terminal");
 		}
 	}
 
@@ -396,13 +400,22 @@ export default class AgentSandboxPlugin extends Plugin {
 			new Notice("Another container operation is in progress.");
 			return;
 		}
-		const conflicts = await this.checkStartupPortConflicts();
+		let conflicts = await this.checkStartupPortConflicts();
 		if (conflicts.length > 0) {
-			new Notice(
-				`Port conflict: ${conflicts.join(", ")} already in use on 127.0.0.1. Stop the other process or change the port in settings.`,
-				10000,
-			);
-			return;
+			const stale = await this.docker.probeStatus();
+			if (DockerManager.parseIsRunning(stale)) {
+				logger.info("Plugin", "Port conflict from stale container — stopping it first");
+				new Notice("Stopping stale container...");
+				await this.docker.stop();
+				conflicts = await this.checkStartupPortConflicts();
+			}
+			if (conflicts.length > 0) {
+				new Notice(
+					`Port conflict: ${conflicts.join(", ")} already in use on 127.0.0.1. Stop the other process or change the port in settings.`,
+					10000,
+				);
+				return;
+			}
 		}
 		const ok = await this.runDockerCommand({
 			preState: "starting",
@@ -604,7 +617,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			item
 				.setTitle("Start Container")
 				.setIcon("play")
-				.setDisabled(busy)
+				.setDisabled(busy || running)
 				.onClick(() => this.startContainer()),
 		);
 		menu.addItem((item) =>
