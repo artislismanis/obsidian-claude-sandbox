@@ -314,7 +314,11 @@ export class DockerManager {
 					"docker-compose.yml not found. Check Settings > Docker Compose path.",
 				);
 			}
-			if (combined.includes("No such file or directory")) {
+			// Only rewrite when the ENOENT is at the Node spawn level (cwd missing →
+			// phrase appears in err.message, stderr empty). When a downstream tool
+			// like tmux reports "No such file or directory" via stderr, leave the
+			// original error so callers can recognise it.
+			if (!err.stderr && err.message?.includes("No such file or directory")) {
 				throw new Error(
 					"Docker Compose directory not found. Check Settings > Docker Compose path.",
 				);
@@ -539,7 +543,11 @@ export class DockerManager {
 				.filter(Boolean);
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
-			if (!msg.includes("No such file or directory") && !msg.includes("no server running")) {
+			if (
+				!msg.includes("No such file or directory") &&
+				!msg.includes("no server running") &&
+				!msg.includes("error connecting to")
+			) {
 				logger.warn("Docker", `listSessions failed: ${msg}`);
 			}
 			return [];
