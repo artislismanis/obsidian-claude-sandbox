@@ -5,6 +5,7 @@ import { isPathWithinDir, isPathAllowed, isRealPathWithinBase } from "./validati
 import { FileSystemAdapter } from "obsidian";
 import type { WriteOperation } from "./diff-review-modal";
 import { registerExtensionTools } from "./mcp-extensions";
+import { logger } from "./logger";
 
 export type { WriteOperation };
 
@@ -143,6 +144,79 @@ function isVaultPathSafe(app: App, vaultPath: string): boolean {
 	const adapter = app.vault.adapter;
 	if (!(adapter instanceof FileSystemAdapter)) return true;
 	return isRealPathWithinBase(adapter.getBasePath(), adapter.getFullPath(vaultPath));
+}
+
+interface TemplaterPlugin {
+	settings?: {
+		enable_folder_templates?: boolean;
+		trigger_on_file_creation?: boolean;
+		folder_templates?: Array<{ folder?: string; template?: string }>;
+	};
+	templater?: {
+		write_template_to_file: (templateFile: TFile, file: TFile) => Promise<void>;
+	};
+}
+
+function getTemplaterPlugin(app: App): TemplaterPlugin | undefined {
+	const plugins = (app as unknown as { plugins?: { plugins?: Record<string, unknown> } }).plugins;
+	return plugins?.plugins?.["templater-obsidian"] as TemplaterPlugin | undefined;
+}
+
+/**
+ * Apply the matching Templater folder template to a freshly created file.
+ *
+ * Why: Templater's own folder-template hook calls `append_template_to_active_file`,
+ * which fails for agent-driven `vault.create` calls because there is no active
+ * editor. We bypass that path and use Templater's editor-free entry point
+ * `write_template_to_file` directly.
+ *
+ * Returns the template's vault path on success, or null if no template matched
+ * (or Templater isn't installed/enabled).
+ */
+async function applyTemplaterFolderTemplate(app: App, file: TFile): Promise<string | null> {
+	const tp = getTemplaterPlugin(app);
+	if (!tp?.templater || !tp.settings?.enable_folder_templates) return null;
+	const folderTemplates = tp.settings.folder_templates ?? [];
+	const dir = file.parent?.path ?? "";
+	// Longest-prefix wins, matching Templater's own resolution.
+	let best: { folder: string; template: string; len: number } | null = null;
+	for (const ft of folderTemplates) {
+		if (!ft.folder || !ft.template) continue;
+		const folder = ft.folder === "/" ? "" : ft.folder.replace(/\/$/, "");
+		const matches = folder === "" || dir === folder || dir.startsWith(folder + "/");
+		if (!matches) continue;
+		const len = folder.length;
+		if (!best || len > best.len) best = { folder: ft.folder, template: ft.template, len };
+	}
+	if (!best) return null;
+	const tplFile = app.vault.getFileByPath(best.template);
+	if (!tplFile) return null;
+	try {
+		await tp.templater.write_template_to_file(tplFile, file);
+		return tplFile.path;
+	} catch (e) {
+		logger.error("mcp-tools", "Templater folder-template application failed", e);
+		return null;
+	}
+}
+
+/**
+ * Run `fn` with Templater's create-hook setting flipped off, restoring the
+ * prior value afterwards. The hook calls `append_template_to_active_file`,
+ * which raises a "no active editor" notice for any agent-driven create — we
+ * apply the template ourselves via `applyTemplaterFolderTemplate`, so the
+ * hook's failure is pure noise.
+ */
+async function withTemplaterHookSuppressed<T>(app: App, fn: () => Promise<T>): Promise<T> {
+	const tp = getTemplaterPlugin(app);
+	if (!tp?.settings) return fn();
+	const prev = tp.settings.trigger_on_file_creation;
+	tp.settings.trigger_on_file_creation = false;
+	try {
+		return await fn();
+	} finally {
+		tp.settings.trigger_on_file_creation = prev;
+	}
 }
 
 export type ReviewFn = (request: {
@@ -944,7 +1018,7 @@ export function buildTools(
 		description: string;
 		review: ReviewFn | undefined;
 		apply: () => Promise<unknown>;
-		successMsg: string;
+		successMsg: string | (() => string);
 		affectedLinks?: string[];
 	}): Promise<McpToolResult> {
 		const rejected = await requireReview(
@@ -958,7 +1032,7 @@ export function buildTools(
 		);
 		if (rejected) return rejected;
 		await op.apply();
-		return text(op.successMsg);
+		return text(typeof op.successMsg === "function" ? op.successMsg() : op.successMsg);
 	}
 
 	/** Snapshot a file's frontmatter for review preview. Excludes Obsidian's internal `position`. */
@@ -1005,14 +1079,31 @@ export function buildTools(
 					if (app.vault.getFileByPath(path))
 						return error("File already exists. Use vault_modify to update it.");
 					const content = (args.content as string | undefined) ?? "";
+					// Only auto-apply the folder template when the caller didn't supply
+					// content; otherwise we'd silently clobber the agent's intended payload.
+					const tryTemplate = content === "" && path.endsWith(".md");
+					let appliedTemplate: string | null = null;
 					return runWrite({
 						operation: "create",
 						filePath: path,
 						newContent: content,
 						description: `Create new file: ${path}`,
 						review,
-						apply: () => app.vault.create(path, content),
-						successMsg: `Created ${path}`,
+						apply: () =>
+							withTemplaterHookSuppressed(app, async () => {
+								const created = await app.vault.create(path, content);
+								if (tryTemplate) {
+									appliedTemplate = await applyTemplaterFolderTemplate(
+										app,
+										created,
+									);
+								}
+								return created;
+							}),
+						successMsg: () =>
+							appliedTemplate
+								? `Created ${path} (applied template ${appliedTemplate})`
+								: `Created ${path}`,
 					});
 				},
 			}),

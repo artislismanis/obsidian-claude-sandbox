@@ -34,7 +34,7 @@ function createMockApp(files: TFile[], caches: Record<string, unknown> = {}) {
 			getFileByPath: vi.fn((path: string) => files.find((f) => f.path === path) ?? null),
 			read: vi.fn(async (f: TFile) => `content of ${f.path}`),
 			cachedRead: vi.fn(async (f: TFile) => `content of ${f.path}`),
-			create: vi.fn(async () => {}),
+			create: vi.fn(async (path: string, content = "") => makeTFile(path, content)),
 			modify: vi.fn(async () => {}),
 			append: vi.fn(async () => {}),
 			trash: vi.fn(async () => {}),
@@ -380,6 +380,182 @@ describe("MCP tool handlers", () => {
 			);
 			expect(r.isError).toBe(true);
 			expect(r.text).toContain("already exists");
+		});
+	});
+
+	describe("vault_create + Templater folder templates", () => {
+		interface FolderTemplate {
+			folder?: string;
+			template?: string;
+		}
+		function installTemplater(opts: {
+			enabled?: boolean;
+			folderTemplates?: FolderTemplate[];
+			templateFiles?: TFile[];
+			writeImpl?: (tpl: TFile, target: TFile) => Promise<void>;
+			triggerOnFileCreation?: boolean;
+		}): {
+			write: ReturnType<typeof vi.fn>;
+			settings: {
+				enable_folder_templates: boolean;
+				trigger_on_file_creation: boolean;
+				folder_templates: FolderTemplate[];
+			};
+		} {
+			const write = vi.fn(opts.writeImpl ?? (async () => {}));
+			const settings = {
+				enable_folder_templates: opts.enabled ?? true,
+				trigger_on_file_creation: opts.triggerOnFileCreation ?? true,
+				folder_templates: opts.folderTemplates ?? [],
+			};
+			(app as unknown as { plugins: unknown }).plugins = {
+				plugins: {
+					"templater-obsidian": {
+						settings,
+						templater: { write_template_to_file: write },
+					},
+				},
+			};
+			// Make any template files resolvable via getFileByPath.
+			const original = app.vault.getFileByPath.getMockImplementation();
+			app.vault.getFileByPath = vi.fn((path: string) => {
+				const tpl = (opts.templateFiles ?? []).find((f) => f.path === path);
+				return tpl ?? (original ? original(path) : null);
+			}) as never;
+			return { write, settings };
+		}
+
+		it("no-op when Templater is not installed", async () => {
+			const r = getResult(
+				await getTool(tools, "vault_create").handler({ path: "agent-workspace/n.md" }),
+			);
+			expect(r.isError).toBe(false);
+			expect(r.text).toBe("Created agent-workspace/n.md");
+			expect(app.vault.create).toHaveBeenCalledWith("agent-workspace/n.md", "");
+		});
+
+		it("no-op when folder templates are disabled", async () => {
+			const tplFile = makeTFile("Templates/Default.md");
+			const { write } = installTemplater({
+				enabled: false,
+				folderTemplates: [{ folder: "agent-workspace", template: "Templates/Default.md" }],
+				templateFiles: [tplFile],
+			});
+			const r = getResult(
+				await getTool(tools, "vault_create").handler({ path: "agent-workspace/n.md" }),
+			);
+			expect(r.isError).toBe(false);
+			expect(write).not.toHaveBeenCalled();
+		});
+
+		it("applies the matching folder template and reports it in the success message", async () => {
+			const tplFile = makeTFile("Templates/Daily.md");
+			const { write } = installTemplater({
+				folderTemplates: [{ folder: "agent-workspace", template: "Templates/Daily.md" }],
+				templateFiles: [tplFile],
+			});
+			const r = getResult(
+				await getTool(tools, "vault_create").handler({
+					path: "agent-workspace/2026-05-06.md",
+				}),
+			);
+			expect(r.isError).toBe(false);
+			expect(write).toHaveBeenCalledTimes(1);
+			expect(write.mock.calls[0][0].path).toBe("Templates/Daily.md");
+			expect(write.mock.calls[0][1].path).toBe("agent-workspace/2026-05-06.md");
+			expect(r.text).toContain("applied template Templates/Daily.md");
+		});
+
+		it("longest-prefix folder match wins", async () => {
+			const root = makeTFile("Templates/Root.md");
+			const nested = makeTFile("Templates/Nested.md");
+			const { write } = installTemplater({
+				folderTemplates: [
+					{ folder: "/", template: "Templates/Root.md" },
+					{ folder: "agent-workspace", template: "Templates/Nested.md" },
+				],
+				templateFiles: [root, nested],
+			});
+			await getTool(tools, "vault_create").handler({ path: "agent-workspace/sub/n.md" });
+			expect(write).toHaveBeenCalledTimes(1);
+			expect(write.mock.calls[0][0].path).toBe("Templates/Nested.md");
+		});
+
+		it("does not apply a template when the agent supplied content", async () => {
+			const tplFile = makeTFile("Templates/Daily.md");
+			const { write } = installTemplater({
+				folderTemplates: [{ folder: "agent-workspace", template: "Templates/Daily.md" }],
+				templateFiles: [tplFile],
+			});
+			await getTool(tools, "vault_create").handler({
+				path: "agent-workspace/n.md",
+				content: "agent wrote this",
+			});
+			expect(write).not.toHaveBeenCalled();
+			expect(app.vault.create).toHaveBeenCalledWith(
+				"agent-workspace/n.md",
+				"agent wrote this",
+			);
+		});
+
+		it("does not apply a template to non-markdown files", async () => {
+			const tplFile = makeTFile("Templates/Daily.md");
+			const { write } = installTemplater({
+				folderTemplates: [{ folder: "agent-workspace", template: "Templates/Daily.md" }],
+				templateFiles: [tplFile],
+			});
+			await getTool(tools, "vault_create").handler({ path: "agent-workspace/data.json" });
+			expect(write).not.toHaveBeenCalled();
+		});
+
+		it("no-op when no folder template matches the target path", async () => {
+			const tplFile = makeTFile("Templates/Daily.md");
+			const { write } = installTemplater({
+				folderTemplates: [{ folder: "elsewhere", template: "Templates/Daily.md" }],
+				templateFiles: [tplFile],
+			});
+			const r = getResult(
+				await getTool(tools, "vault_create").handler({ path: "agent-workspace/n.md" }),
+			);
+			expect(r.isError).toBe(false);
+			expect(r.text).toBe("Created agent-workspace/n.md");
+			expect(write).not.toHaveBeenCalled();
+		});
+
+		it("suppresses the create-hook during apply and restores it afterwards", async () => {
+			const tplFile = makeTFile("Templates/Daily.md");
+			let observedDuringCreate: boolean | undefined;
+			const { settings } = installTemplater({
+				folderTemplates: [{ folder: "agent-workspace", template: "Templates/Daily.md" }],
+				templateFiles: [tplFile],
+				triggerOnFileCreation: true,
+			});
+			(app.vault.create as ReturnType<typeof vi.fn>).mockImplementationOnce(
+				async (path: string) => {
+					observedDuringCreate = settings.trigger_on_file_creation;
+					return makeTFile(path);
+				},
+			);
+			await getTool(tools, "vault_create").handler({ path: "agent-workspace/n.md" });
+			expect(observedDuringCreate).toBe(false);
+			expect(settings.trigger_on_file_creation).toBe(true);
+		});
+
+		it("surfaces a plain create message when write_template_to_file throws", async () => {
+			const tplFile = makeTFile("Templates/Daily.md");
+			installTemplater({
+				folderTemplates: [{ folder: "agent-workspace", template: "Templates/Daily.md" }],
+				templateFiles: [tplFile],
+				writeImpl: async () => {
+					throw new Error("boom");
+				},
+			});
+			const r = getResult(
+				await getTool(tools, "vault_create").handler({ path: "agent-workspace/n.md" }),
+			);
+			expect(r.isError).toBe(false);
+			expect(r.text).toBe("Created agent-workspace/n.md");
+			expect(app.vault.create).toHaveBeenCalledWith("agent-workspace/n.md", "");
 		});
 	});
 
