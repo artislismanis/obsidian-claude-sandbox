@@ -512,6 +512,20 @@ export class DockerManager {
 		}
 	}
 
+	/**
+	 * True if compose has any container for this project, regardless of state
+	 * (running, exited, restarting, removing). Use this to detect a half-stopped
+	 * container that still holds host port mappings while teardown completes.
+	 */
+	async hasAnyContainer(): Promise<boolean> {
+		try {
+			const output = await this.run(`docker compose ps -a -q ${SERVICE_NAME}`, PROBE_TIMEOUT);
+			return output.trim().length > 0;
+		} catch {
+			return false;
+		}
+	}
+
 	async firewallStatus(): Promise<boolean> {
 		try {
 			const output = await this.run(

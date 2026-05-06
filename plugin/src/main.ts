@@ -432,12 +432,40 @@ export default class AgentSandboxPlugin extends Plugin {
 		}
 		let conflicts = await this.checkStartupPortConflicts();
 		if (conflicts.length > 0) {
+			// A previous `docker compose down` started by plugin disable may still
+			// be tearing the container down — it no longer reports as "running"
+			// but its host port mapping is still held. Treat any compose-managed
+			// container (running or not) as ours and run `down` to finish cleanup.
 			const stale = await this.docker.probeStatus();
-			if (DockerManager.parseIsRunning(stale)) {
-				logger.info("Plugin", "Port conflict from stale container — stopping it first");
-				new Notice("Stopping stale container...");
-				await this.docker.stop();
+			const isRunning = DockerManager.parseIsRunning(stale);
+			const hasContainer = isRunning || (await this.docker.hasAnyContainer());
+			if (hasContainer) {
+				logger.info(
+					"Plugin",
+					`Port conflict from ${isRunning ? "running" : "half-stopped"} sandbox container — running compose down before retry`,
+				);
+				// Show the hourglass during cleanup so the status bar reflects
+				// the in-progress work rather than staying on "Stopped" while
+				// the toast disappears.
+				this.statusBar.setState("starting");
+				this.statusBar.setDetails(
+					"Waiting for previous container to shut down before starting...",
+				);
+				new Notice("Cleaning up previous sandbox container...");
+				try {
+					await this.docker.stop();
+				} catch (error: unknown) {
+					logger.warn(
+						"Plugin",
+						"compose down during port-conflict recovery failed",
+						error,
+					);
+				}
 				conflicts = await this.checkStartupPortConflicts();
+				if (conflicts.length > 0) {
+					this.statusBar.setState("stopped");
+					this.statusBar.setDetails(TOOLTIP_STOPPED);
+				}
 			}
 			if (conflicts.length > 0) {
 				new Notice(
