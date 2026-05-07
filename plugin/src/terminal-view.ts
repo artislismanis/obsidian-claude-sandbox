@@ -4,6 +4,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { TerminalSettings, TerminalThemeMode } from "./settings";
 import { logger } from "./logger";
+import { refreshLeafHeader } from "./obsidian-internals";
 import { pollUntilReady, buildWsUrl, exponentialBackoff } from "./ttyd-client";
 
 import { VIEW_TYPE_TERMINAL } from "./view-types";
@@ -163,8 +164,7 @@ export class TerminalView extends ItemView {
 		this.activityPrefix = prefix;
 		// Ask Obsidian to re-read the display text for this tab.
 		this.app.workspace.requestSaveLayout();
-		const leaf = this.leaf as unknown as { updateHeader?: () => void };
-		leaf.updateHeader?.();
+		refreshLeafHeader(this.leaf);
 	}
 
 	getIcon(): string {

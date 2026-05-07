@@ -12,8 +12,9 @@ import type { App, TFile } from "obsidian";
 import { TFile as TFileClass } from "obsidian";
 import { z } from "zod/v4";
 import type { McpToolDef, PermissionTier, ReviewFn } from "./mcp-tools";
-import { defineTool, text, error, gateVaultWrite } from "./mcp-tools";
+import { defineTool, text, error, gateVaultWrite, forEachMarkdownChunked } from "./mcp-tools";
 import { logger } from "./logger";
+import { getPluginsHost } from "./obsidian-internals";
 
 type ToolPusher = (tool: McpToolDef) => void;
 
@@ -23,14 +24,6 @@ export interface WriteGate {
 	review: ReviewFn | undefined;
 }
 
-type PluginsHost = {
-	plugins: {
-		getPlugin?: (id: string) => unknown;
-		plugins?: Record<string, unknown>;
-		enabledPlugins?: Set<string>;
-	};
-};
-
 /**
  * Look up an installed + enabled plugin by id. Returns null when the plugin
  * isn't installed, isn't enabled, or the host shape isn't what we expect.
@@ -38,7 +31,7 @@ type PluginsHost = {
  * duplicate.
  */
 function getInstalledPlugin<T>(app: App, pluginId: string): T | null {
-	const host = (app as unknown as PluginsHost).plugins;
+	const host = getPluginsHost(app);
 	if (!host) {
 		logger.debug("Extensions", `${pluginId}: no plugins host`);
 		return null;
@@ -50,34 +43,12 @@ function getInstalledPlugin<T>(app: App, pluginId: string): T | null {
 		);
 		return null;
 	}
-	const plugin = host.getPlugin?.(pluginId) ?? (host.plugins && host.plugins[pluginId]) ?? null;
+	const plugin = host.getPlugin?.(pluginId) ?? host.plugins?.[pluginId] ?? null;
 	logger.debug(
 		"Extensions",
 		`${pluginId}: ${plugin ? "found" : "not found via getPlugin/plugins"}`,
 	);
 	return (plugin as T | null) ?? null;
-}
-
-/**
- * Parallel-chunked iteration over markdown files, short-circuiting when the
- * handler returns `true`. Mirrors the helper in mcp-tools.ts; kept separate
- * here so extensions don't cross-import private helpers from the main tool
- * module.
- */
-async function forEachMarkdownChunked(
-	app: App,
-	handler: (file: TFile, content: string) => boolean | void | Promise<boolean | void>,
-	files: TFile[] = app.vault.getMarkdownFiles(),
-	chunkSize = 20,
-): Promise<void> {
-	for (let i = 0; i < files.length; i += chunkSize) {
-		const chunk = files.slice(i, i + chunkSize);
-		const contents = await Promise.all(chunk.map((f) => app.vault.cachedRead(f)));
-		for (let j = 0; j < chunk.length; j++) {
-			const stop = await handler(chunk[j], contents[j]);
-			if (stop) return;
-		}
-	}
 }
 
 function resolveCanvasFile(app: App, path: string): TFile | null {

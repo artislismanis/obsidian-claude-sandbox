@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { TFile, TFolder } from "obsidian";
+import type { TFile } from "obsidian";
 
 vi.mock("obsidian", () => ({
 	prepareSimpleSearch: vi.fn(() => () => ({ score: 1, matches: [[0, 5]] })),
@@ -9,66 +9,7 @@ vi.mock("obsidian", () => ({
 
 import { buildTools } from "../mcp-tools";
 import type { McpToolDef } from "../mcp-tools";
-
-function makeTFile(path: string, content = ""): TFile {
-	const parts = path.split("/");
-	const name = parts[parts.length - 1];
-	const ext = name.includes(".") ? name.split(".").pop()! : "";
-	const basename = name.replace(`.${ext}`, "");
-	return {
-		path,
-		name,
-		basename,
-		extension: ext,
-		stat: { ctime: 1700000000000, mtime: 1700001000000, size: content.length || 100 },
-		vault: {} as never,
-		parent: { path: parts.slice(0, -1).join("/") || "" } as TFolder,
-	} as TFile;
-}
-
-function createMockApp(files: TFile[], caches: Record<string, unknown> = {}) {
-	const app = {
-		vault: {
-			getFiles: vi.fn(() => files),
-			getMarkdownFiles: vi.fn(() => files.filter((f) => f.extension === "md")),
-			getFileByPath: vi.fn((path: string) => files.find((f) => f.path === path) ?? null),
-			read: vi.fn(async (f: TFile) => `content of ${f.path}`),
-			cachedRead: vi.fn(async (f: TFile) => `content of ${f.path}`),
-			create: vi.fn(async (path: string, content = "") => makeTFile(path, content)),
-			modify: vi.fn(async () => {}),
-			append: vi.fn(async () => {}),
-			trash: vi.fn(async () => {}),
-			createFolder: vi.fn(async () => {}),
-		},
-		metadataCache: {
-			getFileCache: vi.fn((f: TFile) => caches[f.path] ?? null),
-			getFirstLinkpathDest: vi.fn(
-				(link: string) => files.find((f) => f.basename === link || f.name === link) ?? null,
-			),
-			resolvedLinks: {} as Record<string, Record<string, number>>,
-			unresolvedLinks: {} as Record<string, Record<string, number>>,
-		},
-		fileManager: {
-			renameFile: vi.fn(async () => {}),
-			processFrontMatter: vi.fn(
-				async (_f: TFile, fn: (fm: Record<string, unknown>) => void) => {
-					const fm: Record<string, unknown> = {};
-					fn(fm);
-				},
-			),
-		},
-		workspace: {
-			getLeaf: vi.fn(() => ({ openFile: vi.fn(async () => {}) })),
-		},
-	};
-	return app;
-}
-
-function getTool(tools: McpToolDef[], name: string): McpToolDef {
-	const tool = tools.find((t) => t.name === name);
-	if (!tool) throw new Error(`Tool ${name} not found`);
-	return tool;
-}
+import { makeTFile, createMockApp, getTool } from "./fixtures";
 
 function getResult(result: { content: Array<{ text: string }>; isError?: boolean }) {
 	return { text: result.content[0].text, isError: result.isError ?? false };
@@ -102,7 +43,7 @@ describe("MCP tool handlers", () => {
 	let tools: McpToolDef[];
 
 	beforeEach(() => {
-		app = createMockApp(testFiles, caches);
+		app = createMockApp(testFiles, { caches });
 		app.metadataCache.resolvedLinks = {
 			"notes/hello.md": { "notes/world.md": 2 },
 			"notes/world.md": {},
@@ -1134,7 +1075,7 @@ describe("MCP tool handlers", () => {
 		});
 
 		it("reviewed variants are absent when no reviewFn is provided", () => {
-			const localApp = createMockApp(testFiles, caches);
+			const localApp = createMockApp(testFiles, { caches });
 			const localTools = buildTools(localApp as never, () => "agent-workspace");
 			const names = localTools.map((t) => t.name);
 			expect(names).not.toContain("vault_create_reviewed");

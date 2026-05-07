@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { TFile, TFolder } from "obsidian";
 
 vi.mock("obsidian", () => ({
 	prepareSimpleSearch: vi.fn(() => () => ({ score: 1, matches: [[0, 5]] })),
@@ -8,67 +7,20 @@ vi.mock("obsidian", () => ({
 }));
 
 import { buildTools } from "../mcp-tools";
-import type { McpToolDef } from "../mcp-tools";
-
-function makeTFile(path: string): TFile {
-	const parts = path.split("/");
-	const name = parts[parts.length - 1];
-	const ext = name.includes(".") ? name.split(".").pop()! : "";
-	const basename = name.replace(`.${ext}`, "");
-	return {
-		path,
-		name,
-		basename,
-		extension: ext,
-		stat: { ctime: 1, mtime: 2, size: 100 },
-		vault: {} as never,
-		parent: { path: parts.slice(0, -1).join("/") || "" } as TFolder,
-	} as TFile;
-}
-
-function createMockApp(files: TFile[]) {
-	return {
-		vault: {
-			getFiles: vi.fn(() => files),
-			getMarkdownFiles: vi.fn(() => files.filter((f) => f.extension === "md")),
-			getFileByPath: vi.fn((p: string) => files.find((f) => f.path === p) ?? null),
-			read: vi.fn(async () => "original body\n"),
-			cachedRead: vi.fn(async () => "original body\n"),
-			create: vi.fn(async () => {}),
-			modify: vi.fn(async () => {}),
-			append: vi.fn(async () => {}),
-			trash: vi.fn(async () => {}),
-			createFolder: vi.fn(async () => {}),
-		},
-		metadataCache: {
-			getFileCache: vi.fn(() => ({
-				frontmatter: { existing: "value" },
-				headings: [{ heading: "H", level: 1, position: { start: { line: 0 } } }],
-			})),
-			getFirstLinkpathDest: vi.fn(() => null),
-			resolvedLinks: {},
-			unresolvedLinks: {},
-		},
-		fileManager: {
-			renameFile: vi.fn(async () => {}),
-			processFrontMatter: vi.fn(async () => {}),
-		},
-		workspace: { getLeaf: vi.fn(() => ({ openFile: vi.fn(async () => {}) })) },
-	};
-}
-
-function getTool(tools: McpToolDef[], name: string): McpToolDef {
-	const t = tools.find((x) => x.name === name);
-	if (!t) throw new Error(`Missing tool ${name}`);
-	return t;
-}
+import { makeTFile, createMockApp, getTool } from "./fixtures";
 
 describe("write tools honor reviewFn", () => {
 	const file = makeTFile("notes/a.md");
 	let app: ReturnType<typeof createMockApp>;
 
 	beforeEach(() => {
-		app = createMockApp([file]);
+		app = createMockApp([file], {
+			readBody: "original body\n",
+			defaultCache: {
+				frontmatter: { existing: "value" },
+				headings: [{ heading: "H", level: 1, position: { start: { line: 0 } } }],
+			},
+		});
 	});
 
 	const reviewedWriteCases: {

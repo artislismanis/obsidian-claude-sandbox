@@ -3,10 +3,14 @@ import type { PermissionTier } from "./mcp-tools";
 /** MCP tiers enabled automatically when the server is on. */
 export const ALWAYS_ON_TIERS: readonly PermissionTier[] = ["read", "writeScoped", "agent"];
 
-export interface TierDef {
+/**
+ * Generic over the settings-key type so consumers in this file (no Obsidian
+ * deps) can use a plain string, while `settings.ts` re-binds it to
+ * `keyof AgentSandboxSettings` for type-safe indexing.
+ */
+export interface TierDef<K extends string = string> {
 	tier: PermissionTier;
-	/** Key on AgentSandboxSettings (typed loosely here to avoid a circular import). */
-	settingKey: string;
+	settingKey: K;
 	name: string;
 	desc: string;
 }

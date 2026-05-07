@@ -8,7 +8,7 @@ import {
 	GATED_TIERS as PERMISSION_GATED_TIERS,
 	vaultWriteTiers,
 } from "./permission-tiers";
-import type { VaultWriteMode } from "./permission-tiers";
+import type { TierDef, VaultWriteMode } from "./permission-tiers";
 export { ALWAYS_ON_TIERS };
 export type { VaultWriteMode };
 import {
@@ -65,22 +65,12 @@ export interface AgentSandboxSettings {
  * filesystem access Claude already has (RO vault, RW workspace). The "read"
  * and "writeScoped" tiers are not listed: they're always enabled when MCP is
  * on because disabling them wouldn't deny access, only remove convenience.
+ *
+ * Sourced from permission-tiers.ts (no Obsidian deps), with `settingKey`
+ * narrowed to `keyof AgentSandboxSettings` for type-safe indexing.
  */
-export interface TierDef {
-	tier: PermissionTier;
-	settingKey: keyof AgentSandboxSettings;
-	name: string;
-	desc: string;
-}
-
-/** Capability tiers — sourced from permission-tiers.ts (no Obsidian deps), with
- * settingKey widened to the AgentSandboxSettings keyspace for the settings UI. */
-export const GATED_TIERS: readonly TierDef[] = PERMISSION_GATED_TIERS.map((g) => ({
-	tier: g.tier,
-	settingKey: g.settingKey as keyof AgentSandboxSettings,
-	name: g.name,
-	desc: g.desc,
-}));
+export const GATED_TIERS: readonly TierDef<keyof AgentSandboxSettings>[] =
+	PERMISSION_GATED_TIERS as readonly TierDef<keyof AgentSandboxSettings>[];
 
 export function enabledTiersFromSettings(settings: AgentSandboxSettings): Set<PermissionTier> {
 	const tiers = new Set<PermissionTier>(ALWAYS_ON_TIERS);

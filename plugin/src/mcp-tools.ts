@@ -5,7 +5,7 @@ import { isPathWithinDir, isPathAllowed, isRealPathWithinBase } from "./validati
 import { FileSystemAdapter } from "obsidian";
 import type { WriteOperation } from "./diff-review-modal";
 import { registerExtensionTools } from "./mcp-extensions";
-import { logger } from "./logger";
+import { applyTemplaterFolderTemplate, withTemplaterHookSuppressed } from "./templater-adapter";
 
 export type { WriteOperation };
 
@@ -146,76 +146,24 @@ function isVaultPathSafe(app: App, vaultPath: string): boolean {
 	return isRealPathWithinBase(adapter.getBasePath(), adapter.getFullPath(vaultPath));
 }
 
-interface TemplaterPlugin {
-	settings?: {
-		enable_folder_templates?: boolean;
-		trigger_on_file_creation?: boolean;
-		folder_templates?: Array<{ folder?: string; template?: string }>;
-	};
-	templater?: {
-		write_template_to_file: (templateFile: TFile, file: TFile) => Promise<void>;
-	};
-}
-
-function getTemplaterPlugin(app: App): TemplaterPlugin | undefined {
-	const plugins = (app as unknown as { plugins?: { plugins?: Record<string, unknown> } }).plugins;
-	return plugins?.plugins?.["templater-obsidian"] as TemplaterPlugin | undefined;
-}
-
 /**
- * Apply the matching Templater folder template to a freshly created file.
- *
- * Why: Templater's own folder-template hook calls `append_template_to_active_file`,
- * which fails for agent-driven `vault.create` calls because there is no active
- * editor. We bypass that path and use Templater's editor-free entry point
- * `write_template_to_file` directly.
- *
- * Returns the template's vault path on success, or null if no template matched
- * (or Templater isn't installed/enabled).
+ * Parallel-chunked iteration over markdown files, short-circuiting when the
+ * handler returns `true`. Used by any tool that wants parallel cachedReads
+ * without loading the entire vault at once.
  */
-async function applyTemplaterFolderTemplate(app: App, file: TFile): Promise<string | null> {
-	const tp = getTemplaterPlugin(app);
-	if (!tp?.templater || !tp.settings?.enable_folder_templates) return null;
-	const folderTemplates = tp.settings.folder_templates ?? [];
-	const dir = file.parent?.path ?? "";
-	// Longest-prefix wins, matching Templater's own resolution.
-	let best: { folder: string; template: string; len: number } | null = null;
-	for (const ft of folderTemplates) {
-		if (!ft.folder || !ft.template) continue;
-		const folder = ft.folder === "/" ? "" : ft.folder.replace(/\/$/, "");
-		const matches = folder === "" || dir === folder || dir.startsWith(folder + "/");
-		if (!matches) continue;
-		const len = folder.length;
-		if (!best || len > best.len) best = { folder: ft.folder, template: ft.template, len };
-	}
-	if (!best) return null;
-	const tplFile = app.vault.getFileByPath(best.template);
-	if (!tplFile) return null;
-	try {
-		await tp.templater.write_template_to_file(tplFile, file);
-		return tplFile.path;
-	} catch (e) {
-		logger.error("mcp-tools", "Templater folder-template application failed", e);
-		return null;
-	}
-}
-
-/**
- * Run `fn` with Templater's create-hook setting flipped off, restoring the
- * prior value afterwards. The hook calls `append_template_to_active_file`,
- * which raises a "no active editor" notice for any agent-driven create — we
- * apply the template ourselves via `applyTemplaterFolderTemplate`, so the
- * hook's failure is pure noise.
- */
-async function withTemplaterHookSuppressed<T>(app: App, fn: () => Promise<T>): Promise<T> {
-	const tp = getTemplaterPlugin(app);
-	if (!tp?.settings) return fn();
-	const prev = tp.settings.trigger_on_file_creation;
-	tp.settings.trigger_on_file_creation = false;
-	try {
-		return await fn();
-	} finally {
-		tp.settings.trigger_on_file_creation = prev;
+export async function forEachMarkdownChunked(
+	app: App,
+	handler: (file: TFile, content: string) => boolean | void | Promise<boolean | void>,
+	files: TFile[] = app.vault.getMarkdownFiles(),
+	chunkSize = 20,
+): Promise<void> {
+	for (let i = 0; i < files.length; i += chunkSize) {
+		const chunk = files.slice(i, i + chunkSize);
+		const contents = await Promise.all(chunk.map((f) => app.vault.cachedRead(f)));
+		for (let j = 0; j < chunk.length; j++) {
+			const stop = await handler(chunk[j], contents[j]);
+			if (stop) return;
+		}
 	}
 }
 
@@ -301,25 +249,13 @@ export function buildTools(
 ): McpToolDef[] {
 	const tools: McpToolDef[] = [];
 
-	/**
-	 * Iterate the vault's markdown files in parallel chunks, short-circuiting
-	 * when the handler returns `true`. Used by any tool that wants parallel
-	 * cachedReads without loading the entire vault at once.
-	 */
-	async function forEachMarkdownChunked(
+	/** App-bound alias of the module-level helper, so call sites stay terse. */
+	const forEachMarkdown: (
 		handler: (file: TFile, content: string) => boolean | void | Promise<boolean | void>,
-		files: TFile[] = app.vault.getMarkdownFiles(),
-		chunkSize = 20,
-	): Promise<void> {
-		for (let i = 0; i < files.length; i += chunkSize) {
-			const chunk = files.slice(i, i + chunkSize);
-			const contents = await Promise.all(chunk.map((f) => app.vault.cachedRead(f)));
-			for (let j = 0; j < chunk.length; j++) {
-				const stop = await handler(chunk[j], contents[j]);
-				if (stop) return;
-			}
-		}
-	}
+		files?: TFile[],
+		chunkSize?: number,
+	) => Promise<void> = (handler, files, chunkSize) =>
+		forEachMarkdownChunked(app, handler, files, chunkSize);
 
 	// ── Read tier ─────────────────────────────────────
 
@@ -379,7 +315,7 @@ export function buildTools(
 				const limit = limitArg ?? 20;
 				const search = prepareSimpleSearch(query);
 				const results: string[] = [];
-				await forEachMarkdownChunked((file, content) => {
+				await forEachMarkdown((file, content) => {
 					const match = search(content);
 					if (!match) return;
 					const firstOffset = match.matches[0]?.[0] ?? 0;
@@ -409,7 +345,7 @@ export function buildTools(
 				const limit = limitArg ?? 20;
 				const search = prepareFuzzySearch(query);
 				const hits: { path: string; score: number; snippet: string }[] = [];
-				await forEachMarkdownChunked((file, content) => {
+				await forEachMarkdown((file, content) => {
 					const match = search(content);
 					if (!match) return;
 					const firstOffset = match.matches[0]?.[0] ?? 0;
@@ -959,7 +895,7 @@ export function buildTools(
 					.getMarkdownFiles()
 					.filter((other) => !alreadyLinked.has(other.path));
 				const candidates: { path: string; score: number }[] = [];
-				await forEachMarkdownChunked((other, otherContent) => {
+				await forEachMarkdown((other, otherContent) => {
 					let score = 0;
 					if (wordSet.has(other.basename.toLowerCase())) score += 5;
 					const otherWords = otherContent
@@ -1690,7 +1626,7 @@ export function buildTools(
 
 				const search = prepareSimpleSearch(query);
 				const matched: TFile[] = [];
-				await forEachMarkdownChunked((file, content) => {
+				await forEachMarkdown((file, content) => {
 					if (search(content)) matched.push(file);
 				});
 

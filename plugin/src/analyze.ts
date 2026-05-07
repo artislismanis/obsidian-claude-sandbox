@@ -8,6 +8,7 @@ import type { App, Menu, TFile } from "obsidian";
 import { FileSystemAdapter, Modal, Notice } from "obsidian";
 import { existsSync as fsExistsSync } from "fs";
 import { join as pathJoin } from "path";
+import { tryOpenSubmenu } from "./obsidian-internals";
 import { parsePromptTemplate, substituteFilePlaceholder } from "./prompt-template";
 
 export interface PromptTemplate {
@@ -143,10 +144,8 @@ export class AnalyzeManager {
 
 		menu.addItem((item) => {
 			item.setTitle("Analyze in Sandbox").setIcon("bot");
-			const submenu = (
-				item as unknown as { setSubmenu?: () => { addItem: Menu["addItem"] } }
-			).setSubmenu?.();
-			const container = submenu ?? menu;
+			const submenu = tryOpenSubmenu(item);
+			const container: Pick<Menu, "addItem"> = submenu ?? menu;
 			if (templates.length === 0) {
 				container.addItem((sub) =>
 					sub.setTitle("Custom prompt…").onClick(() => this.runAnalyzeCustom(file.path)),
