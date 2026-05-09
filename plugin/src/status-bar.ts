@@ -76,11 +76,8 @@ export class FirewallStatusBar {
 	}
 
 	private render(): void {
-		if (this.state === "hidden") {
-			this.el.style.display = "none";
-			return;
-		}
-		this.el.style.display = "";
+		this.el.toggleClass("sandbox-statusbar-hidden", this.state === "hidden");
+		if (this.state === "hidden") return;
 		this.el.setText("\uD83D\uDEE1 FW");
 		this.el.toggleClass("firewall-enabled", this.state === "enabled");
 		this.el.toggleClass("firewall-disabled", this.state === "disabled");

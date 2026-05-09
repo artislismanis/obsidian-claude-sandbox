@@ -72,7 +72,7 @@ describe("FirewallStatusBar", () => {
 	it("starts hidden", () => {
 		const el = createMockElement();
 		new FirewallStatusBar(el, vi.fn());
-		expect(el.style.display).toBe("none");
+		expect(el.toggleClass).toHaveBeenCalledWith("sandbox-statusbar-hidden", true);
 	});
 
 	it("shows enabled state with success class", () => {
@@ -98,7 +98,7 @@ describe("FirewallStatusBar", () => {
 		const bar = new FirewallStatusBar(el, vi.fn());
 		bar.setState("enabled");
 		bar.setState("hidden");
-		expect(el.style.display).toBe("none");
+		expect(el.toggleClass).toHaveBeenCalledWith("sandbox-statusbar-hidden", true);
 	});
 
 	it("skips render on duplicate state", () => {

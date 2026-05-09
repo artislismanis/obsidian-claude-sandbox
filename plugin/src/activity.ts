@@ -39,12 +39,12 @@ export class ActivityUi {
 	) {}
 
 	route(update: ActivityUpdate): void {
-		const prefix: ActivityPrefix =
-			update.status === "working"
-				? "working"
-				: update.status === "awaiting_input"
-					? "awaiting_input"
-					: null;
+		const STATUS_TO_PREFIX: Record<AgentStatus, ActivityPrefix> = {
+			working: "working",
+			awaiting_input: "awaiting_input",
+			idle: null,
+		};
+		const prefix = STATUS_TO_PREFIX[update.status];
 
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
 			const view = leaf.view as TerminalView;

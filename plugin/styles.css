@@ -458,3 +458,11 @@
 	background-color: var(--background-secondary);
 	border-radius: 4px;
 }
+
+.sandbox-settings-narrow-input {
+	width: 60px;
+}
+
+.sandbox-statusbar-hidden {
+	display: none;
+}

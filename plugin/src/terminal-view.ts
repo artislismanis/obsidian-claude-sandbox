@@ -18,7 +18,9 @@ const RECONNECT_BACKOFF_MS = [500, 1000, 2000, 4000, 8000];
 
 // ttyd protocol command characters. Server↔client share ASCII values by direction:
 // server-to-client and client-to-server use disjoint meanings for the same chars.
-const SERVER_MSG = { OUTPUT: "0", TITLE: "1", PREFERENCES: "2" } as const;
+// ttyd server-to-client commands. Only OUTPUT is consumed; TITLE ('1') and
+// PREFERENCES ('2') are ignored.
+const SERVER_MSG = { OUTPUT: "0" } as const;
 const CLIENT_MSG = { INPUT: "0", RESIZE: "1" } as const;
 
 const textEncoder = new TextEncoder();
@@ -26,37 +28,24 @@ const textEncoder = new TextEncoder();
 let nextInstanceId = 1;
 
 // WebSocket close-code → human label. Helps interpret container-side drops.
+const CLOSE_CODE_NAMES: Record<number, string> = {
+	1000: "normal",
+	1001: "going-away",
+	1002: "protocol-error",
+	1003: "unsupported-data",
+	1005: "no-status",
+	1006: "abnormal-no-close-frame",
+	1007: "invalid-payload",
+	1008: "policy-violation",
+	1009: "message-too-big",
+	1011: "internal-error",
+	1012: "service-restart",
+	1013: "try-again-later",
+	1015: "tls-handshake",
+};
+
 function closeCodeName(code: number): string {
-	switch (code) {
-		case 1000:
-			return "normal";
-		case 1001:
-			return "going-away";
-		case 1002:
-			return "protocol-error";
-		case 1003:
-			return "unsupported-data";
-		case 1005:
-			return "no-status";
-		case 1006:
-			return "abnormal-no-close-frame";
-		case 1007:
-			return "invalid-payload";
-		case 1008:
-			return "policy-violation";
-		case 1009:
-			return "message-too-big";
-		case 1011:
-			return "internal-error";
-		case 1012:
-			return "service-restart";
-		case 1013:
-			return "try-again-later";
-		case 1015:
-			return "tls-handshake";
-		default:
-			return `code-${code}`;
-	}
+	return CLOSE_CODE_NAMES[code] ?? `code-${code}`;
 }
 
 export interface TerminalConnectionEvent {
@@ -570,16 +559,9 @@ export class TerminalView extends ItemView {
 			this.wsRxMsgs++;
 			const cmd = String.fromCharCode(new Uint8Array(rawData)[0]);
 
-			switch (cmd) {
-				case SERVER_MSG.OUTPUT:
-					term.write(new Uint8Array(rawData, 1));
-					break;
-				case SERVER_MSG.TITLE:
-					// Could set document title; ignored for Obsidian
-					break;
-				case SERVER_MSG.PREFERENCES:
-					// Server preferences; ignored
-					break;
+			// Only OUTPUT carries data we need; TITLE / PREFERENCES are ignored.
+			if (cmd === SERVER_MSG.OUTPUT) {
+				term.write(new Uint8Array(rawData, 1));
 			}
 		};
 

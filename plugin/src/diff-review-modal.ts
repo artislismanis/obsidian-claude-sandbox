@@ -113,19 +113,15 @@ export class DiffReviewModal extends Modal {
 
 		contentEl.createEl("div", { cls: "diff-review-path", text: this.request.filePath });
 
-		if (this.request.affectedLinks && this.request.affectedLinks.length > 0) {
+		const links = this.request.affectedLinks;
+		if (links && links.length > 0) {
 			const header = contentEl.createEl("div", { cls: "diff-review-affected-header" });
-			header.setText(`${this.request.affectedLinks.length} note(s) link here:`);
+			header.setText(`${links.length} note(s) link here:`);
 			const list = contentEl.createEl("ul", {
 				cls: "diff-review-affected-list sandbox-diff-affected-list",
 			});
-			for (const link of this.request.affectedLinks) {
-				list.createEl("li", { text: link });
-			}
-		} else if (
-			this.request.affectedLinks !== undefined &&
-			this.request.affectedLinks.length === 0
-		) {
+			for (const link of links) list.createEl("li", { text: link });
+		} else if (links !== undefined) {
 			contentEl.createEl("div", {
 				cls: "diff-review-affected-empty",
 				text: "No other notes link to this file.",
