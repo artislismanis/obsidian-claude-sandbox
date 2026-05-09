@@ -54,8 +54,8 @@ No Docker, no Obsidian, no network. Covers pure logic: validators, shell escapin
 Expected output ends with:
 
 ```
- Test Files  8 passed (8)
-      Tests  184 passed (184)
+ Test Files  19 passed (19)
+      Tests  391 passed (391)
 ```
 
 ### Layer 2 — integration tests
@@ -142,9 +142,9 @@ After that, `npm run test:integration` will include the four Claude tests (`clau
 
 | Suite | Path | Tests | What's covered |
 |-------|------|-------|----------------|
-| **Unit** | `src/__tests__/*.test.ts` | 184 | Input validation (write dir, private hosts, memory, CPUs, bind address, port), WSL + Windows shell escaping, WSL path conversion, env var injection, `parseIsRunning` state machine, ttyd polling / URL construction, status bar state transitions, firewall status bar, timing-safe MCP auth, path traversal protection, all 22 MCP tool handlers |
+| **Unit** | `src/__tests__/*.test.ts` | 391 | Input validation (write dir, private hosts, memory, CPUs, bind address, port, memory file name, path-prefix lists), WSL + Windows shell escaping (incl. `$`/backtick neutralisation), WSL path conversion, env var injection, `parseIsRunning` state machine, ttyd polling / URL construction, status bar state transitions, firewall status bar, timing-safe MCP auth, path traversal protection, every MCP tool handler |
 | **Integration** | `test/integration/*.test.ts` | 40 | Container health + `verify.sh`, vault ro/rw mounts + mount isolation, narrow sudo scope + `SUDO_PASSWORD` unset after drop-privileges, MCP env var injection, MCP HTTP auth / routing / CORS, Docker resource naming (`oas-test` prefix), firewall enable / allowlist / disable, tmux session create + list + persist, ttyd port remapping, Claude Code auth + `claude -p` execution + memory MCP tool use + filesystem `Read` tool |
-| **E2E** | `test/e2e/specs/*.e2e.ts` | 18 | Plugin loads and is enabled, ribbon icon present, status bar renders, 9 commands registered, 4 settings tabs render, 5 MCP permission tiers visible with correct defaults, MCP token auto-generates and regenerates, font size + scrollback + MCP port validation adds/removes `sandbox-input-error` class, bind address `0.0.0.0` security warning toggles dynamically, per-setting "Requires restart" labels appear on restart-needing settings only |
+| **E2E** | `test/e2e/specs/*.e2e.ts` | 18 | Plugin loads and is enabled, ribbon icon present, status bar renders, 12 commands registered, 4 settings tabs render, 5 MCP permission tiers visible with correct defaults, MCP token auto-generates and regenerates, font size + scrollback + MCP port validation adds/removes `sandbox-input-error` class, bind address `0.0.0.0` security warning toggles dynamically, per-setting "Requires restart" labels appear on restart-needing settings only |
 
 ## What's NOT covered (and why)
 
@@ -306,7 +306,7 @@ These span process boundaries (full Obsidian close, not `browser.reloadObsidian`
 1. Settings → Community Plugins → disable "Agent Sandbox"
 2. Re-enable it
 
-**Expected:** Plugin loads cleanly — ribbon icon appears, all 9 commands are registered, no console errors.
+**Expected:** Plugin loads cleanly — ribbon icon appears, all 12 commands are registered, no console errors.
 
 ---
 

@@ -16,10 +16,8 @@ const MAX_RETRIES = 15;
 // error. Container is almost always still running; the WebSocket just dropped.
 const RECONNECT_BACKOFF_MS = [500, 1000, 2000, 4000, 8000];
 
-// ttyd protocol command characters. Server↔client share ASCII values by direction:
-// server-to-client and client-to-server use disjoint meanings for the same chars.
-// ttyd server-to-client commands. Only OUTPUT is consumed; TITLE ('1') and
-// PREFERENCES ('2') are ignored.
+// ttyd wire protocol — single-byte command prefix. Each direction has its own
+// meanings for the same ASCII codes; we only consume OUTPUT inbound.
 const SERVER_MSG = { OUTPUT: 0x30 } as const;
 const CLIENT_MSG = { INPUT: "0", RESIZE: "1" } as const;
 

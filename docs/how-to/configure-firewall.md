@@ -20,7 +20,7 @@ All three are additive. There is no override precedence; duplicates are harmless
 
 ## Adding a domain via the plugin setting
 
-1. Settings → Agent Sandbox → Security tab.
+1. Settings → Agent Sandbox → Advanced tab → Security section.
 2. Paste into "Additional firewall domains": `api.atlassian.com, slack.com`.
 3. Restart the container (plugin prompts you).
 
@@ -51,7 +51,7 @@ git update-index --no-skip-worktree container/firewall-extras.txt
 
 Two ways:
 
-1. **Plugin UI** — Security tab → "Effective allowlist" → Refresh. Shows each entry tagged with its source.
+1. **Plugin UI** — Advanced tab → Security section → "Effective allowlist" → Refresh. Shows each entry tagged with its source.
 2. **Container shell**:
    ```bash
    docker compose exec sandbox /usr/local/bin/init-firewall.sh --list-sources
