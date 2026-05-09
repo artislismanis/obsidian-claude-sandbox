@@ -74,8 +74,8 @@ describe("buildWslCommand", () => {
 
 	it("escapes single quotes in path for bash", () => {
 		const cmd = buildWslCommand("/home/user/it's a test", "Ubuntu", "docker compose up -d");
-		expect(cmd).toContain("'\\''");
-		expect(cmd).toContain("cd '/home/user/it'\\''s a test'");
+		// Inner backslashes are doubled for the outer double-quoted bash -c wrap.
+		expect(cmd).toContain("cd '/home/user/it'\\\\''s a test'");
 	});
 
 	it("escapes double quotes in path for cmd.exe", () => {
@@ -129,7 +129,7 @@ describe("buildWslCommand", () => {
 		const cmd = buildWslCommand("/home/user/project", "Ubuntu", "docker compose up -d", {
 			PKM_VAULT_PATH: "/mnt/c/Users/it's me/vault",
 		});
-		expect(cmd).toContain("PKM_VAULT_PATH='/mnt/c/Users/it'\\''s me/vault'");
+		expect(cmd).toContain("PKM_VAULT_PATH='/mnt/c/Users/it'\\\\''s me/vault'");
 	});
 
 	it("handles env var values with spaces", () => {
@@ -171,7 +171,27 @@ describe("buildWslCommand", () => {
 		const cmd = buildWslCommand("/home/user/project", "Ubuntu", "docker compose up -d", {
 			SUDO_PASSWORD: "pa's'swd",
 		});
-		expect(cmd).toContain("SUDO_PASSWORD='pa'\\''s'\\''swd'");
+		expect(cmd).toContain("SUDO_PASSWORD='pa'\\\\''s'\\\\''swd'");
+	});
+
+	it("escapes $ in env var values to prevent outer-shell expansion", () => {
+		const cmd = buildWslCommand("/home/user/project", "Ubuntu", "docker compose up -d", {
+			SUDO_PASSWORD: "pa$ssword",
+		});
+		// Outer bash -c "..." would expand $s otherwise.
+		expect(cmd).toContain("SUDO_PASSWORD='pa\\$ssword'");
+	});
+
+	it("escapes backtick in env var values", () => {
+		const cmd = buildWslCommand("/home/user/project", "Ubuntu", "docker compose up -d", {
+			SUDO_PASSWORD: "pa`whoami`",
+		});
+		expect(cmd).toContain("SUDO_PASSWORD='pa\\`whoami\\`'");
+	});
+
+	it("escapes $ in path to prevent outer-shell expansion", () => {
+		const cmd = buildWslCommand("/home/user/$HOME-trick", "Ubuntu", "docker compose up -d");
+		expect(cmd).toContain("cd '/home/user/\\$HOME-trick'");
 	});
 });
 
@@ -192,7 +212,14 @@ describe("buildLocalCommand", () => {
 
 	it("escapes single quotes in path", () => {
 		const cmd = buildLocalCommand("/opt/it's a test", "docker compose up -d");
-		expect(cmd).toContain("cd '/opt/it'\\''s a test'");
+		expect(cmd).toContain("cd '/opt/it'\\\\''s a test'");
+	});
+
+	it("escapes $ in env var values to prevent outer-shell expansion", () => {
+		const cmd = buildLocalCommand("/opt/project", "docker compose up -d", {
+			SUDO_PASSWORD: "pa$ssword",
+		});
+		expect(cmd).toContain("SUDO_PASSWORD='pa\\$ssword'");
 	});
 
 	it("omits env prefix when no env vars provided", () => {

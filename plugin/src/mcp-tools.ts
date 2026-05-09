@@ -1223,9 +1223,15 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 					let count = 0;
 					const updated = content.replace(pattern, (...matchArgs) => {
 						count++;
-						return replacement.replace(/\$(\d+)/g, (_, n) => {
-							const idx = parseInt(n, 10);
-							return (matchArgs[idx] as string | undefined) ?? "";
+						// Honour `$$` (literal `$`) and `$N` only in regex mode. In literal
+						// mode the user's pattern has no groups, so `$N` should pass
+						// through unchanged.
+						if (!useRegex) return replacement;
+						return replacement.replace(/\$(\$|\d+)/g, (_, token) => {
+							if (token === "$") return "$";
+							const idx = parseInt(token, 10);
+							const grp = matchArgs[idx];
+							return typeof grp === "string" ? grp : "";
 						});
 					});
 					if (count === 0) return error("No matches found.");
@@ -1262,14 +1268,14 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 					const existing = await app.vault.read(f);
 					const cache = app.metadataCache.getFileCache(f);
 					const fmEnd = cache?.frontmatterPosition?.end;
+					// Use Obsidian's authoritative byte offset, then advance past any
+					// trailing newline so the inserted content starts on its own line.
+					// The line-sum approach this replaces overcounted by 1 when the
+					// file had no trailing newline after frontmatter.
 					let insertPos = 0;
 					if (fmEnd) {
-						const lines = existing.split("\n");
-						let charCount = 0;
-						for (let i = 0; i <= fmEnd.line && i < lines.length; i++) {
-							charCount += lines[i].length + 1;
-						}
-						insertPos = charCount;
+						insertPos = Math.min(fmEnd.offset, existing.length);
+						while (existing[insertPos] === "\n") insertPos++;
 					}
 					const before = existing.slice(0, insertPos);
 					const after = existing.slice(insertPos);
@@ -1488,9 +1494,17 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 			handler: async ({ file, path, name: newName }) => {
 				const f = resolveFile(app, { file, path }, pathFilter);
 				if (!f) return error("File not found.");
-				const ext = newName.includes(".") ? "" : `.${f.extension}`;
+				if (newName.includes("/") || newName.includes("\\") || newName.includes(".."))
+					return error("'name' must be a bare filename (no slashes or '..').");
+				// Treat as already-extensioned only when the trailing dotted suffix
+				// looks like a real extension (alpha-led, ≤10 chars). This keeps
+				// the original extension for names like `v1.2`.
+				const hasTrailingExt = /\.[A-Za-z][A-Za-z0-9]{0,9}$/.test(newName);
+				const ext = hasTrailingExt ? "" : `.${f.extension}`;
 				const dir = f.parent?.path ?? "";
 				const newPath = dir ? `${dir}/${newName}${ext}` : `${newName}${ext}`;
+				if (!isVaultPathSafe(app, newPath))
+					return error("Destination resolves outside the vault.");
 				return runWrite({
 					operation: "rename",
 					filePath: f.path,
@@ -1519,7 +1533,17 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 			handler: async ({ file, path, to: dest }) => {
 				const f = resolveFile(app, { file, path }, pathFilter);
 				if (!f) return error("File not found.");
-				const newPath = `${dest}/${f.name}`;
+				if (dest.includes("..") || dest.includes("\\"))
+					return error("'to' may not contain '..' or backslashes.");
+				const cleanDest = dest.replace(/^\/+|\/+$/g, "");
+				const newPath = cleanDest ? `${cleanDest}/${f.name}` : f.name;
+				if (!isVaultPathSafe(app, newPath))
+					return error("Destination resolves outside the vault.");
+				if (
+					pathFilter &&
+					!isPathAllowed(newPath, pathFilter.allowlist, pathFilter.blocklist)
+				)
+					return error("Destination path is blocked by allow/block list.");
 				return runWrite({
 					operation: "move",
 					filePath: f.path,

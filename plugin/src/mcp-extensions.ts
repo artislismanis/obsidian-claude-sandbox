@@ -57,7 +57,32 @@ function resolveCanvasFile(app: App, path: string): TFile | null {
 	return f;
 }
 
+/** Parse JSON with a label-prefixed error message; on success returns the value. */
+function parseJsonLabelled<T = unknown>(
+	raw: string,
+	label: string,
+): { ok: true; value: T } | { ok: false; error: string } {
+	try {
+		return { ok: true, value: JSON.parse(raw) as T };
+	} catch (e: unknown) {
+		return { ok: false, error: `${label}: ${errMsg(e)}` };
+	}
+}
+
 // ── Canvas ──────────────────────────────────────────
+
+const CanvasNodeSchema = z.record(z.string(), z.unknown());
+const CanvasEdgeSchema = z.record(z.string(), z.unknown());
+const CanvasChangesSchema = z.object({
+	addNodes: z.array(CanvasNodeSchema).optional(),
+	removeNodeIds: z.array(z.string()).optional(),
+	addEdges: z.array(CanvasEdgeSchema).optional(),
+	removeEdgeIds: z.array(z.string()).optional(),
+});
+const CanvasDocSchema = z.object({
+	nodes: z.array(CanvasNodeSchema).optional(),
+	edges: z.array(CanvasEdgeSchema).optional(),
+});
 
 export function registerCanvasTools(app: App, push: ToolPusher, gate: WriteGate): void {
 	push(
@@ -75,13 +100,9 @@ export function registerCanvasTools(app: App, push: ToolPusher, gate: WriteGate)
 				const f = resolveCanvasFile(app, path);
 				if (!f) return error("Canvas file not found (must end in .canvas).");
 				const raw = await app.vault.read(f);
-				try {
-					const parsed = JSON.parse(raw);
-					return text(JSON.stringify(parsed, null, 2));
-				} catch (e: unknown) {
-					const msg = errMsg(e);
-					return error(`Canvas JSON parse failed: ${msg}`);
-				}
+				const parsed = parseJsonLabelled(raw, "Canvas JSON parse failed");
+				if (!parsed.ok) return error(parsed.error);
+				return text(JSON.stringify(parsed.value, null, 2));
 			},
 		}),
 	);
@@ -106,47 +127,49 @@ export function registerCanvasTools(app: App, push: ToolPusher, gate: WriteGate)
 				const f = resolveCanvasFile(app, path);
 				if (!f) return error("Canvas file not found (must end in .canvas).");
 
-				let changes: {
-					addNodes?: Array<Record<string, unknown>>;
-					removeNodeIds?: string[];
-					addEdges?: Array<Record<string, unknown>>;
-					removeEdgeIds?: string[];
-				};
-				try {
-					changes = JSON.parse(changesRaw);
-				} catch (e: unknown) {
-					const msg = errMsg(e);
-					return error(`Invalid JSON in 'changes': ${msg}`);
+				const parsedChanges = parseJsonLabelled(changesRaw, "Invalid JSON in 'changes'");
+				if (!parsedChanges.ok) return error(parsedChanges.error);
+				const validatedChanges = CanvasChangesSchema.safeParse(parsedChanges.value);
+				if (!validatedChanges.success) {
+					return error(`'changes' has invalid shape: ${validatedChanges.error.message}`);
 				}
+				const changes = validatedChanges.data;
 
 				const raw = await app.vault.read(f);
-				let doc: {
-					nodes?: Array<Record<string, unknown>>;
-					edges?: Array<Record<string, unknown>>;
-				};
-				try {
-					doc = JSON.parse(raw);
-				} catch (e: unknown) {
-					const msg = errMsg(e);
-					return error(`Existing canvas JSON parse failed: ${msg}`);
+				const parsedDoc = parseJsonLabelled(raw, "Existing canvas JSON parse failed");
+				if (!parsedDoc.ok) return error(parsedDoc.error);
+				const validatedDoc = CanvasDocSchema.safeParse(parsedDoc.value);
+				if (!validatedDoc.success) {
+					return error(`Canvas file has invalid shape: ${validatedDoc.error.message}`);
 				}
+				const doc = {
+					nodes: validatedDoc.data.nodes ?? [],
+					edges: validatedDoc.data.edges ?? [],
+				};
 
-				doc.nodes ??= [];
-				doc.edges ??= [];
+				const stringId = (v: unknown): string | null => (typeof v === "string" ? v : null);
 
 				const removeNodeIds = new Set(changes.removeNodeIds ?? []);
 				if (removeNodeIds.size > 0) {
-					doc.nodes = doc.nodes.filter((n) => !removeNodeIds.has(n.id as string));
+					doc.nodes = doc.nodes.filter((n) => {
+						const id = stringId(n.id);
+						return id === null || !removeNodeIds.has(id);
+					});
 					// Cascade: drop edges touching removed nodes
-					doc.edges = doc.edges.filter(
-						(e) =>
-							!removeNodeIds.has(e.fromNode as string) &&
-							!removeNodeIds.has(e.toNode as string),
-					);
+					doc.edges = doc.edges.filter((e) => {
+						const from = stringId(e.fromNode);
+						const to = stringId(e.toNode);
+						if (from !== null && removeNodeIds.has(from)) return false;
+						if (to !== null && removeNodeIds.has(to)) return false;
+						return true;
+					});
 				}
 				const removeEdgeIds = new Set(changes.removeEdgeIds ?? []);
 				if (removeEdgeIds.size > 0) {
-					doc.edges = doc.edges.filter((e) => !removeEdgeIds.has(e.id as string));
+					doc.edges = doc.edges.filter((e) => {
+						const id = stringId(e.id);
+						return id === null || !removeEdgeIds.has(id);
+					});
 				}
 				if (changes.addNodes) doc.nodes.push(...changes.addNodes);
 				if (changes.addEdges) doc.edges.push(...changes.addEdges);
@@ -485,6 +508,14 @@ export function registerTemplaterTools(app: App, push: ToolPusher, gate: WriteGa
 					return error(
 						`Template not found at '${templatePath}'. Pass a vault-relative path to a markdown template file.`,
 					);
+				// Reject path-traversal in user-supplied folder/filename — otherwise
+				// Templater can write outside the gated destPath we compute below.
+				if (folder !== undefined && (folder.includes("..") || folder.includes("\\"))) {
+					return error("'folder' may not contain '..' or backslashes.");
+				}
+				if (filename !== undefined && /[/\\]|\.\./.test(filename)) {
+					return error("'filename' may not contain slashes or '..'.");
+				}
 				// Predict Templater's destination path so we can gate before it writes.
 				// Templater itself provides no pre-flight API; replicate its naming:
 				// `<folder>/<filename>.md`, falling back to the template's basename and

@@ -7,6 +7,15 @@ import { logger, errMsg } from "./logger";
 const exec = promisify(execCb);
 
 const VALID_DISTRO_NAME = /^[\w][\w.-]*$/;
+const VALID_SESSION_NAME = /^[\w.-]+$/;
+
+function assertSafeSessionName(name: string): void {
+	if (!VALID_SESSION_NAME.test(name)) {
+		throw new Error(
+			`Invalid tmux session name '${name}'. Only letters, digits, '_', '.', and '-' are allowed.`,
+		);
+	}
+}
 const EXEC_TIMEOUT = 30_000;
 const PROBE_TIMEOUT = 5_000;
 const SERVICE_NAME = "sandbox";
@@ -68,6 +77,14 @@ function buildInnerCommand(
 	return `${envPart}cd '${escapedPath}' && ${dockerCmd}`;
 }
 
+// Escape a string so it round-trips unchanged through `bash -c "..."`. The
+// single-quoted inner command does NOT shield `$` or backtick from the outer
+// double-quoted context — bash still expands them. Order matters: backslash
+// first, otherwise later passes would re-escape our own escapes.
+function escapeForOuterDoubleQuote(s: string): string {
+	return s.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$/g, "\\$").replace(/"/g, '\\"');
+}
+
 export function buildWslCommand(
 	composePath: string,
 	wslDistro: string,
@@ -79,7 +96,7 @@ export function buildWslCommand(
 			`Invalid WSL distribution name '${wslDistro}'. Only alphanumeric characters, hyphens, underscores, and dots are allowed.`,
 		);
 	}
-	const cmdSafe = buildInnerCommand(composePath, dockerCmd, envVars).replace(/"/g, '\\"');
+	const cmdSafe = escapeForOuterDoubleQuote(buildInnerCommand(composePath, dockerCmd, envVars));
 	return `wsl -d ${wslDistro} -- bash -c "${cmdSafe}"`;
 }
 
@@ -88,7 +105,7 @@ export function buildLocalCommand(
 	dockerCmd: string,
 	envVars: Record<string, string> = {},
 ): string {
-	const cmdSafe = buildInnerCommand(composePath, dockerCmd, envVars).replace(/"/g, '\\"');
+	const cmdSafe = escapeForOuterDoubleQuote(buildInnerCommand(composePath, dockerCmd, envVars));
 	return `bash -c "${cmdSafe}"`;
 }
 
@@ -403,8 +420,8 @@ export class DockerManager {
 			shell = "wsl";
 			args = ["-d", wslDistro, "--", "bash", "-c", innerCmd];
 		} else if (process.platform === "win32") {
-			// Native Docker on Windows — use cmd.exe
-			const escapedPath = composePath.replace(/"/g, '\\"');
+			// Native Docker on Windows — use cmd.exe (doubles internal quotes).
+			const escapedPath = composePath.replace(/"/g, '""');
 			shell = "cmd.exe";
 			args = ["/c", `cd /d "${escapedPath}" && docker compose down`];
 		} else {
@@ -618,10 +635,13 @@ export class DockerManager {
 	}
 
 	async killSession(name: string): Promise<void> {
+		assertSafeSessionName(name);
 		await this.tmuxExec(`kill-session -t "${name}"`);
 	}
 
 	async renameSession(oldName: string, newName: string): Promise<void> {
+		assertSafeSessionName(oldName);
+		assertSafeSessionName(newName);
 		await this.tmuxExec(`rename-session -t "${oldName}" "${newName}"`);
 	}
 
