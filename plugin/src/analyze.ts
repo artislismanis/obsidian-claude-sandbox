@@ -7,7 +7,6 @@
 import type { App, Menu, TFile } from "obsidian";
 import { Notice } from "obsidian";
 import { inputModal } from "./modals";
-import { existsSync as fsExistsSync } from "fs";
 import { join as pathJoin } from "path";
 import { getVaultBasePath, tryOpenSubmenu } from "./obsidian-internals";
 import { parsePromptTemplate, substituteFilePlaceholder } from "./prompt-template";
@@ -27,6 +26,7 @@ export interface AnalyzeHost {
 
 export class AnalyzeManager {
 	private cachedTemplates: PromptTemplate[] | null = null;
+	private lastRefreshAt = 0;
 
 	constructor(private host: AnalyzeHost) {}
 
@@ -55,35 +55,37 @@ export class AnalyzeManager {
 	}
 
 	private async readTemplatesFromDisk(): Promise<PromptTemplate[]> {
-		const dir = this.resolvePromptsDir();
-		if (!dir) return [];
-		try {
-			const fs = await import("fs/promises");
-			const entries = await fs.readdir(dir).catch(() => [] as string[]);
-			const out: PromptTemplate[] = [];
-			for (const entry of entries) {
-				if (!entry.endsWith(".md")) continue;
-				const content = await fs.readFile(pathJoin(dir, entry), "utf-8");
-				const [label, body] = parsePromptTemplate(content, entry);
-				out.push({ name: entry.replace(/\.md$/, ""), label, body });
-			}
-			return out.sort((a, b) => a.label.localeCompare(b.label));
-		} catch {
-			return [];
-		}
-	}
-
-	private resolvePromptsDir(): string | null {
 		const base = getVaultBasePath(this.host.app);
-		if (!base) return null;
+		if (!base) return [];
 		const candidates = [
 			pathJoin(base, ".claude", "prompts"),
 			pathJoin(base, "..", "workspace", ".claude", "prompts"),
 		];
-		for (const c of candidates) {
-			if (fsExistsSync(c)) return c;
+		const fs = await import("fs/promises");
+		// Try each candidate; first successful readdir wins. Skip the prior
+		// existsSync gate — readdir's ENOENT path serves the same purpose
+		// without two extra stat calls per attempt.
+		for (const dir of candidates) {
+			let entries: string[];
+			try {
+				entries = await fs.readdir(dir);
+			} catch {
+				continue;
+			}
+			const out: PromptTemplate[] = [];
+			for (const entry of entries) {
+				if (!entry.endsWith(".md")) continue;
+				try {
+					const content = await fs.readFile(pathJoin(dir, entry), "utf-8");
+					const [label, body] = parsePromptTemplate(content, entry);
+					out.push({ name: entry.replace(/\.md$/, ""), label, body });
+				} catch {
+					/* skip unreadable templates */
+				}
+			}
+			return out.sort((a, b) => a.label.localeCompare(b.label));
 		}
-		return null;
+		return [];
 	}
 
 	/** Open a terminal + start Claude with a templated (or default) prompt. */
@@ -123,8 +125,15 @@ export class AnalyzeManager {
 	 */
 	attachFileMenu(menu: Menu, file: TFile): void {
 		const templates = this.cachedTemplates ?? [];
-		// Refresh in the background for the next open; don't block this render.
-		void this.readTemplatesFromDisk().then((fresh) => (this.cachedTemplates = fresh));
+		// Refresh in the background for the next open, but rate-limit so
+		// successive right-clicks don't N+1 the filesystem. The user can force
+		// a fresh read via the explicit refresh path (plugin reload / setting).
+		const REFRESH_INTERVAL_MS = 30_000;
+		const now = Date.now();
+		if (now - this.lastRefreshAt > REFRESH_INTERVAL_MS) {
+			this.lastRefreshAt = now;
+			void this.readTemplatesFromDisk().then((fresh) => (this.cachedTemplates = fresh));
+		}
 
 		menu.addItem((item) => {
 			item.setTitle("Analyze in Sandbox").setIcon("bot");

@@ -535,19 +535,33 @@ export default class AgentSandboxPlugin extends Plugin {
 
 	// ── MCP server ────────────────────────────────────────
 
+	// Serialise MCP lifecycle ops so a rapid toggle/restart sequence can't
+	// leave a dangling server (start firing while a prior stop is still
+	// shutting down, or a restart racing against a toggle).
+	private mcpQueue: Promise<void> = Promise.resolve();
+	private async queueMcpOp(op: () => Promise<void>): Promise<void> {
+		const next = this.mcpQueue.then(op, op);
+		this.mcpQueue = next;
+		return next;
+	}
+
 	async restartMcpIfRunning(): Promise<void> {
-		if (!this.mcpServer?.isRunning()) return;
-		await this.stopMcpServer();
-		await this.startMcpServer();
+		await this.queueMcpOp(async () => {
+			if (!this.mcpServer?.isRunning()) return;
+			await this.stopMcpServer();
+			await this.startMcpServer();
+		});
 	}
 
 	/** Apply a new mcpEnabled value to the running server (start or stop). */
 	async applyMcpEnabled(enabled: boolean): Promise<void> {
-		if (enabled && !this.mcpServer?.isRunning()) {
-			await this.startMcpServer();
-		} else if (!enabled && this.mcpServer?.isRunning()) {
-			await this.stopMcpServer();
-		}
+		await this.queueMcpOp(async () => {
+			if (enabled && !this.mcpServer?.isRunning()) {
+				await this.startMcpServer();
+			} else if (!enabled && this.mcpServer?.isRunning()) {
+				await this.stopMcpServer();
+			}
+		});
 	}
 
 	private async startMcpServer(): Promise<void> {
@@ -590,19 +604,21 @@ export default class AgentSandboxPlugin extends Plugin {
 	}
 
 	private async toggleMcpServer(): Promise<void> {
-		if (this.mcpServer?.isRunning()) {
-			await this.stopMcpServer();
-			this.settings.mcpEnabled = false;
-			this.saveSettings();
-			new Notice("MCP server stopped.");
-		} else {
-			this.settings.mcpEnabled = true;
-			this.saveSettings();
-			await this.startMcpServer();
+		await this.queueMcpOp(async () => {
 			if (this.mcpServer?.isRunning()) {
-				new Notice(`MCP server listening on port ${this.settings.mcpPort}.`);
+				await this.stopMcpServer();
+				this.settings.mcpEnabled = false;
+				this.saveSettings();
+				new Notice("MCP server stopped.");
+			} else {
+				this.settings.mcpEnabled = true;
+				this.saveSettings();
+				await this.startMcpServer();
+				if (this.mcpServer?.isRunning()) {
+					new Notice(`MCP server listening on port ${this.settings.mcpPort}.`);
+				}
 			}
-		}
+		});
 	}
 
 	// ── Status bar menu ────────────────────────────────────
