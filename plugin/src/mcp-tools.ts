@@ -316,7 +316,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 			handler: async ({ file, path }) => {
 				const f = resolveFile(app, { file, path }, pathFilter);
 				if (!f) return error("File not found.");
-				const content = await app.vault.read(f);
+				const content = await app.vault.cachedRead(f);
 				return text(content);
 			},
 		}),
@@ -334,10 +334,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 			},
 			handler: async ({ folder, extension }) => {
 				let files = app.vault.getFiles();
-				if (folder)
-					files = files.filter(
-						(f) => f.path.startsWith(folder + "/") || f.path.startsWith(folder),
-					);
+				if (folder) files = files.filter((f) => isPathWithinDir(f.path, folder));
 				if (extension) files = files.filter((f) => f.extension === extension);
 				return text(files.map((f) => f.path).join("\n") || "(no files)");
 			},
@@ -600,7 +597,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 
 			handler: async ({ limit = 20, folder, extension }) => {
 				let files = app.vault.getFiles();
-				if (folder) files = files.filter((f) => f.path.startsWith(folder + "/"));
+				if (folder) files = files.filter((f) => isPathWithinDir(f.path, folder));
 				if (extension) files = files.filter((f) => f.extension === extension);
 				files.sort((a, b) => b.stat.mtime - a.stat.mtime);
 				const results = files.slice(0, limit).map((f) => {
@@ -628,16 +625,22 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 
 			handler: async ({ property }) => {
 				if (property) {
-					const values: Record<string, number> = {};
-					for (const file of app.vault.getMarkdownFiles()) {
-						const cache = app.metadataCache.getFileCache(file);
-						const fm = cache?.frontmatter;
-						if (fm && property in fm) {
-							const val = JSON.stringify(fm[property]);
-							values[val] = (values[val] ?? 0) + 1;
+					const compute = (): Array<[string, number]> => {
+						const values: Record<string, number> = {};
+						for (const file of app.vault.getMarkdownFiles()) {
+							const fm = app.metadataCache.getFileCache(file)?.frontmatter;
+							if (fm && property in fm) {
+								const val = JSON.stringify(fm[property]);
+								values[val] = (values[val] ?? 0) + 1;
+							}
 						}
-					}
-					const sorted = Object.entries(values).sort((a, b) => b[1] - a[1]);
+						return Object.entries(values).sort((a, b) => b[1] - a[1]);
+					};
+					const sorted =
+						cache?.get<Array<[string, number]>>(
+							`propertyValues:${property}`,
+							compute,
+						) ?? compute();
 					return text(
 						sorted.map(([val, count]) => `${val}: ${count}`).join("\n") ||
 							`(no files have property '${property}')`,
@@ -845,7 +848,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 			handler: async ({ file, path }) => {
 				const f = resolveFile(app, { file, path }, pathFilter);
 				if (!f) return error("File not found.");
-				const content = await app.vault.read(f);
+				const content = await app.vault.cachedRead(f);
 				const cache = app.metadataCache.getFileCache(f);
 				const snapshot = frontmatterSnapshot(f);
 				const fm = Object.keys(snapshot).length > 0 ? snapshot : null;
@@ -885,7 +888,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 			handler: async ({ file, path, limit = 10 }) => {
 				const f = resolveFile(app, { file, path }, pathFilter);
 				if (!f) return error("File not found.");
-				const content = await app.vault.read(f);
+				const content = await app.vault.cachedRead(f);
 				const alreadyLinked = new Set(
 					Object.keys(app.metadataCache.resolvedLinks[f.path] ?? {}),
 				);
@@ -1374,8 +1377,11 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 						}
 					} else {
 						targetLine = lineArg! - 1;
-						if (targetLine < 0 || targetLine > lines.length)
-							return error(`Line ${lineArg} is out of range (1-${lines.length}).`);
+						// `replace` requires the line to actually exist; before/after
+						// can target the position past the last line for appending.
+						const upper = position === "replace" ? lines.length - 1 : lines.length;
+						if (targetLine < 0 || targetLine > upper)
+							return error(`Line ${lineArg} is out of range (1-${upper + 1}).`);
 					}
 
 					if (position === "before") {

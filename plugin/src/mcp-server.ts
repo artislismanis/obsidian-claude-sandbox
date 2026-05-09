@@ -252,7 +252,9 @@ export class ObsidianMcpServer {
 		for (const timeout of this.sessionTimeouts.values()) clearTimeout(timeout);
 		this.sessionTimeouts.clear();
 
-		for (const [sid, transport] of this.transports.entries()) {
+		// Snapshot before iterating: transport.close() fires onclose → cleanupSession,
+		// which mutates this.transports while we're walking it.
+		for (const [sid, transport] of Array.from(this.transports.entries())) {
 			try {
 				await transport.close?.();
 			} catch (err) {
@@ -308,18 +310,28 @@ export class ObsidianMcpServer {
 			detail: update.detail,
 			updatedAt: Date.now(),
 		});
-		this.config.hooks?.onActivity?.(update);
+		try {
+			this.config.hooks?.onActivity?.(update);
+		} catch (err) {
+			logger.warn("MCP", "onActivity hook threw", err);
+		}
 	}
 
-	/** Returns the current activity map with stale `working` entries rolled to `idle`. */
+	/**
+	 * Returns the current activity map with stale `working` entries rolled to `idle`.
+	 * Pure: derives the rolled view at read time without mutating internal storage.
+	 */
 	getActivity(): Map<string, ActivityEntry> {
 		const now = Date.now();
+		const result = new Map<string, ActivityEntry>();
 		for (const [name, entry] of this.activity) {
 			if (entry.status === "working" && now - entry.updatedAt > ACTIVITY_STALE_MS) {
-				this.activity.set(name, { ...entry, status: "idle" });
+				result.set(name, { ...entry, status: "idle" });
+			} else {
+				result.set(name, entry);
 			}
 		}
-		return new Map(this.activity);
+		return result;
 	}
 
 	getToolCount(): number {
@@ -567,9 +579,16 @@ export class ObsidianMcpServer {
 		return server;
 	}
 
+	/** Resolve mcp-session-id header to a single string, ignoring multi-value forms. */
+	private getSessionId(req: IncomingMessage): string | undefined {
+		const raw = req.headers["mcp-session-id"];
+		if (typeof raw === "string") return raw;
+		return undefined;
+	}
+
 	private async handlePost(req: IncomingMessage, res: ServerResponse): Promise<void> {
 		const body = await this.readBody(req);
-		const sessionId = req.headers["mcp-session-id"] as string | undefined;
+		const sessionId = this.getSessionId(req);
 
 		if (sessionId && this.transports.has(sessionId)) {
 			this.resetSessionTimeout(sessionId);
@@ -608,7 +627,7 @@ export class ObsidianMcpServer {
 	}
 
 	private async forwardToTransport(req: IncomingMessage, res: ServerResponse): Promise<void> {
-		const sessionId = req.headers["mcp-session-id"] as string | undefined;
+		const sessionId = this.getSessionId(req);
 		const transport = sessionId ? this.transports.get(sessionId) : undefined;
 		if (!transport) {
 			res.writeHead(400, { "Content-Type": "application/json" });

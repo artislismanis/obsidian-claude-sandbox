@@ -15,6 +15,7 @@ import type { McpToolDef, PermissionTier, ReviewFn } from "./mcp-tools";
 import { defineTool, text, error, gateVaultWrite, forEachMarkdownChunked } from "./mcp-tools";
 import { logger, errMsg } from "./logger";
 import { getPluginsHost } from "./obsidian-internals";
+import { isPathWithinDir } from "./validation";
 
 type ToolPusher = (tool: McpToolDef) => void;
 
@@ -99,7 +100,7 @@ export function registerCanvasTools(app: App, push: ToolPusher, gate: WriteGate)
 			handler: async ({ path }) => {
 				const f = resolveCanvasFile(app, path);
 				if (!f) return error("Canvas file not found (must end in .canvas).");
-				const raw = await app.vault.read(f);
+				const raw = await app.vault.cachedRead(f);
 				const parsed = parseJsonLabelled(raw, "Canvas JSON parse failed");
 				if (!parsed.ok) return error(parsed.error);
 				return text(JSON.stringify(parsed.value, null, 2));
@@ -368,7 +369,7 @@ export function registerTasksTools(app: App, push: ToolPusher): void {
 
 				const files = app.vault
 					.getMarkdownFiles()
-					.filter((f) => !folder || f.path.startsWith(folder + "/") || f.path === folder);
+					.filter((f) => !folder || isPathWithinDir(f.path, folder));
 
 				const results: TaskEntry[] = [];
 				await forEachMarkdownChunked(
@@ -610,12 +611,13 @@ export function registerPeriodicNotesTools(app: App, push: ToolPusher, gate: Wri
 				if (!periodicSettings || periodicSettings.enabled === false)
 					return error(`Periodic Notes: ${periodicity} is not enabled.`);
 
-				const date = dateArg ? new Date(dateArg + "T00:00:00") : new Date();
-				if (isNaN(date.getTime())) return error(`Invalid date: ${dateArg}`);
+				// Parse via moment in strict mode so weekly/quarterly tokens that depend on
+				// the input date don't shift across local-TZ DST boundaries (which
+				// `new Date(dateArg + "T00:00:00")` does in non-UTC locales).
+				const m = dateArg ? moment(dateArg, "YYYY-MM-DD", true) : moment();
+				if (!m.isValid()) return error(`Invalid date: ${dateArg}`);
 
-				const filename = moment(date).format(
-					periodicSettings.format || defaultFormat(periodicity),
-				);
+				const filename = m.format(periodicSettings.format || defaultFormat(periodicity));
 				const folder = (periodicSettings.folder || "").replace(/^\/+|\/+$/g, "");
 				const path = folder ? `${folder}/${filename}.md` : `${filename}.md`;
 
@@ -633,13 +635,19 @@ export function registerPeriodicNotesTools(app: App, push: ToolPusher, gate: Wri
 					const folderParts = path.split("/");
 					const noteName = folderParts.pop()!.replace(/\.md$/, "");
 					const noteFolder = folderParts.join("/") || "/";
+					// Read the raw template so the review modal shows the seed content
+					// the user is approving. Templater will additionally process tp.*
+					// tokens at apply time — that's a known difference noted in the
+					// description.
+					const rawSeed = await app.vault.cachedRead(tmplFile);
 					return gateVaultWrite({
 						destPath: path,
 						operation: "create",
-						description: `Create periodic note ${path} (via Templater)`,
+						description: `Create periodic note ${path} (via Templater — tp.* tokens applied at write time)`,
 						writeDir: gate.getWriteDir(),
 						enabledTiers: gate.enabledTiers,
 						review: gate.review,
+						newContent: rawSeed,
 						apply: async () => {
 							await templater.templater!.create_new_note_from_template!(
 								tmplFile,

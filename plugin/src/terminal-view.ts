@@ -86,15 +86,6 @@ function sendInputText(ws: WebSocket | null, text: string): number {
 	return written + 1;
 }
 
-function sendInputByte(ws: WebSocket | null, byte: number): number {
-	if (!ws || ws.readyState !== WebSocket.OPEN) return 0;
-	const payload = new Uint8Array(2);
-	payload[0] = CLIENT_MSG.INPUT.charCodeAt(0);
-	payload[1] = byte;
-	ws.send(payload);
-	return 2;
-}
-
 export function getTerminalConnectionLog(): TerminalConnectionEvent[] {
 	return connectionLog.slice();
 }
@@ -236,12 +227,11 @@ export class TerminalView extends ItemView {
 
 		// Obsidian's Scope system intercepts Escape for "navigate back" before
 		// the DOM event reaches xterm.js. Register a Scope handler that blocks
-		// Obsidian's navigation and manually sends the ESC byte (0x1b) over the
-		// WebSocket. This is equivalent to what xterm.js does internally — it
-		// translates Escape into the same 0x1b byte via onData → WebSocket.
+		// Obsidian's navigation and routes the ESC byte through xterm's input
+		// pipeline so wsTxBytes accounting and any onData chain stay consistent.
 		this.scope = new Scope(this.app.scope);
 		this.scope.register([], "Escape", () => {
-			sendInputByte(this.ws, 0x1b);
+			this.term?.input("\x1b");
 			return false;
 		});
 
@@ -255,9 +245,9 @@ export class TerminalView extends ItemView {
 
 	onResize(): void {
 		this.scheduleFit();
-		if (this.term && this.app.workspace.activeLeaf === this.leaf) {
-			this.term.focus();
-		}
+		// No focus call here — stealing focus on every resize (which fires when
+		// other panes change layout, not just user interaction) is disruptive.
+		// xterm focuses naturally on click/hotkey.
 	}
 
 	private scheduleFit(): void {
@@ -530,7 +520,10 @@ export class TerminalView extends ItemView {
 			const handshake = textEncoder.encode(msg);
 			this.wsTxBytes += handshake.length;
 			ws.send(handshake);
-			term.focus();
+			// Focus only on the initial attach, not on reconnect — reconnects
+			// happen unattended and stealing focus interrupts whatever the user
+			// has switched to.
+			if (!isReconnect) term.focus();
 
 			if (isReconnect) {
 				// Tell user that the WS reconnected; tmux/bash already preserves
@@ -612,6 +605,10 @@ export class TerminalView extends ItemView {
 			});
 
 			if (gen !== this.generation) return;
+			// Defence-in-depth: if a stale close event somehow fires after
+			// attachWebSocket already swapped this.ws, don't null out the live
+			// socket. Listener teardown via wsDispose normally prevents this.
+			if (this.ws !== ws) return;
 			this.ws = null;
 
 			if (normal) {

@@ -15,6 +15,7 @@
 import type { App, TFile } from "obsidian";
 import { logger } from "./logger";
 import { getLoadedPlugin } from "./obsidian-internals";
+import { isPathWithinDir } from "./validation";
 
 interface TemplaterPlugin {
 	settings?: {
@@ -47,7 +48,7 @@ export async function applyTemplaterFolderTemplate(app: App, file: TFile): Promi
 	for (const ft of folderTemplates) {
 		if (!ft.folder || !ft.template) continue;
 		const folder = ft.folder === "/" ? "" : ft.folder.replace(/\/$/, "");
-		const matches = folder === "" || dir === folder || dir.startsWith(folder + "/");
+		const matches = folder === "" || isPathWithinDir(dir, folder);
 		if (!matches) continue;
 		const len = folder.length;
 		if (!best || len > best.len) best = { folder: ft.folder, template: ft.template, len };
