@@ -575,6 +575,30 @@ describe("MCP tool handlers", () => {
 				"notes/greeting.md",
 			);
 		});
+
+		it("preserves extension when name contains a mid-string dot (e.g. 'v1.2')", async () => {
+			const r = getResult(
+				await getTool(tools, "vault_rename").handler({
+					path: "notes/hello.md",
+					name: "v1.2",
+				}),
+			);
+			expect(r.isError).toBe(false);
+			expect(app.fileManager.renameFile).toHaveBeenCalledWith(
+				expect.objectContaining({ path: "notes/hello.md" }),
+				"notes/v1.2.md",
+			);
+		});
+
+		it("rejects names containing slashes or '..'", async () => {
+			const r = getResult(
+				await getTool(tools, "vault_rename").handler({
+					path: "notes/hello.md",
+					name: "../escape",
+				}),
+			);
+			expect(r.isError).toBe(true);
+		});
 	});
 
 	describe("vault_move", () => {
@@ -590,6 +614,16 @@ describe("MCP tool handlers", () => {
 				expect.objectContaining({ path: "notes/hello.md" }),
 				"archive/hello.md",
 			);
+		});
+
+		it("rejects destinations containing '..'", async () => {
+			const r = getResult(
+				await getTool(tools, "vault_move").handler({
+					path: "notes/hello.md",
+					to: "../escape",
+				}),
+			);
+			expect(r.isError).toBe(true);
 		});
 	});
 
@@ -841,6 +875,33 @@ describe("MCP tool handlers", () => {
 			expect(r.isError).toBe(true);
 			expect(r.text).toContain("No matches");
 		});
+
+		it("treats $N literally when regex is off", async () => {
+			app.vault.read.mockResolvedValueOnce("price tag");
+			const r = getResult(
+				await getTool(tools, "vault_search_replace").handler({
+					path: "agent-workspace/draft.md",
+					search: "tag",
+					replace: "$1-label",
+				}),
+			);
+			expect(r.isError).toBe(false);
+			expect(app.vault.modify).toHaveBeenCalledWith(expect.anything(), "price $1-label");
+		});
+
+		it("honours $$ as literal $ in regex mode", async () => {
+			app.vault.read.mockResolvedValueOnce("foo");
+			const r = getResult(
+				await getTool(tools, "vault_search_replace").handler({
+					path: "agent-workspace/draft.md",
+					search: "(foo)",
+					replace: "$$1=$1",
+					regex: true,
+				}),
+			);
+			expect(r.isError).toBe(false);
+			expect(app.vault.modify).toHaveBeenCalledWith(expect.anything(), "$1=foo");
+		});
 	});
 
 	describe("vault_prepend", () => {
@@ -861,9 +922,14 @@ describe("MCP tool handlers", () => {
 		});
 
 		it("prepends after frontmatter", async () => {
+			// Closing `---` is 3 chars on line 2; end.offset is exclusive (position
+			// after the last `-`, i.e. the trailing `\n` at byte 19).
 			app.vault.read.mockResolvedValueOnce("---\ntitle: Test\n---\nbody");
 			app.metadataCache.getFileCache.mockReturnValueOnce({
-				frontmatterPosition: { start: { line: 0 }, end: { line: 2 } },
+				frontmatterPosition: {
+					start: { line: 0, col: 0, offset: 0 },
+					end: { line: 2, col: 3, offset: 19 },
+				},
 			});
 			const r = getResult(
 				await getTool(tools, "vault_prepend").handler({
