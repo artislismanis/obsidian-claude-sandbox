@@ -14,7 +14,7 @@
 
 import type { App, TFile } from "obsidian";
 import { logger } from "./logger";
-import { getLoadedPlugin } from "./obsidian-internals";
+import { getInstalledPlugin } from "./obsidian-internals";
 import { isPathWithinDir } from "./validation";
 
 interface TemplaterPlugin {
@@ -28,8 +28,8 @@ interface TemplaterPlugin {
 	};
 }
 
-function getTemplaterPlugin(app: App): TemplaterPlugin | undefined {
-	return getLoadedPlugin<TemplaterPlugin>(app, "templater-obsidian");
+function getTemplaterPlugin(app: App): TemplaterPlugin | null {
+	return getInstalledPlugin<TemplaterPlugin>(app, "templater-obsidian");
 }
 
 /**

@@ -590,6 +590,34 @@ describe("MCP tool handlers", () => {
 			);
 		});
 
+		it("preserves extension when name has alpha suffix that isn't the file's ext (e.g. 'Mr.Smith')", async () => {
+			const r = getResult(
+				await getTool(tools, "vault_rename").handler({
+					path: "notes/hello.md",
+					name: "Mr.Smith",
+				}),
+			);
+			expect(r.isError).toBe(false);
+			expect(app.fileManager.renameFile).toHaveBeenCalledWith(
+				expect.objectContaining({ path: "notes/hello.md" }),
+				"notes/Mr.Smith.md",
+			);
+		});
+
+		it("does not double-extension when name ends with the file's extension", async () => {
+			const r = getResult(
+				await getTool(tools, "vault_rename").handler({
+					path: "notes/hello.md",
+					name: "greeting.md",
+				}),
+			);
+			expect(r.isError).toBe(false);
+			expect(app.fileManager.renameFile).toHaveBeenCalledWith(
+				expect.objectContaining({ path: "notes/hello.md" }),
+				"notes/greeting.md",
+			);
+		});
+
 		it("rejects names containing slashes or '..'", async () => {
 			const r = getResult(
 				await getTool(tools, "vault_rename").handler({

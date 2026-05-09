@@ -2,11 +2,11 @@ import type { App, TFile, CachedMetadata } from "obsidian";
 import { prepareSimpleSearch, prepareFuzzySearch } from "obsidian";
 import { z } from "zod/v4";
 import { isPathWithinDir, isPathAllowed, isRealPathWithinBase } from "./validation";
-import { FileSystemAdapter } from "obsidian";
 import type { WriteOperation } from "./diff-review-modal";
 import { registerExtensionTools } from "./mcp-extensions";
 import { applyTemplaterFolderTemplate, withTemplaterHookSuppressed } from "./templater-adapter";
 import { errMsg } from "./logger";
+import { getVaultBasePath, getVaultFullPath } from "./obsidian-internals";
 
 export type { WriteOperation };
 
@@ -152,9 +152,10 @@ function resolveFile(
 
 /** True when `vaultPath` resolves to a real filesystem path inside the vault base. */
 function isVaultPathSafe(app: App, vaultPath: string): boolean {
-	const adapter = app.vault.adapter;
-	if (!(adapter instanceof FileSystemAdapter)) return true;
-	return isRealPathWithinBase(adapter.getBasePath(), adapter.getFullPath(vaultPath));
+	const base = getVaultBasePath(app);
+	const full = getVaultFullPath(app, vaultPath);
+	if (base === null || full === null) return true;
+	return isRealPathWithinBase(base, full);
 }
 
 /** Parallel-chunked iteration over markdown files; handler returning true stops the walk. */
@@ -274,6 +275,11 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 		chunkSize?: number,
 	) => Promise<void> = (handler, files, chunkSize) =>
 		forEachMarkdownChunked(app, handler, files, chunkSize);
+
+	/** Cached compute, falling through directly when no cache is wired (tests). */
+	function memo<T>(key: string, compute: () => T): T {
+		return cache ? cache.get(key, compute) : compute();
+	}
 
 	function computeTagCountsSorted(): [string, number][] {
 		const counts: Record<string, number> = {};
@@ -439,9 +445,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 					const tags = formatTags(cache);
 					return text(tags.join("\n") || "(no tags)");
 				}
-				const sorted =
-					cache?.get("tagCountsSorted", () => computeTagCountsSorted()) ??
-					computeTagCountsSorted();
+				const sorted = memo("tagCountsSorted", computeTagCountsSorted);
 				return text(
 					sorted.map(([tag, count]) => `${tag}: ${count}`).join("\n") || "(no tags)",
 				);
@@ -634,19 +638,13 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 						}
 						return Object.entries(values).sort((a, b) => b[1] - a[1]);
 					};
-					const sorted =
-						cache?.get<Array<[string, number]>>(
-							`propertyValues:${property}`,
-							compute,
-						) ?? compute();
+					const sorted = memo(`propertyValues:${property}`, compute);
 					return text(
 						sorted.map(([val, count]) => `${val}: ${count}`).join("\n") ||
 							`(no files have property '${property}')`,
 					);
 				}
-				const sorted =
-					cache?.get("propertyCountsSorted", () => computePropertyCountsSorted()) ??
-					computePropertyCountsSorted();
+				const sorted = memo("propertyCountsSorted", computePropertyCountsSorted);
 				return text(
 					sorted.map(([key, count]) => `${key}: ${count}`).join("\n") ||
 						"(no properties)",
@@ -675,7 +673,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 	}
 
 	function buildLinkGraph(): LinkGraph {
-		return cache ? cache.get("graph", computeLinkGraph) : computeLinkGraph();
+		return memo("graph", computeLinkGraph);
 	}
 
 	tools.push(
@@ -975,7 +973,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 	function frontmatterSnapshot(f: TFile): Record<string, unknown> {
 		const fm = app.metadataCache.getFileCache(f)?.frontmatter;
 		if (!fm) return {};
-		const { position: _position, ...rest } = fm as Record<string, unknown>;
+		const { position: _position, ...rest } = fm;
 		return rest;
 	}
 
@@ -1271,7 +1269,9 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 					let insertPos = 0;
 					if (fmEnd) {
 						insertPos = Math.min(fmEnd.offset, existing.length);
-						while (existing[insertPos] === "\n") insertPos++;
+						// Skip past any trailing newline (handles `\n` and CRLF `\r\n`).
+						while (existing[insertPos] === "\r" || existing[insertPos] === "\n")
+							insertPos++;
 					}
 					const before = existing.slice(0, insertPos);
 					const after = existing.slice(insertPos);
@@ -1408,27 +1408,22 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 	};
 
 	const writeDirForNote = getWriteDir();
+	const guardWithinWriteDir = (path: string): McpToolResult | null => {
+		const writeDir = getWriteDir();
+		return isPathWithinDir(path, writeDir)
+			? null
+			: error(`Path must be within the write directory '${writeDir}'.`);
+	};
 	addWriteTools({
 		tier: "writeScoped",
 		suffix: "",
 		scopeLabel: " (within write directory)",
 		scopeNote: `Restricted to the write directory '${writeDirForNote}/' — paths outside will be rejected synchronously. To edit elsewhere ask the user to enable the Write (reviewed) or Write (vault-wide) tier.`,
-		guardPath: (path) => {
-			const writeDir = getWriteDir();
-			return isPathWithinDir(path, writeDir)
-				? null
-				: error(`Path must be within the write directory '${writeDir}'.`);
-		},
+		guardPath: guardWithinWriteDir,
 		resolveForWrite: (args) => {
 			const path = args.path as string | undefined;
-			if (path) {
-				const writeDir = getWriteDir();
-				if (!isPathWithinDir(path, writeDir))
-					return {
-						ok: false,
-						error: error(`Path must be within the write directory '${writeDir}'.`),
-					};
-			}
+			const guard = path ? guardWithinWriteDir(path) : null;
+			if (guard) return { ok: false, error: guard };
 			const f = resolveFile(app, args, pathFilter);
 			return f ? { ok: true, file: f } : { ok: false, error: error("File not found.") };
 		},
@@ -1502,11 +1497,14 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 				if (!f) return error("File not found.");
 				if (newName.includes("/") || newName.includes("\\") || newName.includes(".."))
 					return error("'name' must be a bare filename (no slashes or '..').");
-				// Treat as already-extensioned only when the trailing dotted suffix
-				// looks like a real extension (alpha-led, ≤10 chars). This keeps
-				// the original extension for names like `v1.2`.
-				const hasTrailingExt = /\.[A-Za-z][A-Za-z0-9]{0,9}$/.test(newName);
-				const ext = hasTrailingExt ? "" : `.${f.extension}`;
+				// Treat as already-extensioned only when the trailing suffix matches
+				// the file's current extension exactly. Names like `v1.2`, `Mr.Smith`,
+				// or `notes.tech` keep `.${f.extension}` appended; explicit
+				// `name: "foo.md"` round-trips unchanged.
+				const hasTrailingExt =
+					f.extension !== "" &&
+					newName.toLowerCase().endsWith(`.${f.extension.toLowerCase()}`);
+				const ext = hasTrailingExt ? "" : f.extension ? `.${f.extension}` : "";
 				const dir = f.parent?.path ?? "";
 				const newPath = dir ? `${dir}/${newName}${ext}` : `${newName}${ext}`;
 				if (!isVaultPathSafe(app, newPath))

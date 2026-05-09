@@ -175,6 +175,21 @@ export class TerminalView extends ItemView {
 		this.initialPrompt = prompt;
 	}
 
+	/** Append a connection event with `at`/`instanceId` filled in. */
+	private logEvent(
+		gen: number,
+		kind: TerminalConnectionEvent["kind"],
+		extra: Partial<TerminalConnectionEvent> = {},
+	): void {
+		pushConnectionEvent({
+			at: extra.at ?? Date.now(),
+			instanceId: this.instanceId,
+			gen,
+			kind,
+			...extra,
+		});
+	}
+
 	setActivityPrefix(prefix: ActivityPrefix): void {
 		if (this.activityPrefix === prefix) return;
 		this.activityPrefix = prefix;
@@ -503,11 +518,8 @@ export class TerminalView extends ItemView {
 				"Terminal",
 				`WebSocket open (gen ${gen}, instance ${this.instanceId}, connect ${connectMs}ms${isReconnect ? `, reconnect ${this.reconnectAttempt}` : ""})`,
 			);
-			pushConnectionEvent({
+			this.logEvent(gen, "open", {
 				at: this.wsOpenedAt,
-				instanceId: this.instanceId,
-				gen,
-				kind: "open",
 				durationMs: connectMs,
 				attempt: isReconnect ? this.reconnectAttempt : 0,
 			});
@@ -572,6 +584,13 @@ export class TerminalView extends ItemView {
 
 		const onClose = (event: CloseEvent) => {
 			const now = Date.now();
+			// Defence-in-depth guards first: a stale close fired after the view
+			// closed (gen drift) or after attachWebSocket swapped this.ws would
+			// otherwise log freshly-zeroed counters and confuse observability.
+			// Listener teardown via wsDispose normally prevents this.
+			if (gen !== this.generation) return;
+			if (this.ws !== ws) return;
+
 			const opened = this.wsOpenedAt > 0;
 			const sessionMs = opened ? now - this.wsOpenedAt : now - this.wsConnectStartedAt;
 			const idleMs = this.wsLastRxAt > 0 ? now - this.wsLastRxAt : -1;
@@ -587,11 +606,8 @@ export class TerminalView extends ItemView {
 			} else {
 				logger.warn("Terminal", `WebSocket dropped — ${detail}`);
 			}
-			pushConnectionEvent({
+			this.logEvent(gen, "close", {
 				at: now,
-				instanceId: this.instanceId,
-				gen,
-				kind: "close",
 				code: event.code,
 				codeName,
 				reason: event.reason || undefined,
@@ -602,11 +618,6 @@ export class TerminalView extends ItemView {
 				idleMsBeforeClose: idleMs >= 0 ? idleMs : undefined,
 			});
 
-			if (gen !== this.generation) return;
-			// Defence-in-depth: if a stale close event somehow fires after
-			// attachWebSocket already swapped this.ws, don't null out the live
-			// socket. Listener teardown via wsDispose normally prevents this.
-			if (this.ws !== ws) return;
 			this.ws = null;
 
 			if (normal) {
@@ -621,12 +632,7 @@ export class TerminalView extends ItemView {
 
 		const onError = () => {
 			logger.error("Terminal", `WebSocket error (gen ${gen}, instance ${this.instanceId})`);
-			pushConnectionEvent({
-				at: Date.now(),
-				instanceId: this.instanceId,
-				gen,
-				kind: "error",
-			});
+			this.logEvent(gen, "error");
 		};
 
 		ws.addEventListener("open", onOpen);
@@ -659,13 +665,7 @@ export class TerminalView extends ItemView {
 		this.showStatusBanner(
 			`Connection dropped — reconnecting (attempt ${this.reconnectAttempt}/${RECONNECT_BACKOFF_MS.length}, in ${Math.round(waitMs / 100) / 10}s)…`,
 		);
-		pushConnectionEvent({
-			at: Date.now(),
-			instanceId: this.instanceId,
-			gen,
-			kind: "reconnect",
-			attempt: this.reconnectAttempt,
-		});
+		this.logEvent(gen, "reconnect", { attempt: this.reconnectAttempt });
 		this.reconnectTimer = window.setTimeout(() => {
 			this.reconnectTimer = null;
 			if (gen !== this.generation) return;

@@ -14,7 +14,7 @@ import { z } from "zod/v4";
 import type { McpToolDef, PermissionTier, ReviewFn } from "./mcp-tools";
 import { defineTool, text, error, gateVaultWrite, forEachMarkdownChunked } from "./mcp-tools";
 import { logger, errMsg } from "./logger";
-import { getPluginsHost } from "./obsidian-internals";
+import { getInstalledPlugin } from "./obsidian-internals";
 import { isPathWithinDir } from "./validation";
 
 type ToolPusher = (tool: McpToolDef) => void;
@@ -23,33 +23,6 @@ export interface WriteGate {
 	getWriteDir: () => string;
 	enabledTiers: ReadonlySet<PermissionTier>;
 	review: ReviewFn | undefined;
-}
-
-/**
- * Look up an installed + enabled plugin by id. Returns null when the plugin
- * isn't installed, isn't enabled, or the host shape isn't what we expect.
- * Centralises the runtime shape check every integration would otherwise
- * duplicate.
- */
-function getInstalledPlugin<T>(app: App, pluginId: string): T | null {
-	const host = getPluginsHost(app);
-	if (!host) {
-		logger.debug("Extensions", `${pluginId}: no plugins host`);
-		return null;
-	}
-	if (host.enabledPlugins && !host.enabledPlugins.has(pluginId)) {
-		logger.debug(
-			"Extensions",
-			`${pluginId}: not in enabledPlugins (${host.enabledPlugins.size} enabled: ${[...host.enabledPlugins].join(", ")})`,
-		);
-		return null;
-	}
-	const plugin = host.getPlugin?.(pluginId) ?? host.plugins?.[pluginId] ?? null;
-	logger.debug(
-		"Extensions",
-		`${pluginId}: ${plugin ? "found" : "not found via getPlugin/plugins"}`,
-	);
-	return plugin as T | null;
 }
 
 function resolveCanvasFile(app: App, path: string): TFile | null {

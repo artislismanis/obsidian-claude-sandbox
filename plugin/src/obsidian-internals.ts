@@ -17,6 +17,12 @@ export function getVaultBasePath(app: App): string | null {
 	return adapter instanceof FileSystemAdapter ? adapter.getBasePath() : null;
 }
 
+/** Resolve a vault-relative path to its absolute filesystem path on desktop, or null elsewhere. */
+export function getVaultFullPath(app: App, vaultPath: string): string | null {
+	const adapter = app.vault.adapter;
+	return adapter instanceof FileSystemAdapter ? adapter.getFullPath(vaultPath) : null;
+}
+
 /** The plugin host exposed on `app.plugins` (Obsidian doesn't type this). */
 interface PluginsHost {
 	plugins?: Record<string, unknown>;
@@ -29,10 +35,18 @@ export function getPluginsHost(app: App): PluginsHost | undefined {
 	return (app as unknown as { plugins?: PluginsHost }).plugins;
 }
 
-/** Look up a loaded plugin by id from the plugin host's `plugins` map. */
-export function getLoadedPlugin<T = unknown>(app: App, id: string): T | undefined {
+/**
+ * Look up an installed + enabled plugin by id. Returns null when the plugin
+ * isn't installed, isn't enabled, or the host shape isn't what we expect.
+ * Centralises the runtime shape check every integration would otherwise
+ * duplicate.
+ */
+export function getInstalledPlugin<T = unknown>(app: App, pluginId: string): T | null {
 	const host = getPluginsHost(app);
-	return host?.plugins?.[id] as T | undefined;
+	if (!host) return null;
+	if (host.enabledPlugins && !host.enabledPlugins.has(pluginId)) return null;
+	const plugin = host.getPlugin?.(pluginId) ?? host.plugins?.[pluginId] ?? null;
+	return plugin as T | null;
 }
 
 /** Trigger Obsidian's leaf-header refresh if the leaf supports it. */

@@ -450,6 +450,11 @@ export class DockerManager {
 		return this.run("docker compose ps --format json", PROBE_TIMEOUT);
 	}
 
+	/** Convenience: probeStatus + parseIsRunning, returning the running flag directly. */
+	async probeIsRunning(): Promise<boolean> {
+		return DockerManager.parseIsRunning(await this.probeStatus());
+	}
+
 	/**
 	 * Ensure WSL is awake before running Docker commands.
 	 * No-op in local mode. In WSL mode, runs a quick `echo ok` to wake

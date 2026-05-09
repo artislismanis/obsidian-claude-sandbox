@@ -389,8 +389,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			// down — it no longer reports as "running" but the host port mapping
 			// is still held. Treat any compose-managed container as ours so we
 			// can finish that cleanup before retrying.
-			const stale = await this.docker.probeStatus();
-			const isRunning = DockerManager.parseIsRunning(stale);
+			const isRunning = await this.docker.probeIsRunning();
 			const hasContainer = isRunning || (await this.docker.hasAnyContainer());
 			if (hasContainer) {
 				logger.info(
@@ -731,8 +730,7 @@ export default class AgentSandboxPlugin extends Plugin {
 
 		try {
 			this.statusBar.setDetails("Starting: probing container status…");
-			const output = await this.docker.probeStatus();
-			const isRunning = DockerManager.parseIsRunning(output);
+			const isRunning = await this.docker.probeIsRunning();
 			if (!isRunning) {
 				this.app.workspace.detachLeavesOfType(VIEW_TYPE_TERMINAL);
 			}
@@ -771,8 +769,7 @@ export default class AgentSandboxPlugin extends Plugin {
 	private async healthCheck(): Promise<void> {
 		if (this.docker.isBusy()) return;
 		try {
-			const output = await this.docker.probeStatus();
-			const isRunning = DockerManager.parseIsRunning(output);
+			const isRunning = await this.docker.probeIsRunning();
 			await this.syncStatusBar(isRunning);
 			if (isRunning) await this.checkContainerIdDrift();
 		} catch (error: unknown) {
@@ -822,12 +819,9 @@ export default class AgentSandboxPlugin extends Plugin {
 		if (!isValidWriteDir(dir)) {
 			throw new Error("Invalid vault write directory.");
 		}
-		try {
-			await this.app.vault.createFolder(dir);
-		} catch (error: unknown) {
-			const msg = errMsg(error).toLowerCase();
-			if (!msg.includes("exist")) throw error;
-		}
+		// Skip when the folder already exists; otherwise let create surface its real error.
+		if (this.app.vault.getFolderByPath(dir)) return;
+		await this.app.vault.createFolder(dir);
 	}
 
 	/**
