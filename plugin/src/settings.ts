@@ -15,7 +15,10 @@ import {
 	isValidCpus,
 	isValidDomainList,
 	isValidMemory,
+	isValidMemoryFileName,
+	isValidPathPrefixList,
 	isValidPrivateHosts,
+	isValidWriteDir,
 } from "./validation";
 import { existsSync } from "fs";
 import { join } from "path";
@@ -172,6 +175,7 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 			placeholder?: string;
 			requiresRestart?: boolean;
 			narrow?: boolean;
+			onChange?: () => void;
 		},
 	): void {
 		new Setting(el)
@@ -186,6 +190,7 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 						this.plugin.saveSettings();
 						if (opts.requiresRestart) this.markRestart();
 						text.inputEl.removeClass("sandbox-input-error");
+						opts.onChange?.();
 					} else {
 						text.inputEl.addClass("sandbox-input-error");
 					}
@@ -364,23 +369,25 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 			});
 		}
 
-		this.addPlainTextSetting(el, {
+		this.addValidatedTextSetting(el, {
 			name: "Vault write directory",
 			desc:
 				"Folder inside the vault where the container can write. " +
 				"The rest of the vault is mounted read-only. Created automatically on start. " +
 				"Requires restart.",
 			key: "vaultWriteDir",
+			validator: isValidWriteDir,
 			placeholder: "agent-workspace",
 			requiresRestart: true,
 		});
 
-		this.addPlainTextSetting(el, {
+		this.addValidatedTextSetting(el, {
 			name: "Memory file name",
 			desc:
 				"Filename for the memory MCP server, stored in the vault's .oas/ directory " +
 				"(independent of the write directory). Requires restart.",
 			key: "memoryFileName",
+			validator: isValidMemoryFileName,
 			placeholder: "memory.json",
 			requiresRestart: true,
 		});
@@ -532,22 +539,26 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 				toggle.setValue(this.plugin.settings.mcpEnabled).onChange(async (value) => {
 					this.plugin.settings.mcpEnabled = value;
 					this.plugin.saveSettings();
+					await this.plugin.applyMcpEnabled(value);
 				}),
 			);
 
 		this.addNumberSetting(el, {
 			name: "MCP port",
-			desc: "Port for the MCP Streamable HTTP endpoint.",
+			desc: "Port for the MCP Streamable HTTP endpoint. Requires container restart for the new port to be passed in.",
 			key: "mcpPort",
 			min: 1,
 			max: 65535,
 			placeholder: "28080",
+			requiresRestart: true,
+			onChange: () => void this.plugin.restartMcpIfRunning(),
 		});
 
 		new Setting(el)
 			.setName("Auth token")
 			.setDesc(
-				"Bearer token for MCP authentication. Auto-generated and passed to the container.",
+				"Bearer token for MCP authentication. Auto-generated and passed to the container. " +
+					"Regenerating requires a container restart so the container picks up the new token.",
 			)
 			.addText((text) => {
 				text.setValue(this.plugin.settings.mcpToken).setDisabled(true);
@@ -558,6 +569,8 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 					const { generateToken } = await import("./mcp-server");
 					this.plugin.settings.mcpToken = generateToken();
 					this.plugin.saveSettings();
+					this.markRestart();
+					await this.plugin.restartMcpIfRunning();
 					this.display();
 				}),
 			);
@@ -623,35 +636,23 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 
 		new Setting(el).setName("Path restrictions").setHeading();
 
-		new Setting(el)
-			.setName("Allowed paths")
-			.setDesc(
-				"Comma-separated folder prefixes. If set, only these paths are accessible. Empty = all paths.",
-			)
-			.addText((text) =>
-				text
-					.setPlaceholder("notes/,projects/")
-					.setValue(this.plugin.settings.mcpPathAllowlist)
-					.onChange(async (value) => {
-						this.plugin.settings.mcpPathAllowlist = value;
-						this.plugin.saveSettings();
-					}),
-			);
+		this.addValidatedTextSetting(el, {
+			name: "Allowed paths",
+			desc: "Comma-separated folder prefixes. If set, only these paths are accessible. Empty = all paths.",
+			key: "mcpPathAllowlist",
+			validator: isValidPathPrefixList,
+			placeholder: "notes/,projects/",
+			onChange: () => void this.plugin.restartMcpIfRunning(),
+		});
 
-		new Setting(el)
-			.setName("Blocked paths")
-			.setDesc(
-				"Comma-separated folder prefixes. These paths are always denied, even if allowed above.",
-			)
-			.addText((text) =>
-				text
-					.setPlaceholder("private/,secrets/")
-					.setValue(this.plugin.settings.mcpPathBlocklist)
-					.onChange(async (value) => {
-						this.plugin.settings.mcpPathBlocklist = value;
-						this.plugin.saveSettings();
-					}),
-			);
+		this.addValidatedTextSetting(el, {
+			name: "Blocked paths",
+			desc: "Comma-separated folder prefixes. These paths are always denied, even if allowed above.",
+			key: "mcpPathBlocklist",
+			validator: isValidPathPrefixList,
+			placeholder: "private/,secrets/",
+			onChange: () => void this.plugin.restartMcpIfRunning(),
+		});
 
 		new Setting(el).setName("Timeouts").setHeading();
 
@@ -663,6 +664,7 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 			max: 300,
 			placeholder: "10",
 			narrow: true,
+			onChange: () => void this.plugin.restartMcpIfRunning(),
 		});
 
 		this.addNumberSetting(el, {
@@ -673,6 +675,7 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 			max: 600,
 			placeholder: "180",
 			narrow: true,
+			onChange: () => void this.plugin.restartMcpIfRunning(),
 		});
 	}
 
