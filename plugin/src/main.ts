@@ -448,11 +448,13 @@ export default class AgentSandboxPlugin extends Plugin {
 			successMsg: "Sandbox container started.",
 			failurePrefix: "Failed to start container",
 		});
-		if (ok) {
-			this.lastKnownContainerId = await this.docker.getContainerId();
-			await this.applyFirewallAfterStart();
-			this.startHealthPoll();
-		}
+		if (ok) await this.postStartTasks();
+	}
+
+	private async postStartTasks(): Promise<void> {
+		this.lastKnownContainerId = await this.docker.getContainerId();
+		await this.applyFirewallAfterStart();
+		this.startHealthPoll();
 	}
 
 	private async stopContainer(): Promise<void> {
@@ -478,11 +480,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			successMsg: "Sandbox container restarted.",
 			failurePrefix: "Failed to restart container",
 		});
-		if (ok) {
-			this.lastKnownContainerId = await this.docker.getContainerId();
-			await this.applyFirewallAfterStart();
-			this.startHealthPoll();
-		}
+		if (ok) await this.postStartTasks();
 	}
 
 	private async applyFirewallAfterStart(): Promise<void> {

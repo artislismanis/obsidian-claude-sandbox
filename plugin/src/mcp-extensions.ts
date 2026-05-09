@@ -269,31 +269,39 @@ const DATE_EMOJI = ["📅", "⏳", "🛫", "📆"] as const;
 const PRIORITY_STRIP_RE = new RegExp(Object.values(PRIORITY_EMOJI).join("|"), "gu");
 const DATE_STRIP_RE = new RegExp(`(?:${DATE_EMOJI.join("|")})\\s*\\d{4}-\\d{2}-\\d{2}`, "gu");
 
+const DATE_FIELDS: { key: "due" | "scheduled" | "start"; re: RegExp }[] = (
+	[
+		["due", "📅"],
+		["scheduled", "⏳"],
+		["start", "🛫"],
+	] as const
+).map(([key, emoji]) => ({
+	key,
+	re: new RegExp(`(?:${emoji}|@${key}\\()\\s*(\\d{4}-\\d{2}-\\d{2})\\)?`),
+}));
+
 function parseTaskLine(rawLine: string): Omit<TaskEntry, "path" | "line"> | null {
 	const m = /^\s*-\s*\[( |x|X)\]\s+(.*)$/.exec(rawLine);
 	if (!m) return null;
 	const status: "open" | "done" = m[1].toLowerCase() === "x" ? "done" : "open";
 	const body = m[2];
 
-	const due = /(?:📅|@due\()\s*(\d{4}-\d{2}-\d{2})\)?/.exec(body)?.[1];
-	const scheduled = /(?:⏳|@scheduled\()\s*(\d{4}-\d{2}-\d{2})\)?/.exec(body)?.[1];
-	const start = /(?:🛫|@start\()\s*(\d{4}-\d{2}-\d{2})\)?/.exec(body)?.[1];
-	let priority: TaskEntry["priority"];
-	for (const [name, emoji] of Object.entries(PRIORITY_EMOJI) as [
-		NonNullable<TaskEntry["priority"]>,
-		string,
-	][]) {
-		if (body.includes(emoji)) {
-			priority = name;
-			break;
-		}
+	const dates: Partial<Record<"due" | "scheduled" | "start", string>> = {};
+	for (const { key, re } of DATE_FIELDS) {
+		const v = re.exec(body)?.[1];
+		if (v) dates[key] = v;
 	}
+
+	const priorityEntry = (
+		Object.entries(PRIORITY_EMOJI) as [NonNullable<TaskEntry["priority"]>, string][]
+	).find(([, emoji]) => body.includes(emoji));
+	const priority: TaskEntry["priority"] = priorityEntry?.[0];
 
 	const tags = [...body.matchAll(/#([\w/-]+)/g)].map((t) => `#${t[1]}`);
 
 	const text = body.replace(DATE_STRIP_RE, "").replace(PRIORITY_STRIP_RE, "").trim();
 
-	return { rawLine, status, text, due, scheduled, start, priority, tags };
+	return { rawLine, status, text, ...dates, priority, tags };
 }
 
 export function registerTasksTools(app: App, push: ToolPusher): void {
