@@ -276,6 +276,31 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 	) => Promise<void> = (handler, files, chunkSize) =>
 		forEachMarkdownChunked(app, handler, files, chunkSize);
 
+	function computeTagCountsSorted(): [string, number][] {
+		const counts: Record<string, number> = {};
+		for (const file of app.vault.getMarkdownFiles()) {
+			const cache = app.metadataCache.getFileCache(file);
+			for (const tag of formatTags(cache)) {
+				counts[tag] = (counts[tag] ?? 0) + 1;
+			}
+		}
+		return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+	}
+
+	function computePropertyCountsSorted(): [string, number][] {
+		const counts: Record<string, number> = {};
+		for (const file of app.vault.getMarkdownFiles()) {
+			const cache = app.metadataCache.getFileCache(file);
+			const fm = cache?.frontmatter;
+			if (!fm) continue;
+			for (const key of Object.keys(fm)) {
+				if (key === "position") continue;
+				counts[key] = (counts[key] ?? 0) + 1;
+			}
+		}
+		return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+	}
+
 	// ── Read tier ─────────────────────────────────────
 
 	tools.push(
@@ -334,13 +359,18 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 				const limit = limitArg ?? 20;
 				const search = prepareSimpleSearch(query);
 				const results: string[] = [];
-				await forEachMarkdown((file, content) => {
-					const match = search(content);
-					if (!match) return;
-					const snippet = extractSnippet(content, match.matches[0]?.[0] ?? 0);
-					results.push(`${file.path}: ...${snippet}...`);
-					return results.length >= limit;
-				});
+				// Chunk size capped at limit so a tight limit stops sooner.
+				await forEachMarkdown(
+					(file, content) => {
+						const match = search(content);
+						if (!match) return;
+						const snippet = extractSnippet(content, match.matches[0]?.[0] ?? 0);
+						results.push(`${file.path}: ...${snippet}...`);
+						return results.length >= limit;
+					},
+					undefined,
+					Math.max(4, Math.min(limit, 20)),
+				);
 				return text(results.join("\n") || "No matches found.");
 			},
 		}),
@@ -414,14 +444,9 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 					const tags = formatTags(cache);
 					return text(tags.join("\n") || "(no tags)");
 				}
-				const tagCounts: Record<string, number> = {};
-				for (const file of app.vault.getMarkdownFiles()) {
-					const cache = app.metadataCache.getFileCache(file);
-					for (const tag of formatTags(cache)) {
-						tagCounts[tag] = (tagCounts[tag] ?? 0) + 1;
-					}
-				}
-				const sorted = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]);
+				const sorted =
+					cache?.get("tagCountsSorted", () => computeTagCountsSorted()) ??
+					computeTagCountsSorted();
 				return text(
 					sorted.map(([tag, count]) => `${tag}: ${count}`).join("\n") || "(no tags)",
 				);
@@ -618,17 +643,9 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 							`(no files have property '${property}')`,
 					);
 				}
-				const counts: Record<string, number> = {};
-				for (const file of app.vault.getMarkdownFiles()) {
-					const cache = app.metadataCache.getFileCache(file);
-					const fm = cache?.frontmatter;
-					if (!fm) continue;
-					for (const key of Object.keys(fm)) {
-						if (key === "position") continue;
-						counts[key] = (counts[key] ?? 0) + 1;
-					}
-				}
-				const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+				const sorted =
+					cache?.get("propertyCountsSorted", () => computePropertyCountsSorted()) ??
+					computePropertyCountsSorted();
 				return text(
 					sorted.map(([key, count]) => `${key}: ${count}`).join("\n") ||
 						"(no properties)",
@@ -1139,10 +1156,9 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 					const result = resolveForWrite({ file, path });
 					if ("isError" in result) return result as McpToolResult;
 					const f = result as TFile;
-					const cache = app.metadataCache.getFileCache(f);
-					if (!cache?.frontmatter || !(property in cache.frontmatter))
-						return error(`Property '${property}' not found in frontmatter.`);
 					const oldFm = frontmatterSnapshot(f);
+					if (!(property in oldFm))
+						return error(`Property '${property}' not found in frontmatter.`);
 					const newFm = withoutKey(oldFm, property);
 					return runWrite({
 						operation: "frontmatter_delete",

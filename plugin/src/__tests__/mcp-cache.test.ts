@@ -60,7 +60,7 @@ describe("VaultCache", () => {
 		expect(compute).toHaveBeenCalledTimes(1);
 	});
 
-	it("invalidates 'graph' key on 'resolved' event", () => {
+	it("invalidates all keys on 'resolved' event", () => {
 		const graphCompute = vi.fn(() => "graph-data");
 		const otherCompute = vi.fn(() => "other-data");
 		cache.get("graph", graphCompute);
@@ -71,7 +71,7 @@ describe("VaultCache", () => {
 		cache.get("graph", graphCompute);
 		cache.get("other", otherCompute);
 		expect(graphCompute).toHaveBeenCalledTimes(2);
-		expect(otherCompute).toHaveBeenCalledTimes(1);
+		expect(otherCompute).toHaveBeenCalledTimes(2);
 	});
 
 	it("unregisters listeners on destroy", () => {
