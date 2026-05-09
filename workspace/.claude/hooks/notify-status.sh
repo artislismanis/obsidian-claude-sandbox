@@ -35,29 +35,20 @@ if [ -z "$token" ]; then
   exit 0
 fi
 
-# Build JSON-RPC payload with jq if available, fallback to hand-rolled.
-if command -v jq >/dev/null 2>&1; then
-  payload=$(jq -n --arg s "$status" --arg n "$session" --arg d "$detail" '
-    {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "tools/call",
-      params: {
-        name: "agent_status_set",
-        arguments: ({ status: $s }
-          + (if $n == "" then {} else { sessionName: $n } end)
-          + (if $d == "" then {} else { detail: $d } end))
-      }
-    }')
-else
-  # Minimal escape for hand-rolled JSON (no quotes, newlines in detail).
-  safe_session="${session//\"/}"
-  safe_detail="${detail//\"/}"
-  payload='{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"agent_status_set","arguments":{"status":"'"$status"'"'
-  [ -n "$safe_session" ] && payload+=',"sessionName":"'"$safe_session"'"'
-  [ -n "$safe_detail" ] && payload+=',"detail":"'"$safe_detail"'"'
-  payload+='}}}'
-fi
+# jq is installed in the sandbox image (container/Dockerfile); this hook
+# only ever runs in-container, so we can rely on it.
+payload=$(jq -n --arg s "$status" --arg n "$session" --arg d "$detail" '
+  {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "tools/call",
+    params: {
+      name: "agent_status_set",
+      arguments: ({ status: $s }
+        + (if $n == "" then {} else { sessionName: $n } end)
+        + (if $d == "" then {} else { detail: $d } end))
+    }
+  }')
 
 curl -s -m 2 -o /dev/null \
   -H "Authorization: Bearer $token" \
