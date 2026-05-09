@@ -8,9 +8,10 @@ export class VaultCache {
 	constructor(metadataCache: MetadataCache) {
 		this.metadataCache = metadataCache;
 
-		// Link graph is rebuilt from resolvedLinks — invalidate only when
-		// Obsidian finishes resolving links, not on every frontmatter edit.
-		const onResolved = () => this.invalidate("graph");
+		// All cached values (graph, tag counts, property names) derive from
+		// metadataCache. "resolved" fires after a batch of metadata updates,
+		// so wholesale invalidation is correct and avoids per-key bookkeeping.
+		const onResolved = () => this.invalidateAll();
 		this.metadataCache.on("resolved", onResolved);
 		this.unregister.push(() => this.metadataCache.off("resolved", onResolved));
 	}
