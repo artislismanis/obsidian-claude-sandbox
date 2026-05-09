@@ -199,6 +199,32 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 			});
 	}
 
+	/** Add a boolean Setting backed by a toggle. */
+	private addToggleSetting(
+		el: HTMLElement,
+		opts: {
+			name: string;
+			desc: string;
+			key: keyof AgentSandboxSettings;
+			requiresRestart?: boolean;
+			onChange?: (value: boolean) => void | Promise<void>;
+		},
+	): void {
+		new Setting(el)
+			.setName(opts.name)
+			.setDesc(opts.desc)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings[opts.key] as boolean)
+					.onChange(async (value) => {
+						(this.plugin.settings[opts.key] as boolean) = value;
+						this.plugin.saveSettings();
+						if (opts.requiresRestart) this.markRestart();
+						await opts.onChange?.(value);
+					}),
+			);
+	}
+
 	/** Add a plain text Setting that saves on every change with no validation. */
 	private addPlainTextSetting(
 		el: HTMLElement,
@@ -392,34 +418,22 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 			requiresRestart: true,
 		});
 
-		new Setting(el)
-			.setName("Auto-start on load")
-			.setDesc(
+		this.addToggleSetting(el, {
+			name: "Auto-start on load",
+			desc:
 				"Start the container when the plugin loads. If the container is " +
-					"already running from a previous session, this is a fast no-op — " +
-					"compose reuses it.",
-			)
-			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.autoStartContainer).onChange(async (value) => {
-					this.plugin.settings.autoStartContainer = value;
-					this.plugin.saveSettings();
-				}),
-			);
+				"already running from a previous session, this is a fast no-op — compose reuses it.",
+			key: "autoStartContainer",
+		});
 
-		new Setting(el)
-			.setName("Auto-stop on exit")
-			.setDesc(
+		this.addToggleSetting(el, {
+			name: "Auto-stop on exit",
+			desc:
 				"Off (default): keep the container running between Obsidian sessions " +
-					"so the next open is instant and any background work continues. " +
-					"On: stop the container on Obsidian exit to free memory and CPU; " +
-					"next open starts it fresh.",
-			)
-			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.autoStopContainer).onChange(async (value) => {
-					this.plugin.settings.autoStopContainer = value;
-					this.plugin.saveSettings();
-				}),
-			);
+				"so the next open is instant and any background work continues. " +
+				"On: stop the container on Obsidian exit to free memory and CPU; next open starts it fresh.",
+			key: "autoStopContainer",
+		});
 
 		new Setting(el)
 			.setName("Notify on agent output")
@@ -513,35 +527,24 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 			placeholder: "10000",
 		});
 
-		new Setting(el)
-			.setName("Auto-copy on selection")
-			.setDesc(
-				"Copy selected terminal text to the clipboard automatically. Disable if selecting text for reading surprises you by overwriting the clipboard.",
-			)
-			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.clipboardAutoCopy).onChange(async (value) => {
-					this.plugin.settings.clipboardAutoCopy = value;
-					this.plugin.saveSettings();
-				}),
-			);
+		this.addToggleSetting(el, {
+			name: "Auto-copy on selection",
+			desc: "Copy selected terminal text to the clipboard automatically. Disable if selecting text for reading surprises you by overwriting the clipboard.",
+			key: "clipboardAutoCopy",
+		});
 	}
 
 	private renderMcp(el: HTMLElement): void {
 		new Setting(el).setName("Server").setHeading();
 
-		new Setting(el)
-			.setName("Enable MCP server")
-			.setDesc(
+		this.addToggleSetting(el, {
+			name: "Enable MCP server",
+			desc:
 				"Run an MCP server that exposes vault tools to Claude Code inside the container. " +
-					"The server starts automatically with the plugin when enabled.",
-			)
-			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.mcpEnabled).onChange(async (value) => {
-					this.plugin.settings.mcpEnabled = value;
-					this.plugin.saveSettings();
-					await this.plugin.applyMcpEnabled(value);
-				}),
-			);
+				"The server starts automatically with the plugin when enabled.",
+			key: "mcpEnabled",
+			onChange: (v) => this.plugin.applyMcpEnabled(v),
+		});
 
 		this.addNumberSetting(el, {
 			name: "MCP port",
@@ -620,18 +623,12 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 			);
 
 		for (const tier of GATED_TIERS) {
-			new Setting(el)
-				.setName(tier.name)
-				.setDesc(tier.desc)
-				.addToggle((toggle) =>
-					toggle
-						.setValue(this.plugin.settings[tier.settingKey] as boolean)
-						.onChange(async (value) => {
-							(this.plugin.settings[tier.settingKey] as boolean) = value;
-							this.plugin.saveSettings();
-							void this.plugin.restartMcpIfRunning();
-						}),
-				);
+			this.addToggleSetting(el, {
+				name: tier.name,
+				desc: tier.desc,
+				key: tier.settingKey,
+				onChange: () => this.plugin.restartMcpIfRunning(),
+			});
 		}
 
 		new Setting(el).setName("Path restrictions").setHeading();
@@ -726,18 +723,13 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 
 		new Setting(el).setName("Security").setHeading();
 
-		new Setting(el)
-			.setName("Auto-enable firewall on start")
-			.setDesc(
+		this.addToggleSetting(el, {
+			name: "Auto-enable firewall on start",
+			desc:
 				"Automatically enable the outbound firewall when the container starts. " +
-					"Restricts traffic to Anthropic, npm, GitHub, PyPI, and configured private hosts.",
-			)
-			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.autoEnableFirewall).onChange(async (value) => {
-					this.plugin.settings.autoEnableFirewall = value;
-					this.plugin.saveSettings();
-				}),
-			);
+				"Restricts traffic to Anthropic, npm, GitHub, PyPI, and configured private hosts.",
+			key: "autoEnableFirewall",
+		});
 
 		this.addValidatedTextSetting(el, {
 			name: "Allowed private hosts",
