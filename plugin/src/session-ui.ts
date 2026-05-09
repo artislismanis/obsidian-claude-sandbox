@@ -101,16 +101,19 @@ export async function showSessionCleanup(
 			btn.addEventListener("click", async () => {
 				modal.close();
 				const toKill = [...selected];
+				const results = await Promise.allSettled(toKill.map((n) => api.killSession(n)));
 				let killed = 0;
-				for (const name of toKill) {
-					try {
-						await api.killSession(name);
+				results.forEach((r, i) => {
+					if (r.status === "fulfilled") {
 						killed++;
-					} catch (e: unknown) {
+					} else {
 						// eslint-disable-next-line no-console
-						console.warn(`[Agent Sandbox] failed to kill tmux session '${name}':`, e);
+						console.warn(
+							`[Agent Sandbox] failed to kill tmux session '${toKill[i]}':`,
+							r.reason,
+						);
 					}
-				}
+				});
 				new Notice(`Killed ${killed}/${toKill.length} session(s).`);
 			});
 		});

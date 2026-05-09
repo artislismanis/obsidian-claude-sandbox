@@ -5,7 +5,8 @@
  */
 
 import type { App, Menu, TFile } from "obsidian";
-import { FileSystemAdapter, Modal, Notice } from "obsidian";
+import { FileSystemAdapter, Notice } from "obsidian";
+import { inputModal } from "./modals";
 import { existsSync as fsExistsSync } from "fs";
 import { join as pathJoin } from "path";
 import { tryOpenSubmenu } from "./obsidian-internals";
@@ -98,36 +99,20 @@ export class AnalyzeManager {
 	}
 
 	/** Modal-input fallback for when no templates are configured. */
-	runAnalyzeCustom(vaultPath: string): void {
+	async runAnalyzeCustom(vaultPath: string): Promise<void> {
 		if (!this.host.isContainerRunning()) {
 			new Notice("Sandbox container is not running.");
 			return;
 		}
-		const modal = new Modal(this.host.app);
-		modal.titleEl.setText("Analyze in Sandbox");
-		modal.contentEl.createEl("p", {
-			text: `Prompt for ${vaultPath} — @${vaultPath} will be appended automatically.`,
+		const body = await inputModal(this.host.app, {
+			title: "Analyze in Sandbox",
+			message: `Prompt for ${vaultPath} — @${vaultPath} will be appended automatically.`,
+			placeholder: "e.g. Summarize this note in 3 bullet points",
+			ctaLabel: "Run",
 		});
-		const input = modal.contentEl.createEl("textarea", {
-			cls: "sandbox-modal-input-multiline",
-		});
-		input.placeholder = "e.g. Summarize this note in 3 bullet points";
-		modal.contentEl.createDiv({ cls: "modal-button-container" }, (div) => {
-			div.createEl("button", { text: "Cancel", cls: "mod-muted" }, (btn) => {
-				btn.addEventListener("click", () => modal.close());
-			});
-			div.createEl("button", { text: "Run", cls: "mod-cta" }, (btn) => {
-				btn.addEventListener("click", async () => {
-					const body = input.value.trim();
-					modal.close();
-					if (!body) return;
-					const prompt = `${body}\n\n(Context: @${vaultPath})`;
-					await this.host.activateTerminalView(undefined, prompt);
-				});
-			});
-		});
-		modal.open();
-		input.focus();
+		if (!body) return;
+		const prompt = `${body}\n\n(Context: @${vaultPath})`;
+		await this.host.activateTerminalView(undefined, prompt);
 	}
 
 	/**

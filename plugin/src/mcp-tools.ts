@@ -73,7 +73,7 @@ export function defineTool<S extends Record<string, z.ZodType>>(def: {
 	inputSchema?: S;
 	handler: (args: z.infer<z.ZodObject<S>>) => Promise<McpToolResult>;
 }): McpToolDef {
-	const schema = def.inputSchema ? z.object(def.inputSchema) : null;
+	const schema = def.inputSchema ? z.object(def.inputSchema) : z.object({});
 	return {
 		name: def.name,
 		tier: def.tier,
@@ -83,7 +83,6 @@ export function defineTool<S extends Record<string, z.ZodType>>(def: {
 			inputSchema: def.inputSchema,
 		},
 		handler: async (raw) => {
-			if (!schema) return def.handler({} as z.infer<z.ZodObject<S>>);
 			const parsed = schema.safeParse(raw);
 			if (!parsed.success) {
 				return error(`Invalid arguments: ${parsed.error.message}`);
@@ -444,10 +443,7 @@ export function buildTools(
 							: `(property '${property}' not found)`,
 					);
 				}
-				const filtered = Object.fromEntries(
-					Object.entries(fm).filter(([k]) => k !== "position"),
-				);
-				return text(JSON.stringify(filtered, null, 2));
+				return text(JSON.stringify(frontmatterSnapshot(f), null, 2));
 			},
 		}),
 	);
@@ -489,10 +485,7 @@ export function buildTools(
 			handler: async ({ file, path }) => {
 				const f = resolveFile(app, { file, path }, pathFilter);
 				if (!f) return error("File not found.");
-				const backlinks: string[] = [];
-				for (const [source, targets] of Object.entries(app.metadataCache.resolvedLinks)) {
-					if (targets[f.path]) backlinks.push(source);
-				}
+				const backlinks = collectBacklinks(f.path);
 				return text(backlinks.join("\n") || "(no backlinks)");
 			},
 		}),
@@ -528,10 +521,7 @@ export function buildTools(
 			description: "List markdown files with no incoming links from other files.",
 
 			handler: async () => {
-				const linkedTo = new Set<string>();
-				for (const targets of Object.values(app.metadataCache.resolvedLinks)) {
-					for (const target of Object.keys(targets)) linkedTo.add(target);
-				}
+				const linkedTo = buildLinkGraph().reverse;
 				const orphans = app.vault.getMarkdownFiles().filter((f) => !linkedTo.has(f.path));
 				return text(orphans.map((f) => f.path).join("\n") || "(no orphans)");
 			},
@@ -828,20 +818,14 @@ export function buildTools(
 				if (!f) return error("File not found.");
 				const content = await app.vault.read(f);
 				const cache = app.metadataCache.getFileCache(f);
-				const fm = cache?.frontmatter
-					? Object.fromEntries(
-							Object.entries(cache.frontmatter).filter(([k]) => k !== "position"),
-						)
-					: null;
+				const snapshot = frontmatterSnapshot(f);
+				const fm = Object.keys(snapshot).length > 0 ? snapshot : null;
 				const tags = formatTags(cache);
 				const headings = (cache?.headings ?? []).map(
 					(h) => `${"#".repeat(h.level)} ${h.heading}`,
 				);
 				const outgoing = Object.keys(app.metadataCache.resolvedLinks[f.path] ?? {});
-				const backlinks: string[] = [];
-				for (const [source, targets] of Object.entries(app.metadataCache.resolvedLinks)) {
-					if (f.path in targets) backlinks.push(source);
-				}
+				const backlinks = collectBacklinks(f.path);
 				const sections: string[] = [
 					`# ${f.path}\n`,
 					fm ? `## Frontmatter\n${JSON.stringify(fm, null, 2)}\n` : "",
@@ -1329,6 +1313,10 @@ export function buildTools(
 
 					if (!headingArg && lineArg === undefined)
 						return error("Provide either 'heading' or 'line' target.");
+					if (headingArg && position !== "after")
+						return error(
+							"Heading targets only support position='after'. Use a line target for before/replace.",
+						);
 
 					let targetLine: number;
 
@@ -1469,11 +1457,7 @@ export function buildTools(
 	// ── Manage tier ───────────────────────────────────
 
 	function collectBacklinks(targetPath: string): string[] {
-		const backlinks: string[] = [];
-		for (const [source, targets] of Object.entries(app.metadataCache.resolvedLinks)) {
-			if (targets[targetPath]) backlinks.push(source);
-		}
-		return backlinks;
+		return [...(buildLinkGraph().reverse.get(targetPath) ?? [])];
 	}
 
 	tools.push(

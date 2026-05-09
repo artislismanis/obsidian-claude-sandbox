@@ -17,6 +17,7 @@ import type { StatusBarManager } from "./status-bar";
 import type { ActivityPrefix, TerminalView } from "./terminal-view";
 import { VIEW_TYPE_TERMINAL } from "./view-types";
 import type { AgentStatus } from "./mcp-tools";
+import { isPathWithinDir } from "./validation";
 
 const DEFAULT_SESSION_KEY = "__default__";
 
@@ -141,8 +142,7 @@ export class AgentOutputNotifier {
 	}
 
 	private pathInsideWriteDir(path: string): boolean {
-		const dir = this.getWriteDir() || "agent-workspace";
-		return path === dir || path.startsWith(dir + "/");
+		return isPathWithinDir(path, this.getWriteDir() || "agent-workspace");
 	}
 
 	private enqueue(entry: BufferedEntry): void {

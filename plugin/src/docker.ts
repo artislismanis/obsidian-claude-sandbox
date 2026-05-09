@@ -157,6 +157,15 @@ export function getWslHostIp(mode: string | undefined): string | undefined {
 export class DockerManager {
 	private getSettings: () => DockerManagerSettings;
 	private busy = false;
+	// WSL networking mode and host IP only change when the user reconfigures
+	// WSL itself. Probing wsl.exe on every docker call adds a process spawn to
+	// every health poll and menu render. Cache per (wslDistro) and clear on
+	// restart() — a manual restart is the natural reconfiguration boundary.
+	private wslProbeCache: {
+		distro: string;
+		mode: string | undefined;
+		hostIp: string | undefined;
+	} | null = null;
 
 	constructor(getSettings: () => DockerManagerSettings) {
 		this.getSettings = getSettings;
@@ -164,6 +173,18 @@ export class DockerManager {
 
 	isBusy(): boolean {
 		return this.busy;
+	}
+
+	private async getWslProbe(
+		wslDistro: string,
+	): Promise<{ mode: string | undefined; hostIp: string | undefined }> {
+		if (this.wslProbeCache && this.wslProbeCache.distro === wslDistro) {
+			return { mode: this.wslProbeCache.mode, hostIp: this.wslProbeCache.hostIp };
+		}
+		const mode = await getWslNetworkingMode(wslDistro);
+		const hostIp = getWslHostIp(mode);
+		this.wslProbeCache = { distro: wslDistro, mode, hostIp };
+		return { mode, hostIp };
 	}
 
 	private async run(dockerCmd: string, timeout = EXEC_TIMEOUT, quiet = false): Promise<string> {
@@ -267,8 +288,7 @@ export class DockerManager {
 		// MASQUERADE rewrites the container source IP to that same LAN IP,
 		// which Windows' Hyper-V firewall (allowlist: 172.16.0.0/12) then
 		// drops. So disable masquerade on the bridge in mirrored mode only.
-		const wslMode = await getWslNetworkingMode(wslDistro);
-		const wslHostIp = getWslHostIp(wslMode);
+		const { mode: wslMode, hostIp: wslHostIp } = await this.getWslProbe(wslDistro);
 		if (wslHostIp) {
 			envVars.OAS_HOST_IP = wslHostIp;
 		}
@@ -454,6 +474,7 @@ export class DockerManager {
 	 * always destroys and recreates regardless of config match.
 	 */
 	async restart(): Promise<string> {
+		this.wslProbeCache = null;
 		return this.withGuard(async () => {
 			try {
 				await this.run("docker compose down");
