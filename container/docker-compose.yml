@@ -39,6 +39,8 @@ services:
       - TERM=xterm-256color
       - ALLOWED_PRIVATE_HOSTS=${ALLOWED_PRIVATE_HOSTS:-}
       - PKM_WRITE_DIR=${PKM_WRITE_DIR:-agent-workspace}
+      # MEMORY_FILE_PATH derives from MEMORY_FILE_NAME — keep the default in
+      # one place so both keys can't drift apart if the default ever changes.
       - MEMORY_FILE_NAME=${MEMORY_FILE_NAME:-memory.json}
       - MEMORY_FILE_PATH=/workspace/vault/.oas/${MEMORY_FILE_NAME:-memory.json}
       - SUDO_PASSWORD=${SUDO_PASSWORD:-}
@@ -59,7 +61,9 @@ services:
       # $$TTYD_PORT is escaped so compose passes a literal $TTYD_PORT into the
       # healthcheck shell, where it expands against the container's env
       # (set by the TTYD_PORT key above) instead of the host shell.
-      test: ["CMD", "bash", "-c", "curl -so /dev/null -w '%{http_code}' http://localhost:$$TTYD_PORT/ | grep -q '200'"]
+      # `-fL` follows redirects and treats any non-2xx (after redirect) as an
+      # error via curl's own exit code — tolerates a future ttyd 301/302.
+      test: ["CMD-SHELL", "curl -fsSL -o /dev/null \"http://localhost:$$TTYD_PORT/\""]
       interval: 30s
       timeout: 3s
       retries: 3

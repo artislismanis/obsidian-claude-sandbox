@@ -13,7 +13,9 @@
 # the plugin at docker compose up). Session name is picked up from tmux
 # when available.
 
-set -eu
+# `set -u` only — `set -e` would defeat the "silent failures by design"
+# contract by aborting on jq/tmux/curl errors before the trailing `|| true`.
+set -u
 
 status="${1:-idle}"
 detail="${2:-}"

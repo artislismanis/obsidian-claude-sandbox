@@ -13,6 +13,8 @@ export default tseslint.config(
 			"@typescript-eslint/no-explicit-any": "warn",
 			"@typescript-eslint/consistent-type-imports": "error",
 			"no-console": "warn",
+			// Disabled: errMsg() captures the message; the wrapped Error is a
+			// user-facing string conversion, not a chained system error.
 			"preserve-caught-error": "off",
 		},
 	},
