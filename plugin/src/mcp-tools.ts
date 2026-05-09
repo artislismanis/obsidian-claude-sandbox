@@ -1692,14 +1692,23 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 						return text("Batch approved with no files selected; nothing to do.");
 				}
 
-				for (const file of targets) {
-					await app.fileManager.processFrontMatter(file, (fm) => {
-						if (rawValue !== undefined) {
-							fm[property] = value;
-						} else {
-							delete fm[property];
-						}
-					});
+				// Process in chunks. Obsidian serialises per-file internally; modest
+				// concurrency across files cuts wall time for large batches without
+				// triggering the per-file race window.
+				const FRONTMATTER_CHUNK = 10;
+				for (let i = 0; i < targets.length; i += FRONTMATTER_CHUNK) {
+					const chunk = targets.slice(i, i + FRONTMATTER_CHUNK);
+					await Promise.all(
+						chunk.map((file) =>
+							app.fileManager.processFrontMatter(file, (fm) => {
+								if (rawValue !== undefined) {
+									fm[property] = value;
+								} else {
+									delete fm[property];
+								}
+							}),
+						),
+					);
 				}
 
 				const label = rawValue !== undefined ? `Set ${property}` : `Deleted ${property}`;
