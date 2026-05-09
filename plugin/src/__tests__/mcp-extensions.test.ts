@@ -76,7 +76,7 @@ describe("Canvas tools", () => {
 
 	it("vault_canvas_read returns parsed JSON", async () => {
 		const { app } = mockApp(initial);
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		const result = await getTool(tools, "vault_canvas_read").handler({
 			path: "board.canvas",
 		});
@@ -91,7 +91,7 @@ describe("Canvas tools", () => {
 	it("vault_canvas_read rejects non-canvas files", async () => {
 		const { app } = mockApp(initial);
 		app.vault.getFileByPath = vi.fn((_p: string) => null);
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		const result = await getTool(tools, "vault_canvas_read").handler({
 			path: "not.md",
 		});
@@ -107,7 +107,7 @@ describe("Canvas tools", () => {
 			edges: [{ id: "e1", fromNode: "n1", toNode: "n2" }],
 		});
 		const { app, modify } = mockApp(withEdge);
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		const result = await getTool(tools, "vault_canvas_modify").handler({
 			path: "board.canvas",
 			changes: JSON.stringify({
@@ -124,7 +124,7 @@ describe("Canvas tools", () => {
 
 	it("vault_canvas_modify rejects malformed JSON in `changes`", async () => {
 		const { app } = mockApp(initial);
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		const result = await getTool(tools, "vault_canvas_modify").handler({
 			path: "board.canvas",
 			changes: "not-json",
@@ -134,7 +134,7 @@ describe("Canvas tools", () => {
 
 	it("both canvas tools are registered under the 'extensions' tier", () => {
 		const { app } = mockApp(initial);
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		expect(getTool(tools, "vault_canvas_read").tier).toBe("extensions");
 		expect(getTool(tools, "vault_canvas_modify").tier).toBe("extensions");
 	});
@@ -154,7 +154,7 @@ describe("Dataview integration", () => {
 
 	it("is absent when Dataview is not installed", () => {
 		const { app } = mockApp(initial);
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		expect(tools.find((t) => t.name === "vault_dataview_query")).toBeUndefined();
 	});
 
@@ -164,7 +164,7 @@ describe("Dataview integration", () => {
 			getPlugin: (id: string) => (id === "dataview" ? { api: { query: () => null } } : null),
 			enabledPlugins: new Set(), // not enabled
 		};
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		expect(tools.find((t) => t.name === "vault_dataview_query")).toBeUndefined();
 	});
 
@@ -173,7 +173,7 @@ describe("Dataview integration", () => {
 			successful: true,
 			value: { headers: ["file"], values: [["a.md"]] },
 		}));
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		const tool = getTool(tools, "vault_dataview_query");
 		expect(tool.tier).toBe("extensions");
 		const result = await tool.handler({ query: "TABLE FROM #x" });
@@ -184,7 +184,7 @@ describe("Dataview integration", () => {
 
 	it("surfaces Dataview failure as error result", async () => {
 		const app = appWithDataview(() => ({ successful: false, error: "parse error" }));
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		const result = await getTool(tools, "vault_dataview_query").handler({
 			query: "GARBAGE",
 		});
@@ -196,7 +196,7 @@ describe("Dataview integration", () => {
 		const app = appWithDataview(() => {
 			throw new Error("boom");
 		});
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		const result = await getTool(tools, "vault_dataview_query").handler({
 			query: "TABLE",
 		});
@@ -261,7 +261,7 @@ describe("Tasks integration", () => {
 
 	it("is absent when Tasks plugin is not installed", () => {
 		const { app } = mockApp("{}");
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		expect(tools.find((t) => t.name === "vault_tasks_query")).toBeUndefined();
 		expect(tools.find((t) => t.name === "vault_tasks_toggle")).toBeUndefined();
 	});
@@ -272,7 +272,7 @@ describe("Tasks integration", () => {
 				"notes.md": "- [ ] open task\n- [x] done task\n- plain bullet",
 			},
 		});
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		const r = await getTool(tools, "vault_tasks_query").handler({});
 		const body = (r.content[0] as { text: string }).text;
 		expect(body).toContain("open task");
@@ -288,7 +288,7 @@ describe("Tasks integration", () => {
 					"- [ ] C ⏫ #work\n",
 			},
 		});
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		const byTag = await getTool(tools, "vault_tasks_query").handler({ tag: "#work" });
 		expect((byTag.content[0] as { text: string }).text).toMatch(/A/);
 		expect((byTag.content[0] as { text: string }).text).not.toMatch(/ B /);
@@ -310,7 +310,7 @@ describe("Tasks integration", () => {
 			files: { "t.md": "header\n- [ ] thing\n" },
 			toggle,
 		});
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		const r = await getTool(tools, "vault_tasks_toggle").handler({
 			path: "t.md",
 			line: 2,
@@ -327,7 +327,7 @@ describe("Tasks integration", () => {
 			files: { "t.md": "just a header\n" },
 			toggle,
 		});
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		const r = await getTool(tools, "vault_tasks_toggle").handler({
 			path: "t.md",
 			line: 1,
@@ -340,7 +340,7 @@ describe("Tasks integration", () => {
 describe("Templater integration", () => {
 	it("is absent when Templater is not installed", () => {
 		const { app } = mockApp("{}");
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		expect(tools.find((t) => t.name === "vault_templater_create")).toBeUndefined();
 	});
 
@@ -366,7 +366,7 @@ describe("Templater integration", () => {
 					: null,
 			enabledPlugins: new Set(["templater-obsidian"]),
 		};
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		const r = await getTool(tools, "vault_templater_create").handler({
 			template: "Templates/daily.md",
 			folder: "Notes",
@@ -389,7 +389,7 @@ describe("Templater integration", () => {
 					: null,
 			enabledPlugins: new Set(["templater-obsidian"]),
 		};
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		const r = await getTool(tools, "vault_templater_create").handler({
 			template: "Templates/missing.md",
 		});
@@ -401,7 +401,7 @@ describe("Templater integration", () => {
 describe("Periodic Notes integration", () => {
 	it("is absent when plugin isn't installed", () => {
 		const { app } = mockApp("{}");
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		expect(tools.find((t) => t.name === "vault_periodic_note")).toBeUndefined();
 	});
 
@@ -423,7 +423,7 @@ describe("Periodic Notes integration", () => {
 		app.vault.getFileByPath = vi.fn((p: string) =>
 			p === "Daily/2026-04-19.md" ? ({ path: p } as TFile) : null,
 		);
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		const r = await getTool(tools, "vault_periodic_note").handler({
 			periodicity: "daily",
 			date: "2026-04-19",
@@ -448,7 +448,7 @@ describe("Periodic Notes integration", () => {
 			enabledPlugins: new Set(["periodic-notes"]),
 		};
 		app.vault.getFileByPath = vi.fn((_p: string) => null);
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		const r = await getTool(tools, "vault_periodic_note").handler({
 			periodicity: "monthly",
 			date: "2026-04-19",
@@ -491,16 +491,12 @@ describe("Write gate — extensions tier boundary enforcement", () => {
 
 	it("scoped-only mode rejects templater writes outside the write directory", async () => {
 		const { app, create } = await setupTemplaterApp();
-		const tools = buildTools(
-			app as never,
-			() => "agent-workspace",
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			new Set(["read", "writeScoped", "extensions"]),
-		);
+		const tools = buildTools({
+			app: app as never,
+			getWriteDir: () => "agent-workspace",
+			review: undefined,
+			enabledTiers: new Set(["read", "writeScoped", "extensions"]),
+		});
 		const r = await getTool(tools, "vault_templater_create").handler({
 			template: "Templates/daily.md",
 			folder: "OtherFolder",
@@ -513,16 +509,12 @@ describe("Write gate — extensions tier boundary enforcement", () => {
 
 	it("scoped-only mode allows templater writes inside the write directory", async () => {
 		const { app, create } = await setupTemplaterApp();
-		const tools = buildTools(
-			app as never,
-			() => "agent-workspace",
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			new Set(["read", "writeScoped", "extensions"]),
-		);
+		const tools = buildTools({
+			app: app as never,
+			getWriteDir: () => "agent-workspace",
+			review: undefined,
+			enabledTiers: new Set(["read", "writeScoped", "extensions"]),
+		});
 		const r = await getTool(tools, "vault_templater_create").handler({
 			template: "Templates/daily.md",
 			folder: "agent-workspace/journal",
@@ -535,16 +527,12 @@ describe("Write gate — extensions tier boundary enforcement", () => {
 	it("reviewed mode routes out-of-scope templater writes through review", async () => {
 		const { app, create } = await setupTemplaterApp();
 		const review = vi.fn(async () => ({ approved: true }));
-		const tools = buildTools(
-			app as never,
-			() => "agent-workspace",
-			undefined,
-			review,
-			undefined,
-			undefined,
-			undefined,
-			new Set(["read", "writeScoped", "writeReviewed", "extensions"]),
-		);
+		const tools = buildTools({
+			app: app as never,
+			getWriteDir: () => "agent-workspace",
+			review: review,
+			enabledTiers: new Set(["read", "writeScoped", "writeReviewed", "extensions"]),
+		});
 		const r = await getTool(tools, "vault_templater_create").handler({
 			template: "Templates/daily.md",
 			folder: "OtherFolder",
@@ -558,16 +546,12 @@ describe("Write gate — extensions tier boundary enforcement", () => {
 	it("reviewed mode aborts when the user rejects", async () => {
 		const { app, create } = await setupTemplaterApp();
 		const review = vi.fn(async () => ({ approved: false }));
-		const tools = buildTools(
-			app as never,
-			() => "agent-workspace",
-			undefined,
-			review,
-			undefined,
-			undefined,
-			undefined,
-			new Set(["read", "writeScoped", "writeReviewed", "extensions"]),
-		);
+		const tools = buildTools({
+			app: app as never,
+			getWriteDir: () => "agent-workspace",
+			review: review,
+			enabledTiers: new Set(["read", "writeScoped", "writeReviewed", "extensions"]),
+		});
 		const r = await getTool(tools, "vault_templater_create").handler({
 			template: "Templates/daily.md",
 			folder: "OtherFolder",
@@ -580,16 +564,12 @@ describe("Write gate — extensions tier boundary enforcement", () => {
 	it("full vault-write mode allows templater writes anywhere without review", async () => {
 		const { app, create } = await setupTemplaterApp();
 		const review = vi.fn();
-		const tools = buildTools(
-			app as never,
-			() => "agent-workspace",
-			undefined,
-			review,
-			undefined,
-			undefined,
-			undefined,
-			new Set(["read", "writeScoped", "writeVault", "extensions"]),
-		);
+		const tools = buildTools({
+			app: app as never,
+			getWriteDir: () => "agent-workspace",
+			review: review,
+			enabledTiers: new Set(["read", "writeScoped", "writeVault", "extensions"]),
+		});
 		const r = await getTool(tools, "vault_templater_create").handler({
 			template: "Templates/daily.md",
 			folder: "OtherFolder",
@@ -603,16 +583,12 @@ describe("Write gate — extensions tier boundary enforcement", () => {
 	it("scoped-only mode rejects canvas writes outside the write directory", async () => {
 		const initial = JSON.stringify({ nodes: [], edges: [] });
 		const { app, modify } = mockApp(initial);
-		const tools = buildTools(
-			app as never,
-			() => "agent-workspace",
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			new Set(["read", "writeScoped", "extensions"]),
-		);
+		const tools = buildTools({
+			app: app as never,
+			getWriteDir: () => "agent-workspace",
+			review: undefined,
+			enabledTiers: new Set(["read", "writeScoped", "extensions"]),
+		});
 		const r = await getTool(tools, "vault_canvas_modify").handler({
 			path: "board.canvas",
 			changes: JSON.stringify({ addNodes: [{ id: "n2", type: "text" }] }),
@@ -623,16 +599,12 @@ describe("Write gate — extensions tier boundary enforcement", () => {
 
 	it("scoped-only mode rejects vault_create_folder outside write directory", async () => {
 		const { app } = mockApp("{}");
-		const tools = buildTools(
-			app as never,
-			() => "agent-workspace",
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			new Set(["read", "writeScoped", "manage"]),
-		);
+		const tools = buildTools({
+			app: app as never,
+			getWriteDir: () => "agent-workspace",
+			review: undefined,
+			enabledTiers: new Set(["read", "writeScoped", "manage"]),
+		});
 		const r = await getTool(tools, "vault_create_folder").handler({
 			path: "SomeOtherDir/subdir",
 		});
@@ -642,16 +614,12 @@ describe("Write gate — extensions tier boundary enforcement", () => {
 
 	it("scoped-only mode allows vault_create_folder inside write directory", async () => {
 		const { app } = mockApp("{}");
-		const tools = buildTools(
-			app as never,
-			() => "agent-workspace",
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			new Set(["read", "writeScoped", "manage"]),
-		);
+		const tools = buildTools({
+			app: app as never,
+			getWriteDir: () => "agent-workspace",
+			review: undefined,
+			enabledTiers: new Set(["read", "writeScoped", "manage"]),
+		});
 		const r = await getTool(tools, "vault_create_folder").handler({
 			path: "agent-workspace/newdir",
 		});
@@ -668,7 +636,7 @@ describe("plugin_extensions_list", () => {
 				id === "dataview" ? { api: { query: () => ({ successful: true }) } } : null,
 			enabledPlugins: new Set(["dataview"]),
 		};
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		const tool = getTool(tools, "plugin_extensions_list");
 		const r = await tool.handler({});
 		const body = (r.content[0] as { text: string }).text;

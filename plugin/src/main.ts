@@ -84,14 +84,8 @@ export default class AgentSandboxPlugin extends Plugin {
 		this.statusBar.setDetails(TOOLTIP_STOPPED);
 		this.registerDomEvent(statusBarEl, "click", (evt) => void this.showStatusMenu(evt));
 
-		this.activityUi = new ActivityUi(
-			this.app,
-			this.statusBar,
-			() => this.mcpServer?.getActivity(),
-			() => {
-				if (this.statusBar.getState() === "running") this.updateTooltip();
-				else this.statusBar.setDetails(TOOLTIP_STOPPED);
-			},
+		this.activityUi = new ActivityUi(this.app, this.statusBar, () =>
+			this.mcpServer?.getActivity(),
 		);
 		this.agentOutput = new AgentOutputNotifier(
 			() => this.settings.agentOutputNotify,
@@ -697,22 +691,15 @@ export default class AgentSandboxPlugin extends Plugin {
 	// ── Tooltip ────────────────────────────────────────────
 
 	private updateTooltip(): void {
-		const fwState = this.firewallBar.getState();
-		const fwLabel =
-			fwState === "enabled" ? "enabled" : fwState === "disabled" ? "disabled" : "n/a";
-		const mcpRunning = this.mcpServer?.isRunning() ?? false;
-		const mcpLabel = mcpRunning
-			? `port ${this.settings.mcpPort}, ${this.mcpServer!.getToolCount()} tools`
-			: "off";
-		const lines = [
-			"Container: running",
-			`Port: ${this.settings.ttydPort}`,
-			`Firewall: ${fwLabel}`,
-			`MCP: ${mcpLabel}`,
-			"",
-			"Click for options",
-		];
-		this.statusBar.setDetails(lines.join("\n"));
+		this.statusBar.setRunningTooltipContext({
+			port: this.settings.ttydPort,
+			firewall: this.firewallBar.getState(),
+			mcp: {
+				running: this.mcpServer?.isRunning() ?? false,
+				port: this.settings.mcpPort,
+				toolCount: this.mcpServer?.getToolCount() ?? 0,
+			},
+		});
 	}
 
 	// ── Background startup ────────────────────────────

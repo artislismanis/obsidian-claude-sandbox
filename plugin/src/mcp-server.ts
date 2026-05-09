@@ -7,6 +7,7 @@ import { randomUUID, timingSafeEqual } from "crypto";
 import type {
 	PermissionTier,
 	McpToolDef,
+	McpToolResult,
 	PathFilter,
 	ReviewFn,
 	ReviewBatchFn,
@@ -213,16 +214,16 @@ export class ObsidianMcpServer {
 		this.cache = new VaultCache(this.app.metadataCache);
 		this.auditLog.setSink(createFileAuditSink(this.app));
 		const hooks = this.config.hooks ?? {};
-		this.tools = buildTools(
-			this.app,
-			this.config.getWriteDir,
-			this.config.pathFilter,
-			hooks.review,
-			this.cache,
-			hooks.reviewBatch,
-			(update) => this.recordActivity(update),
-			this.config.enabledTiers,
-		).filter((t) => this.config.enabledTiers.has(t.tier));
+		this.tools = buildTools({
+			app: this.app,
+			getWriteDir: this.config.getWriteDir,
+			pathFilter: this.config.pathFilter,
+			review: hooks.review,
+			reviewBatch: hooks.reviewBatch,
+			cache: this.cache,
+			onActivity: (update) => this.recordActivity(update),
+			enabledTiers: this.config.enabledTiers,
+		}).filter((t) => this.config.enabledTiers.has(t.tier));
 
 		this.startTime = Date.now();
 
@@ -476,6 +477,48 @@ export class ObsidianMcpServer {
 		);
 	}
 
+	/** Pick the timeout budget for a tool — review-modal tools get a longer window. */
+	private selectTimeoutMs(tool: McpToolDef): number {
+		const mayTriggerReview =
+			tool.tier === "writeReviewed" ||
+			(tool.tier === "manage" && this.config.enabledTiers.has("writeReviewed"));
+		return mayTriggerReview
+			? (this.config.reviewTimeoutMs ?? REVIEW_TIMEOUT_MS)
+			: (this.config.toolTimeoutMs ?? TOOL_TIMEOUT_MS);
+	}
+
+	/** Run a tool's handler under timeout + response-truncation. Returns the
+	 * MCP result and whether the call was successful. Throws on timeout/handler
+	 * error so the caller can record the failure. */
+	private async runToolWithLimits(
+		tool: McpToolDef,
+		args: Record<string, unknown>,
+	): Promise<{ result: McpToolResult; success: boolean }> {
+		const timeoutMs = this.selectTimeoutMs(tool);
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const timeout = new Promise<never>((_, reject) => {
+			timer = setTimeout(
+				() =>
+					reject(
+						new Error(
+							tool.tier === "writeReviewed"
+								? `Review timed out for '${tool.name}' — user did not respond within ${timeoutMs / 1000}s. The review modal may have been dismissed.`
+								: `Tool '${tool.name}' did not respond within ${timeoutMs / 1000}s`,
+						),
+					),
+				timeoutMs,
+			);
+		});
+		const result = await Promise.race([tool.handler(args), timeout]).finally(() => {
+			if (timer) clearTimeout(timer);
+		});
+		const responseText = result.content?.[0]?.text;
+		if (responseText && Buffer.byteLength(responseText) > MAX_RESPONSE_BYTES) {
+			result.content[0].text = responseText.slice(0, MAX_RESPONSE_BYTES) + "\n\n[truncated]";
+		}
+		return { result, success: !result.isError };
+	}
+
 	private createMcpServer(): McpServer {
 		const server = new McpServer({
 			name: "obsidian-vault",
@@ -499,57 +542,29 @@ export class ObsidianMcpServer {
 				}
 
 				const start = Date.now();
-				let success = true;
+				let success = false;
+				let result: McpToolResult;
 				try {
-					const handlerPromise = tool.handler(args as Record<string, unknown>);
-					let timer: ReturnType<typeof setTimeout> | undefined;
-					const mayTriggerReview =
-						tool.tier === "writeReviewed" ||
-						(tool.tier === "manage" && this.config.enabledTiers.has("writeReviewed"));
-					const toolTimeout = this.config.toolTimeoutMs ?? TOOL_TIMEOUT_MS;
-					const reviewTimeout = this.config.reviewTimeoutMs ?? REVIEW_TIMEOUT_MS;
-					const timeoutMs = mayTriggerReview ? reviewTimeout : toolTimeout;
-					const timeout = new Promise<never>((_, reject) => {
-						timer = setTimeout(
-							() =>
-								reject(
-									new Error(
-										tool.tier === "writeReviewed"
-											? `Review timed out for '${tool.name}' — user did not respond within ${timeoutMs / 1000}s. The review modal may have been dismissed.`
-											: `Tool '${tool.name}' did not respond within ${timeoutMs / 1000}s`,
-									),
-								),
-							timeoutMs,
-						);
-					});
-					const result = await Promise.race([handlerPromise, timeout]).finally(() => {
-						if (timer) clearTimeout(timer);
-					});
-					const responseText = result.content?.[0]?.text;
-					if (responseText && Buffer.byteLength(responseText) > MAX_RESPONSE_BYTES) {
-						result.content[0].text =
-							responseText.slice(0, MAX_RESPONSE_BYTES) + "\n\n[truncated]";
-					}
-					if (result.isError) success = false;
-					return result;
+					const out = await this.runToolWithLimits(tool, args as Record<string, unknown>);
+					success = out.success;
+					result = out.result;
 				} catch (err: unknown) {
-					success = false;
 					const msg = errMsg(err);
 					logger.error("MCP", `Tool ${tool.name} threw`, err);
-					return {
+					result = {
 						content: [{ type: "text" as const, text: `Error: ${msg}` }],
 						isError: true,
 					};
-				} finally {
-					const duration = Date.now() - start;
-					this.auditLog.record({
-						timestamp: Date.now(),
-						tool: tool.name,
-						success,
-						durationMs: duration,
-					});
-					logger.debug("MCP", `${tool.name} ${success ? "ok" : "err"} ${duration}ms`);
 				}
+				const duration = Date.now() - start;
+				this.auditLog.record({
+					timestamp: Date.now(),
+					tool: tool.name,
+					success,
+					durationMs: duration,
+				});
+				logger.debug("MCP", `${tool.name} ${success ? "ok" : "err"} ${duration}ms`);
+				return result;
 			});
 		}
 

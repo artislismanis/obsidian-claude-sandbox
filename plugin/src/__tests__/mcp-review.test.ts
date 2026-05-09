@@ -73,7 +73,11 @@ describe("write tools honor reviewFn", () => {
 	for (const c of reviewedWriteCases) {
 		it(`${c.name} calls review and aborts on rejection`, async () => {
 			const review = vi.fn(async () => ({ approved: false }));
-			const tools = buildTools(app as never, () => "agent-workspace", undefined, review);
+			const tools = buildTools({
+				app: app as never,
+				getWriteDir: () => "agent-workspace",
+				review,
+			});
 			const result = await getTool(tools, c.name).handler(c.args);
 			expect(review).toHaveBeenCalledTimes(1);
 			expect(result.isError).toBe(true);
@@ -85,7 +89,11 @@ describe("write tools honor reviewFn", () => {
 
 		it(`${c.name} proceeds on approval`, async () => {
 			const review = vi.fn(async () => ({ approved: true }));
-			const tools = buildTools(app as never, () => "agent-workspace", undefined, review);
+			const tools = buildTools({
+				app: app as never,
+				getWriteDir: () => "agent-workspace",
+				review,
+			});
 			const result = await getTool(tools, c.name).handler(c.args);
 			expect(review).toHaveBeenCalledTimes(1);
 			expect(result.isError ?? false).toBe(false);
@@ -98,7 +106,11 @@ describe("write tools honor reviewFn", () => {
 
 	it("non-reviewed tier does not invoke reviewFn even when one is provided", async () => {
 		const review = vi.fn(async () => ({ approved: true }));
-		const tools = buildTools(app as never, () => "agent-workspace", undefined, review);
+		const tools = buildTools({
+			app: app as never,
+			getWriteDir: () => "agent-workspace",
+			review,
+		});
 		await getTool(tools, "vault_modify").handler({ path: "notes/a.md", content: "x" });
 		expect(review).not.toHaveBeenCalled();
 	});
@@ -136,7 +148,11 @@ describe("write tools honor reviewFn", () => {
 				app.metadataCache.resolvedLinks = {
 					"notes/other.md": { "notes/a.md": 1 },
 				} as never;
-				const tools = buildTools(app as never, () => "agent-workspace", undefined, review);
+				const tools = buildTools({
+					app: app as never,
+					getWriteDir: () => "agent-workspace",
+					review,
+				});
 				const result = await getTool(tools, c.name).handler(c.args);
 				expect(review).toHaveBeenCalledTimes(1);
 				const firstCall = review.mock.calls[0] as unknown as [
@@ -151,7 +167,11 @@ describe("write tools honor reviewFn", () => {
 
 			it(`${c.name} proceeds on approval`, async () => {
 				const review = vi.fn(async () => ({ approved: true }));
-				const tools = buildTools(app as never, () => "agent-workspace", undefined, review);
+				const tools = buildTools({
+					app: app as never,
+					getWriteDir: () => "agent-workspace",
+					review,
+				});
 				const result = await getTool(tools, c.name).handler(c.args);
 				expect(review).toHaveBeenCalledTimes(1);
 				expect(result.isError ?? false).toBe(false);

@@ -214,67 +214,70 @@ export class DockerManager {
 		const effectiveComposePath =
 			dockerMode === "wsl" ? windowsToWslPath(composePath) : composePath;
 
-		const envVars: Record<string, string> = {};
-		if (vaultPath) {
-			envVars.PKM_VAULT_PATH = dockerMode === "wsl" ? windowsToWslPath(vaultPath) : vaultPath;
-		}
-		if (writeDir) {
-			if (!isValidWriteDir(writeDir)) {
-				throw new Error(
-					"Invalid vault write directory. Must be a relative path without '..' components.",
-				);
-			}
-			envVars.PKM_WRITE_DIR = writeDir;
-		}
-		if (ttydPort) {
-			envVars.TTYD_PORT = String(ttydPort);
-		}
-		if (ttydBindAddress) {
-			envVars.TTYD_BIND = ttydBindAddress;
-		}
-		if (memoryFileName) {
-			envVars.MEMORY_FILE_NAME = memoryFileName;
-		}
-		if (allowedPrivateHosts) {
-			if (!isValidPrivateHosts(allowedPrivateHosts)) {
-				throw new Error(
-					"Invalid allowed private hosts. Use comma-separated IPs or CIDRs (e.g. 192.168.1.100, 10.0.0.0/8).",
-				);
-			}
-			envVars.ALLOWED_PRIVATE_HOSTS = allowedPrivateHosts;
-		}
-		if (additionalFirewallDomains) {
-			if (!isValidDomainList(additionalFirewallDomains)) {
-				throw new Error(
-					"Invalid additional firewall domains. Use comma-separated domain names (e.g. api.atlassian.com, slack.com).",
-				);
-			}
-			envVars.OAS_ALLOWED_DOMAINS = additionalFirewallDomains;
-		}
-		if (containerMemory) {
-			if (!isValidMemory(containerMemory)) {
-				throw new Error(
-					"Invalid memory limit. Use a number with unit suffix (e.g. 4G, 512M, 1T).",
-				);
-			}
-			envVars.CONTAINER_MEMORY = containerMemory;
-		}
-		if (containerCpus) {
-			if (!isValidCpus(containerCpus)) {
-				throw new Error("Invalid CPU limit. Use a number (e.g. 4, 2.5).");
-			}
-			envVars.CONTAINER_CPUS = containerCpus;
-		}
-		if (sudoPassword) {
-			envVars.SUDO_PASSWORD = sudoPassword;
-		}
-
 		const { mcpToken, mcpPort } = this.getSettings();
-		if (mcpToken) {
-			envVars.OAS_MCP_TOKEN = mcpToken;
-		}
-		if (mcpPort) {
-			envVars.OAS_MCP_PORT = String(mcpPort);
+
+		const envSpec: {
+			key: string;
+			value: string | number | undefined;
+			validate?: (v: string) => boolean;
+			invalidMsg?: string;
+		}[] = [
+			{
+				key: "PKM_VAULT_PATH",
+				value: vaultPath
+					? dockerMode === "wsl"
+						? windowsToWslPath(vaultPath)
+						: vaultPath
+					: "",
+			},
+			{
+				key: "PKM_WRITE_DIR",
+				value: writeDir,
+				validate: isValidWriteDir,
+				invalidMsg:
+					"Invalid vault write directory. Must be a relative path without '..' components.",
+			},
+			{ key: "TTYD_PORT", value: ttydPort ? String(ttydPort) : "" },
+			{ key: "TTYD_BIND", value: ttydBindAddress },
+			{ key: "MEMORY_FILE_NAME", value: memoryFileName },
+			{
+				key: "ALLOWED_PRIVATE_HOSTS",
+				value: allowedPrivateHosts,
+				validate: isValidPrivateHosts,
+				invalidMsg:
+					"Invalid allowed private hosts. Use comma-separated IPs or CIDRs (e.g. 192.168.1.100, 10.0.0.0/8).",
+			},
+			{
+				key: "OAS_ALLOWED_DOMAINS",
+				value: additionalFirewallDomains,
+				validate: isValidDomainList,
+				invalidMsg:
+					"Invalid additional firewall domains. Use comma-separated domain names (e.g. api.atlassian.com, slack.com).",
+			},
+			{
+				key: "CONTAINER_MEMORY",
+				value: containerMemory,
+				validate: isValidMemory,
+				invalidMsg:
+					"Invalid memory limit. Use a number with unit suffix (e.g. 4G, 512M, 1T).",
+			},
+			{
+				key: "CONTAINER_CPUS",
+				value: containerCpus,
+				validate: isValidCpus,
+				invalidMsg: "Invalid CPU limit. Use a number (e.g. 4, 2.5).",
+			},
+			{ key: "SUDO_PASSWORD", value: sudoPassword },
+			{ key: "OAS_MCP_TOKEN", value: mcpToken },
+			{ key: "OAS_MCP_PORT", value: mcpPort ? String(mcpPort) : "" },
+		];
+
+		const envVars: Record<string, string> = {};
+		for (const { key, value, validate, invalidMsg } of envSpec) {
+			if (value === undefined || value === "") continue;
+			const v = String(value);
+			if (validate && !validate(v)) throw new Error(invalidMsg!);
+			envVars[key] = v;
 		}
 		// On Windows, inject the actual Windows host IP so the container can
 		// reach host.docker.internal correctly under Rancher Desktop / WSL2.

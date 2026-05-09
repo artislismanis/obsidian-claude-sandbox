@@ -51,12 +51,11 @@ describe("MCP tool handlers", () => {
 		app.metadataCache.unresolvedLinks = {
 			"notes/hello.md": { nonexistent: 1 },
 		};
-		tools = buildTools(
-			app as never,
-			() => "agent-workspace",
-			undefined,
-			async () => ({ approved: true }),
-		);
+		tools = buildTools({
+			app: app as never,
+			getWriteDir: () => "agent-workspace",
+			review: async () => ({ approved: true }),
+		});
 	});
 
 	describe("tool registration", () => {
@@ -996,7 +995,10 @@ describe("MCP tool handlers", () => {
 		it("stops reading once limit is reached and never returns more than limit", async () => {
 			const manyFiles = Array.from({ length: 100 }, (_, i) => makeTFile(`notes/f${i}.md`));
 			const localApp = createMockApp(manyFiles, {});
-			const localTools = buildTools(localApp as never, () => "agent-workspace");
+			const localTools = buildTools({
+				app: localApp as never,
+				getWriteDir: () => "agent-workspace",
+			});
 			const r = getResult(
 				await getTool(localTools, "vault_search").handler({ query: "x", limit: 5 }),
 			);
@@ -1076,7 +1078,10 @@ describe("MCP tool handlers", () => {
 
 		it("reviewed variants are absent when no reviewFn is provided", () => {
 			const localApp = createMockApp(testFiles, { caches });
-			const localTools = buildTools(localApp as never, () => "agent-workspace");
+			const localTools = buildTools({
+				app: localApp as never,
+				getWriteDir: () => "agent-workspace",
+			});
 			const names = localTools.map((t) => t.name);
 			expect(names).not.toContain("vault_create_reviewed");
 			expect(names).not.toContain("vault_modify_reviewed");

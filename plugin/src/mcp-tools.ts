@@ -244,16 +244,28 @@ const ALL_TIERS: ReadonlySet<PermissionTier> = new Set<PermissionTier>([
 	"agent",
 ]);
 
-export function buildTools(
-	app: App,
-	getWriteDir: () => string,
-	pathFilter?: PathFilter,
-	reviewFn?: ReviewFn,
-	cache?: { get<T>(key: string, compute: () => T): T },
-	reviewBatchFn?: ReviewBatchFn,
-	onActivity?: OnActivity,
-	enabledTiers: ReadonlySet<PermissionTier> = ALL_TIERS,
-): McpToolDef[] {
+export interface BuildToolsOptions {
+	app: App;
+	getWriteDir: () => string;
+	pathFilter?: PathFilter;
+	review?: ReviewFn;
+	reviewBatch?: ReviewBatchFn;
+	cache?: { get<T>(key: string, compute: () => T): T };
+	onActivity?: OnActivity;
+	enabledTiers?: ReadonlySet<PermissionTier>;
+}
+
+export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
+	const {
+		app,
+		getWriteDir,
+		pathFilter,
+		review: reviewFn,
+		reviewBatch: reviewBatchFn,
+		cache,
+		onActivity,
+		enabledTiers = ALL_TIERS,
+	} = opts;
 	const tools: McpToolDef[] = [];
 
 	/** App-bound alias of the module-level helper, so call sites stay terse. */
@@ -898,31 +910,10 @@ export function buildTools(
 
 	// ── Write tools (scoped + vault-wide via factory) ────
 
-	async function requireReview(
-		review: ReviewFn | undefined,
-		operation: WriteOperation,
-		filePath: string,
-		oldContent: string | undefined,
-		newContent: string | undefined,
-		description: string,
-		affectedLinks: string[] | undefined = undefined,
-	): Promise<McpToolResult | null> {
-		if (!review) return null;
-		const result = await review({
-			operation,
-			filePath,
-			oldContent,
-			newContent,
-			description,
-			affectedLinks,
-		});
-		return result.approved ? null : error("Change rejected by user.");
-	}
-
 	/**
 	 * Review-gate + apply + success wrapper shared by all 8 write handlers.
 	 * Handler code is reduced to: resolve the file, compute the change, pass
-	 * the diff preview here. This is the only site that calls `requireReview`.
+	 * the diff preview here.
 	 */
 	async function runWrite(op: {
 		operation: WriteOperation;
@@ -935,16 +926,17 @@ export function buildTools(
 		successMsg: string | (() => string);
 		affectedLinks?: string[];
 	}): Promise<McpToolResult> {
-		const rejected = await requireReview(
-			op.review,
-			op.operation,
-			op.filePath,
-			op.oldContent,
-			op.newContent,
-			op.description,
-			op.affectedLinks,
-		);
-		if (rejected) return rejected;
+		if (op.review) {
+			const result = await op.review({
+				operation: op.operation,
+				filePath: op.filePath,
+				oldContent: op.oldContent,
+				newContent: op.newContent,
+				description: op.description,
+				affectedLinks: op.affectedLinks,
+			});
+			if (!result.approved) return error("Change rejected by user.");
+		}
 		await op.apply();
 		return text(typeof op.successMsg === "function" ? op.successMsg() : op.successMsg);
 	}

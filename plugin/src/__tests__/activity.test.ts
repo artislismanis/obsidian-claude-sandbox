@@ -114,14 +114,11 @@ describe("AgentOutputNotifier", () => {
 	});
 });
 
-describe("ActivityUi.refreshDefaultTooltip on transition to zero", () => {
+describe("ActivityUi attention propagation", () => {
 	function fixture() {
-		const refresh = vi.fn();
-		let statusBarCount = 0;
+		const setAttention = vi.fn();
 		const statusBar = {
-			setAttentionCount: (n: number) => {
-				statusBarCount = n;
-			},
+			setAttention,
 			setDetails: vi.fn(),
 			getState: () => "running",
 		};
@@ -131,48 +128,35 @@ describe("ActivityUi.refreshDefaultTooltip on transition to zero", () => {
 				getLeavesOfType: () => [] as unknown[],
 			},
 		};
-		const ui = new ActivityUi(app as never, statusBar as never, () => activity, refresh);
-		return { ui, activity, refresh, getCount: () => statusBarCount, statusBar };
+		const ui = new ActivityUi(app as never, statusBar as never, () => activity);
+		return { ui, activity, setAttention };
 	}
 
-	it("calls refresh when transitioning from waiting>0 to zero", () => {
-		const { ui, activity, refresh } = fixture();
+	it("forwards waiting count + names to StatusBarManager.setAttention", () => {
+		const { ui, activity, setAttention } = fixture();
 		activity.set("work", { status: "awaiting_input", updatedAt: Date.now() });
 		ui.route({ sessionName: "work", status: "awaiting_input" });
-		expect(refresh).not.toHaveBeenCalled();
+		expect(setAttention).toHaveBeenLastCalledWith(1, ["work"]);
 
 		activity.set("work", { status: "idle", updatedAt: Date.now() });
 		ui.route({ sessionName: "work", status: "idle" });
-		expect(refresh).toHaveBeenCalledTimes(1);
+		expect(setAttention).toHaveBeenLastCalledWith(0, []);
 	});
 
-	it("does not call refresh while still >0", () => {
-		const { ui, activity, refresh } = fixture();
+	it("aggregates multiple awaiting sessions", () => {
+		const { ui, activity, setAttention } = fixture();
 		activity.set("a", { status: "awaiting_input", updatedAt: Date.now() });
 		activity.set("b", { status: "awaiting_input", updatedAt: Date.now() });
 		ui.route({ sessionName: "a", status: "awaiting_input" });
-		ui.route({ sessionName: "b", status: "awaiting_input" });
-		expect(refresh).not.toHaveBeenCalled();
-
-		activity.set("a", { status: "idle", updatedAt: Date.now() });
-		ui.route({ sessionName: "a", status: "idle" });
-		// One still waiting — no refresh yet.
-		expect(refresh).not.toHaveBeenCalled();
+		expect(setAttention).toHaveBeenLastCalledWith(2, ["a", "b"]);
 	});
 
-	it("clear() refreshes tooltip when last count was nonzero", () => {
-		const { ui, activity, refresh } = fixture();
+	it("clear() resets the attention badge to zero", () => {
+		const { ui, activity, setAttention } = fixture();
 		activity.set("work", { status: "awaiting_input", updatedAt: Date.now() });
 		ui.route({ sessionName: "work", status: "awaiting_input" });
 
-		activity.clear();
 		ui.clear();
-		expect(refresh).toHaveBeenCalled();
-	});
-
-	it("clear() does not refresh tooltip if there was no active override", () => {
-		const { ui, refresh } = fixture();
-		ui.clear();
-		expect(refresh).not.toHaveBeenCalled();
+		expect(setAttention).toHaveBeenLastCalledWith(0);
 	});
 });

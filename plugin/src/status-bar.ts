@@ -8,11 +8,19 @@ const STATE_DISPLAY: Record<ContainerState, string> = {
 	checking: "Sandbox: \uD83D\uDD0D Checking",
 };
 
+export interface RunningTooltipContext {
+	port: number;
+	firewall: FirewallState;
+	mcp: { running: boolean; port: number; toolCount: number };
+}
+
 export class StatusBarManager {
 	private el: HTMLElement;
 	private state: ContainerState;
 	private details: string | null = null;
 	private attentionCount = 0;
+	private attentionNames: string[] = [];
+	private runningCtx: RunningTooltipContext | null = null;
 
 	constructor(statusBarItemEl: HTMLElement) {
 		this.el = statusBarItemEl;
@@ -25,22 +33,61 @@ export class StatusBarManager {
 		if (this.state === state) return;
 		this.state = state;
 		this.render();
+		this.recomposeRunningTooltip();
 	}
 
 	getState(): ContainerState {
 		return this.state;
 	}
 
+	/** Imperative tooltip override \u2014 used for non-running states (Starting\u2026, Stopped, Error). */
 	setDetails(details: string): void {
 		if (this.details === details) return;
 		this.details = details;
 		this.el.setAttribute("aria-label", details);
 	}
 
-	setAttentionCount(n: number): void {
-		if (this.attentionCount === n) return;
-		this.attentionCount = n;
+	/** Push the structured context for the default running-state tooltip. Recomposes immediately. */
+	setRunningTooltipContext(ctx: RunningTooltipContext): void {
+		this.runningCtx = ctx;
+		this.recomposeRunningTooltip();
+	}
+
+	/** Update the attention badge count + the names used in the running tooltip override. */
+	setAttention(count: number, names: string[] = []): void {
+		const sameCount = this.attentionCount === count;
+		const sameNames =
+			names.length === this.attentionNames.length &&
+			names.every((n, i) => n === this.attentionNames[i]);
+		if (sameCount && sameNames) return;
+		this.attentionCount = count;
+		this.attentionNames = names;
 		this.render();
+		this.recomposeRunningTooltip();
+	}
+
+	private recomposeRunningTooltip(): void {
+		if (this.state !== "running" || !this.runningCtx) return;
+		if (this.attentionCount > 0) {
+			this.setDetails(
+				`Sandbox running. ${this.attentionCount} session(s) awaiting input: ${this.attentionNames.join(", ")}\nClick for options`,
+			);
+			return;
+		}
+		const { port, firewall, mcp } = this.runningCtx;
+		const fwLabel =
+			firewall === "enabled" ? "enabled" : firewall === "disabled" ? "disabled" : "n/a";
+		const mcpLabel = mcp.running ? `port ${mcp.port}, ${mcp.toolCount} tools` : "off";
+		this.setDetails(
+			[
+				"Container: running",
+				`Port: ${port}`,
+				`Firewall: ${fwLabel}`,
+				`MCP: ${mcpLabel}`,
+				"",
+				"Click for options",
+			].join("\n"),
+		);
 	}
 
 	private render(): void {
