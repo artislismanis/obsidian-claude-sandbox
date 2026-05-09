@@ -21,6 +21,12 @@ import { isPathWithinDir } from "./validation";
 
 const DEFAULT_SESSION_KEY = "__default__";
 
+const STATUS_TO_PREFIX: Record<AgentStatus, ActivityPrefix> = {
+	working: "working",
+	awaiting_input: "awaiting_input",
+	idle: null,
+};
+
 export interface ActivityUpdate {
 	sessionName: string;
 	status: AgentStatus;
@@ -40,11 +46,6 @@ export class ActivityUi {
 	) {}
 
 	route(update: ActivityUpdate): void {
-		const STATUS_TO_PREFIX: Record<AgentStatus, ActivityPrefix> = {
-			working: "working",
-			awaiting_input: "awaiting_input",
-			idle: null,
-		};
 		const prefix = STATUS_TO_PREFIX[update.status];
 
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {

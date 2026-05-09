@@ -1,6 +1,6 @@
 import type { TFile, WorkspaceLeaf } from "obsidian";
-import { FileSystemAdapter, Menu, Modal, Notice, Plugin, debounce } from "obsidian";
-import { confirmModal } from "./modals";
+import { FileSystemAdapter, Menu, Notice, Plugin, debounce } from "obsidian";
+import { confirmModal, inputModal } from "./modals";
 import { BatchReviewModal, DiffReviewModal } from "./diff-review-modal";
 import { AnalyzeManager } from "./analyze";
 import {
@@ -817,34 +817,11 @@ export default class AgentSandboxPlugin extends Plugin {
 	// ── Session prompt ─────────────────────────────────────
 
 	private promptSessionName(title: string, defaultValue = ""): Promise<string | null> {
-		return new Promise((resolve) => {
-			let resolved = false;
-			const modal = new Modal(this.app);
-			modal.titleEl.setText(title);
-			const input = modal.contentEl.createEl("input", {
-				type: "text",
-				placeholder: "e.g. work, research, debug",
-				value: defaultValue,
-			});
-			input.addClass("sandbox-modal-input-full");
-			input.addEventListener("keydown", (e) => {
-				if (e.key === "Enter") {
-					const val = input.value.trim();
-					resolved = true;
-					modal.close();
-					resolve(val || null);
-				}
-				if (e.key === "Escape") {
-					resolved = true;
-					modal.close();
-					resolve(null);
-				}
-			});
-			modal.onClose = () => {
-				if (!resolved) resolve(null);
-			};
-			modal.open();
-			input.focus();
+		return inputModal(this.app, {
+			title,
+			placeholder: "e.g. work, research, debug",
+			defaultValue,
+			multiline: false,
 		});
 	}
 

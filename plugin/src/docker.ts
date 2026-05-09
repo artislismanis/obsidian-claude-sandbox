@@ -569,13 +569,17 @@ export class DockerManager {
 		);
 	}
 
+	private tmuxExec(subcmd: string, suppressErrors = false): Promise<string> {
+		return this.run(
+			`docker compose exec --user claude ${SERVICE_NAME} tmux ${subcmd}`,
+			PROBE_TIMEOUT,
+			suppressErrors,
+		);
+	}
+
 	async listSessions(): Promise<string[]> {
 		try {
-			const output = await this.run(
-				`docker compose exec --user claude ${SERVICE_NAME} tmux list-sessions -F "#{session_name}"`,
-				PROBE_TIMEOUT,
-				true,
-			);
+			const output = await this.tmuxExec(`list-sessions -F "#{session_name}"`, true);
 			return output
 				.split("\n")
 				.map((s) => s.trim())
@@ -596,9 +600,8 @@ export class DockerManager {
 	/** List sessions with no attached clients — candidates for cleanup. */
 	async listEmptySessions(): Promise<string[]> {
 		try {
-			const output = await this.run(
-				`docker compose exec --user claude ${SERVICE_NAME} tmux list-sessions -F "#{session_name}:#{session_attached}"`,
-				PROBE_TIMEOUT,
+			const output = await this.tmuxExec(
+				`list-sessions -F "#{session_name}:#{session_attached}"`,
 				true,
 			);
 			return output
@@ -612,17 +615,11 @@ export class DockerManager {
 	}
 
 	async killSession(name: string): Promise<void> {
-		await this.run(
-			`docker compose exec --user claude ${SERVICE_NAME} tmux kill-session -t "${name}"`,
-			PROBE_TIMEOUT,
-		);
+		await this.tmuxExec(`kill-session -t "${name}"`);
 	}
 
 	async renameSession(oldName: string, newName: string): Promise<void> {
-		await this.run(
-			`docker compose exec --user claude ${SERVICE_NAME} tmux rename-session -t "${oldName}" "${newName}"`,
-			PROBE_TIMEOUT,
-		);
+		await this.tmuxExec(`rename-session -t "${oldName}" "${newName}"`);
 	}
 
 	static parseIsRunning(statusOutput: string): boolean {
