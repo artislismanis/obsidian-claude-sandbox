@@ -15,7 +15,7 @@ import type {
 } from "./mcp-tools";
 import { buildTools } from "./mcp-tools";
 import { VaultCache } from "./mcp-cache";
-import { logger } from "./logger";
+import { logger, errMsg } from "./logger";
 import { ALWAYS_ON_TIERS, GATED_TIERS } from "./permission-tiers";
 
 export interface ActivityEntry {
@@ -528,7 +528,7 @@ export class ObsidianMcpServer {
 					return result;
 				} catch (err: unknown) {
 					success = false;
-					const msg = err instanceof Error ? err.message : String(err);
+					const msg = errMsg(err);
 					logger.error("MCP", `Tool ${tool.name} threw`, err);
 					return {
 						content: [{ type: "text" as const, text: `Error: ${msg}` }],

@@ -91,6 +91,25 @@ export function getTerminalConnectionLog(): TerminalConnectionEvent[] {
 	return connectionLog.slice();
 }
 
+/** Format a connection event ring buffer for the "Copy connection log" command. */
+export function formatConnectionLog(events: TerminalConnectionEvent[]): string {
+	return events
+		.map((e) => {
+			const ts = new Date(e.at).toISOString();
+			const head = `${ts}  inst=${e.instanceId} gen=${e.gen} ${e.kind}`;
+			const parts: string[] = [];
+			if (e.code != null) parts.push(`code=${e.code}(${e.codeName})`);
+			if (e.reason) parts.push(`reason="${e.reason}"`);
+			if (e.durationMs != null) parts.push(`duration=${e.durationMs}ms`);
+			if (e.idleMsBeforeClose != null) parts.push(`idleBeforeClose=${e.idleMsBeforeClose}ms`);
+			if (e.rxBytes != null) parts.push(`rx=${e.rxBytes}b/${e.rxMsgs}msgs`);
+			if (e.txBytes != null) parts.push(`tx=${e.txBytes}b`);
+			if (e.attempt) parts.push(`attempt=${e.attempt}`);
+			return parts.length ? `${head}  ${parts.join(" ")}` : head;
+		})
+		.join("\n");
+}
+
 export type ActivityPrefix = "working" | "awaiting_input" | null;
 
 const PREFIX_SYMBOL: Record<Exclude<ActivityPrefix, null>, string> = {
@@ -111,7 +130,7 @@ export class TerminalView extends ItemView {
 	private resizeObserver: ResizeObserver | null = null;
 	private resizeRafId: number | null = null;
 	private termDisposables: { dispose(): void }[] = [];
-	private wsDisposables: { dispose(): void }[] = [];
+	private wsDispose: (() => void) | null = null;
 
 	// Lifecycle stats — reset per WS attach. Used for close diagnostics.
 	private wsConnectStartedAt = 0;
@@ -469,8 +488,8 @@ export class TerminalView extends ItemView {
 		if (!term) return;
 
 		// Tear down any prior socket listeners so close handlers don't fire twice.
-		for (const d of this.wsDisposables) d.dispose();
-		this.wsDisposables = [];
+		this.wsDispose?.();
+		this.wsDispose = null;
 		if (this.ws) {
 			try {
 				this.ws.close();
@@ -642,14 +661,12 @@ export class TerminalView extends ItemView {
 		ws.addEventListener("message", onMessage);
 		ws.addEventListener("close", onClose);
 		ws.addEventListener("error", onError);
-		this.wsDisposables.push({
-			dispose: () => {
-				ws.removeEventListener("open", onOpen);
-				ws.removeEventListener("message", onMessage);
-				ws.removeEventListener("close", onClose);
-				ws.removeEventListener("error", onError);
-			},
-		});
+		this.wsDispose = () => {
+			ws.removeEventListener("open", onOpen);
+			ws.removeEventListener("message", onMessage);
+			ws.removeEventListener("close", onClose);
+			ws.removeEventListener("error", onError);
+		};
 	}
 
 	private scheduleReconnect(container: HTMLElement, gen: number): void {
@@ -705,8 +722,8 @@ export class TerminalView extends ItemView {
 	private dispose(): void {
 		for (const d of this.termDisposables) d.dispose();
 		this.termDisposables = [];
-		for (const d of this.wsDisposables) d.dispose();
-		this.wsDisposables = [];
+		this.wsDispose?.();
+		this.wsDispose = null;
 		if (this.reconnectTimer != null) {
 			window.clearTimeout(this.reconnectTimer);
 			this.reconnectTimer = null;

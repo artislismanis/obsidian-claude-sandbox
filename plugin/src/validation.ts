@@ -88,16 +88,14 @@ export function isValidDomainList(value: string): boolean {
 export function isPathAllowed(filePath: string, allowlist: string[], blocklist: string[]): boolean {
 	const norm = (p: string) => posixPath.normalize(p).replace(/^\/|\/$/g, "");
 	const normalized = norm(filePath);
-	for (const blocked of blocklist) {
-		const nb = norm(blocked);
-		if (normalized === nb || normalized.startsWith(nb + "/")) return false;
-	}
+	const matchesAnyPrefix = (prefixes: string[]): boolean =>
+		prefixes.some((p) => {
+			const np = norm(p);
+			return normalized === np || normalized.startsWith(np + "/");
+		});
+	if (matchesAnyPrefix(blocklist)) return false;
 	if (allowlist.length === 0) return true;
-	for (const allowed of allowlist) {
-		const na = norm(allowed);
-		if (normalized === na || normalized.startsWith(na + "/")) return true;
-	}
-	return false;
+	return matchesAnyPrefix(allowlist);
 }
 
 /**
