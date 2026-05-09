@@ -507,8 +507,8 @@ export class ObsidianMcpServer {
 								reject(
 									new Error(
 										tool.tier === "writeReviewed"
-											? `Review timed out for '${tool.name}' — user did not respond within ${REVIEW_TIMEOUT_MS / 1000}s. The review modal may have been dismissed.`
-											: `Tool '${tool.name}' did not respond within ${TOOL_TIMEOUT_MS / 1000}s`,
+											? `Review timed out for '${tool.name}' — user did not respond within ${timeoutMs / 1000}s. The review modal may have been dismissed.`
+											: `Tool '${tool.name}' did not respond within ${timeoutMs / 1000}s`,
 									),
 								),
 							timeoutMs,

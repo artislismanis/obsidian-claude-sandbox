@@ -9,8 +9,6 @@ import {
 	vaultWriteTiers,
 } from "./permission-tiers";
 import type { TierDef, VaultWriteMode } from "./permission-tiers";
-export { ALWAYS_ON_TIERS };
-export type { VaultWriteMode };
 import {
 	isValidBindAddress,
 	isValidCpus,
@@ -199,7 +197,7 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 						text.inputEl.addClass("sandbox-input-error");
 					}
 				});
-				if (opts.narrow) text.inputEl.style.width = "60px";
+				if (opts.narrow) text.inputEl.addClass("sandbox-settings-narrow-input");
 			});
 	}
 

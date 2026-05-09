@@ -6,12 +6,8 @@ vi.mock("obsidian", () => ({
 	Setting: class {},
 }));
 
-import {
-	ALWAYS_ON_TIERS,
-	GATED_TIERS,
-	DEFAULT_SETTINGS,
-	enabledTiersFromSettings,
-} from "../settings";
+import { GATED_TIERS, DEFAULT_SETTINGS, enabledTiersFromSettings } from "../settings";
+import { ALWAYS_ON_TIERS } from "../permission-tiers";
 
 describe("enabledTiersFromSettings", () => {
 	it("always includes capability tiers (read, writeScoped, agent)", () => {

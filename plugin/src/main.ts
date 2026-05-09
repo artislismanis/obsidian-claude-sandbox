@@ -20,7 +20,6 @@ import {
 import { isValidWriteDir } from "./validation";
 import { setLogLevel, logger, errMsg } from "./logger";
 import { ObsidianMcpServer, generateToken } from "./mcp-server";
-import type { PermissionTier } from "./mcp-tools";
 import { ActivityUi, AgentOutputNotifier } from "./activity";
 import { showSessionCleanup, showSessionPicker } from "./session-ui";
 
@@ -568,10 +567,6 @@ export default class AgentSandboxPlugin extends Plugin {
 
 	// ── MCP server ────────────────────────────────────────
 
-	private getEnabledTiers(): Set<PermissionTier> {
-		return enabledTiersFromSettings(this.settings);
-	}
-
 	async restartMcpIfRunning(): Promise<void> {
 		if (!this.mcpServer?.isRunning()) return;
 		await this.stopMcpServer();
@@ -592,7 +587,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			this.mcpServer = new ObsidianMcpServer(this.app, {
 				port: this.settings.mcpPort,
 				token: this.settings.mcpToken,
-				enabledTiers: this.getEnabledTiers(),
+				enabledTiers: enabledTiersFromSettings(this.settings),
 				getWriteDir: () => this.settings.vaultWriteDir,
 				pathFilter:
 					allowlist.length > 0 || blocklist.length > 0
