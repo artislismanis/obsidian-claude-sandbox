@@ -85,7 +85,9 @@ class RateLimiter {
 			bucket = { timestamps: [] };
 			this.buckets.set(toolName, bucket);
 		}
-		bucket.timestamps = bucket.timestamps.filter((t) => now - t < RATE_WINDOW_MS);
+		while (bucket.timestamps.length > 0 && now - bucket.timestamps[0] >= RATE_WINDOW_MS) {
+			bucket.timestamps.shift();
+		}
 		if (bucket.timestamps.length >= limit) return false;
 		bucket.timestamps.push(now);
 		return true;
@@ -149,30 +151,36 @@ const AUDIT_FILE_ARCHIVE = ".oas/mcp-audit.1.jsonl";
 function createFileAuditSink(app: App): (entry: AuditEntry) => Promise<void> {
 	const adapter = app.vault.adapter;
 	let ensuredDir = false;
+	// Track running byte count so we only stat (and rotate) when we suspect we
+	// crossed the threshold — otherwise the file sink would do 3 vault-adapter
+	// calls per MCP tool invocation.
+	let estimatedBytes = -1;
 	return async (entry) => {
 		if (!ensuredDir) {
 			try {
-				if (!(await adapter.exists(".oas"))) await adapter.mkdir(".oas");
+				await adapter.mkdir(".oas");
 			} catch {
-				/* ignore */
+				/* already exists or unwritable — append below will surface real failures */
 			}
 			ensuredDir = true;
 		}
 		try {
-			if (await adapter.exists(AUDIT_FILE)) {
-				const stat = await adapter.stat(AUDIT_FILE);
-				if (stat && stat.size > AUDIT_FILE_MAX_BYTES) {
-					try {
-						if (await adapter.exists(AUDIT_FILE_ARCHIVE)) {
-							await adapter.remove(AUDIT_FILE_ARCHIVE);
-						}
-						await adapter.rename(AUDIT_FILE, AUDIT_FILE_ARCHIVE);
-					} catch {
-						/* rotation is best-effort */
-					}
+			const line = JSON.stringify(entry) + "\n";
+			if (estimatedBytes < 0) {
+				const stat = await adapter.stat(AUDIT_FILE).catch(() => null);
+				estimatedBytes = stat?.size ?? 0;
+			}
+			if (estimatedBytes > AUDIT_FILE_MAX_BYTES) {
+				try {
+					await adapter.remove(AUDIT_FILE_ARCHIVE).catch(() => undefined);
+					await adapter.rename(AUDIT_FILE, AUDIT_FILE_ARCHIVE);
+					estimatedBytes = 0;
+				} catch {
+					/* rotation is best-effort */
 				}
 			}
-			await adapter.append(AUDIT_FILE, JSON.stringify(entry) + "\n");
+			await adapter.append(AUDIT_FILE, line);
+			estimatedBytes += Buffer.byteLength(line);
 		} catch {
 			/* audit write failures must never block */
 		}
@@ -517,10 +525,10 @@ export class ObsidianMcpServer {
 					const result = await Promise.race([handlerPromise, timeout]).finally(() => {
 						if (timer) clearTimeout(timer);
 					});
-					const text = result.content?.[0]?.text;
-					if (text && Buffer.byteLength(text) > MAX_RESPONSE_BYTES) {
+					const responseText = result.content?.[0]?.text;
+					if (responseText && Buffer.byteLength(responseText) > MAX_RESPONSE_BYTES) {
 						result.content[0].text =
-							text.slice(0, MAX_RESPONSE_BYTES) + "\n\n[truncated]";
+							responseText.slice(0, MAX_RESPONSE_BYTES) + "\n\n[truncated]";
 					}
 					if (result.isError) success = false;
 					return result;

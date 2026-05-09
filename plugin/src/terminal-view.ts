@@ -20,7 +20,7 @@ const RECONNECT_BACKOFF_MS = [500, 1000, 2000, 4000, 8000];
 // server-to-client and client-to-server use disjoint meanings for the same chars.
 // ttyd server-to-client commands. Only OUTPUT is consumed; TITLE ('1') and
 // PREFERENCES ('2') are ignored.
-const SERVER_MSG = { OUTPUT: "0" } as const;
+const SERVER_MSG = { OUTPUT: 0x30 } as const;
 const CLIENT_MSG = { INPUT: "0", RESIZE: "1" } as const;
 
 const textEncoder = new TextEncoder();
@@ -193,8 +193,6 @@ export class TerminalView extends ItemView {
 	setActivityPrefix(prefix: ActivityPrefix): void {
 		if (this.activityPrefix === prefix) return;
 		this.activityPrefix = prefix;
-		// Ask Obsidian to re-read the display text for this tab.
-		this.app.workspace.requestSaveLayout();
 		refreshLeafHeader(this.leaf);
 	}
 
@@ -581,10 +579,8 @@ export class TerminalView extends ItemView {
 			this.wsLastRxAt = Date.now();
 			this.wsRxBytes += rawData.byteLength;
 			this.wsRxMsgs++;
-			const cmd = String.fromCharCode(new Uint8Array(rawData)[0]);
-
 			// Only OUTPUT carries data we need; TITLE / PREFERENCES are ignored.
-			if (cmd === SERVER_MSG.OUTPUT) {
+			if (new Uint8Array(rawData, 0, 1)[0] === SERVER_MSG.OUTPUT) {
 				term.write(new Uint8Array(rawData, 1));
 			}
 		};

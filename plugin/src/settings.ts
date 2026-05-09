@@ -1,5 +1,6 @@
 import type { App } from "obsidian";
-import { Modal, PluginSettingTab, Setting } from "obsidian";
+import { PluginSettingTab, Setting } from "obsidian";
+import { confirmModal } from "./modals";
 import type AgentSandboxPlugin from "./main";
 import { setLogLevel, errMsg } from "./logger";
 import type { PermissionTier } from "./mcp-tools";
@@ -141,23 +142,15 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 		if (!this.restartNeeded) return;
 		this.restartNeeded = false;
 		if (!this.plugin.isContainerRunning()) return;
-		const modal = new Modal(this.app);
-		modal.titleEl.setText("Restart Container?");
-		modal.contentEl.createEl("p", {
-			text: "You changed settings that require a container restart. Restart now? This will stop all active terminal sessions.",
+		void confirmModal(this.app, {
+			title: "Restart Container?",
+			message:
+				"You changed settings that require a container restart. Restart now? This will stop all active terminal sessions.",
+			ctaLabel: "Restart",
+			cancelLabel: "Later",
+		}).then((ok) => {
+			if (ok) void this.plugin.restartContainer();
 		});
-		modal.contentEl.createDiv({ cls: "modal-button-container" }, (div) => {
-			div.createEl("button", { text: "Later", cls: "mod-muted" }, (btn) => {
-				btn.addEventListener("click", () => modal.close());
-			});
-			div.createEl("button", { text: "Restart", cls: "mod-cta" }, (btn) => {
-				btn.addEventListener("click", () => {
-					modal.close();
-					void this.plugin.restartContainer();
-				});
-			});
-		});
-		modal.open();
 	}
 
 	private markRestart(): void {

@@ -1,5 +1,6 @@
 import type { TFile, WorkspaceLeaf } from "obsidian";
 import { FileSystemAdapter, Menu, Modal, Notice, Plugin, debounce } from "obsidian";
+import { confirmModal } from "./modals";
 import { BatchReviewModal, DiffReviewModal } from "./diff-review-modal";
 import { AnalyzeManager } from "./analyze";
 import {
@@ -17,7 +18,7 @@ import {
 	formatConnectionLog,
 	getTerminalConnectionLog,
 } from "./terminal-view";
-import { isValidWriteDir } from "./validation";
+import { isValidWriteDir, splitCsv } from "./validation";
 import { setLogLevel, logger, errMsg } from "./logger";
 import { ObsidianMcpServer, generateToken } from "./mcp-server";
 import { ActivityUi, AgentOutputNotifier } from "./activity";
@@ -348,10 +349,11 @@ export default class AgentSandboxPlugin extends Plugin {
 			await this.activateTerminalView();
 			return;
 		}
-		const confirmed = await this.promptConfirm(
-			"Start Container?",
-			"The container is not running. Start it now?",
-		);
+		const confirmed = await confirmModal(this.app, {
+			title: "Start Container?",
+			message: "The container is not running. Start it now?",
+			ctaLabel: "Start",
+		});
 		if (!confirmed) return;
 		logger.info("Plugin", "Auto-starting container from terminal prompt");
 		await this.startContainer();
@@ -361,30 +363,6 @@ export default class AgentSandboxPlugin extends Plugin {
 		} else {
 			logger.warn("Plugin", "Container not running after startContainer — skipping terminal");
 		}
-	}
-
-	private promptConfirm(title: string, message: string): Promise<boolean> {
-		return new Promise((resolve) => {
-			const modal = new Modal(this.app);
-			modal.titleEl.setText(title);
-			modal.contentEl.createEl("p", { text: message });
-			modal.contentEl.createDiv({ cls: "modal-button-container" }, (div) => {
-				div.createEl("button", { text: "Cancel", cls: "mod-muted" }, (btn) => {
-					btn.addEventListener("click", () => {
-						modal.close();
-						resolve(false);
-					});
-				});
-				div.createEl("button", { text: "Start", cls: "mod-cta" }, (btn) => {
-					btn.addEventListener("click", () => {
-						modal.close();
-						resolve(true);
-					});
-				});
-			});
-			modal.onClose = () => resolve(false);
-			modal.open();
-		});
 	}
 
 	async activateTerminalView(
@@ -576,14 +554,8 @@ export default class AgentSandboxPlugin extends Plugin {
 	private async startMcpServer(): Promise<void> {
 		if (this.mcpServer?.isRunning()) return;
 		try {
-			const allowlist = this.settings.mcpPathAllowlist
-				.split(",")
-				.map((s) => s.trim())
-				.filter(Boolean);
-			const blocklist = this.settings.mcpPathBlocklist
-				.split(",")
-				.map((s) => s.trim())
-				.filter(Boolean);
+			const allowlist = splitCsv(this.settings.mcpPathAllowlist);
+			const blocklist = splitCsv(this.settings.mcpPathBlocklist);
 			this.mcpServer = new ObsidianMcpServer(this.app, {
 				port: this.settings.mcpPort,
 				token: this.settings.mcpToken,

@@ -4,6 +4,14 @@ import { posix as posixPath } from "path";
 import { realpathSync } from "fs";
 import { resolve as resolveNative, sep as nativeSep } from "path";
 
+/** Split a comma-separated value into trimmed, non-empty entries. */
+export function splitCsv(value: string): string[] {
+	return value
+		.split(",")
+		.map((s) => s.trim())
+		.filter(Boolean);
+}
+
 export function isValidWriteDir(dir: string): boolean {
 	if (!dir.trim()) return false;
 	return !dir.includes("..") && !dir.startsWith("/") && dir !== ".";

@@ -258,6 +258,17 @@ interface TaskEntry {
 	tags: string[];
 }
 
+const PRIORITY_EMOJI: Record<NonNullable<TaskEntry["priority"]>, string> = {
+	highest: "🔺",
+	high: "⏫",
+	medium: "🔼",
+	low: "🔽",
+	lowest: "⏬",
+};
+const DATE_EMOJI = ["📅", "⏳", "🛫", "📆"] as const;
+const PRIORITY_STRIP_RE = new RegExp(Object.values(PRIORITY_EMOJI).join("|"), "gu");
+const DATE_STRIP_RE = new RegExp(`(?:${DATE_EMOJI.join("|")})\\s*\\d{4}-\\d{2}-\\d{2}`, "gu");
+
 function parseTaskLine(rawLine: string): Omit<TaskEntry, "path" | "line"> | null {
 	const m = /^\s*-\s*\[( |x|X)\]\s+(.*)$/.exec(rawLine);
 	if (!m) return null;
@@ -268,19 +279,19 @@ function parseTaskLine(rawLine: string): Omit<TaskEntry, "path" | "line"> | null
 	const scheduled = /(?:⏳|@scheduled\()\s*(\d{4}-\d{2}-\d{2})\)?/.exec(body)?.[1];
 	const start = /(?:🛫|@start\()\s*(\d{4}-\d{2}-\d{2})\)?/.exec(body)?.[1];
 	let priority: TaskEntry["priority"];
-	if (body.includes("🔺")) priority = "highest";
-	else if (body.includes("⏫")) priority = "high";
-	else if (body.includes("🔼")) priority = "medium";
-	else if (body.includes("🔽")) priority = "low";
-	else if (body.includes("⏬")) priority = "lowest";
+	for (const [name, emoji] of Object.entries(PRIORITY_EMOJI) as [
+		NonNullable<TaskEntry["priority"]>,
+		string,
+	][]) {
+		if (body.includes(emoji)) {
+			priority = name;
+			break;
+		}
+	}
 
 	const tags = [...body.matchAll(/#([\w/-]+)/g)].map((t) => `#${t[1]}`);
 
-	// Strip trailing tokens from display text
-	const text = body
-		.replace(/(?:📅|⏳|🛫|📆)\s*\d{4}-\d{2}-\d{2}/g, "")
-		.replace(/\u{1F53A}|\u{23EB}|\u{1F53C}|\u{1F53D}|\u{23EC}/gu, "")
-		.trim();
+	const text = body.replace(DATE_STRIP_RE, "").replace(PRIORITY_STRIP_RE, "").trim();
 
 	return { rawLine, status, text, due, scheduled, start, priority, tags };
 }
@@ -582,8 +593,8 @@ export function registerPeriodicNotesTools(app: App, push: ToolPusher, gate: Wri
 
 				if (templater?.templater?.create_new_note_from_template && tmplFile) {
 					const folderParts = path.split("/");
-					const filename = folderParts.pop()!.replace(/\.md$/, "");
-					const folder = folderParts.join("/") || "/";
+					const noteName = folderParts.pop()!.replace(/\.md$/, "");
+					const noteFolder = folderParts.join("/") || "/";
 					return gateVaultWrite({
 						destPath: path,
 						operation: "create",
@@ -594,8 +605,8 @@ export function registerPeriodicNotesTools(app: App, push: ToolPusher, gate: Wri
 						apply: async () => {
 							await templater.templater!.create_new_note_from_template!(
 								tmplFile,
-								folder,
-								filename,
+								noteFolder,
+								noteName,
 								false,
 							);
 						},
