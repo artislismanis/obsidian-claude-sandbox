@@ -110,6 +110,8 @@ describe.skipIf(SKIP)("MCP HTTP server (standalone, no Obsidian)", () => {
 			token: MCP_TOKEN,
 			enabledTiers: new Set(["read", "writeScoped"]),
 			getWriteDir: () => "agent-workspace",
+			toolTimeoutMs: 10_000,
+			reviewTimeoutMs: 180_000,
 		});
 
 		await server.start();
@@ -215,6 +217,8 @@ describe.skipIf(SKIP)("MCP tools/list and tier enforcement", () => {
 				token: MCP_TOKEN,
 				enabledTiers: new Set(tiers),
 				getWriteDir: () => "agent-workspace",
+				toolTimeoutMs: 10_000,
+				reviewTimeoutMs: 180_000,
 			});
 			await s.start();
 			stops.push(() => s.stop());
@@ -309,6 +313,8 @@ describe.skipIf(SKIP)("MCP tool invocation (HTTP end-to-end)", () => {
 			token: MCP_TOKEN,
 			enabledTiers: new Set(["read", "writeScoped"]),
 			getWriteDir: () => "agent-workspace",
+			toolTimeoutMs: 10_000,
+			reviewTimeoutMs: 180_000,
 		});
 		await server.start();
 		stopServer = () => server.stop();

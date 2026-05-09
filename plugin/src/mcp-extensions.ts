@@ -9,7 +9,7 @@
  */
 
 import type { App, TFile } from "obsidian";
-import { TFile as TFileClass } from "obsidian";
+import { TFile as TFileClass, moment } from "obsidian";
 import { z } from "zod/v4";
 import type { McpToolDef, PermissionTier, ReviewFn } from "./mcp-tools";
 import { defineTool, text, error, gateVaultWrite, forEachMarkdownChunked } from "./mcp-tools";
@@ -582,8 +582,7 @@ export function registerPeriodicNotesTools(app: App, push: ToolPusher, gate: Wri
 				const date = dateArg ? new Date(dateArg + "T00:00:00") : new Date();
 				if (isNaN(date.getTime())) return error(`Invalid date: ${dateArg}`);
 
-				const filename = formatDateByPattern(
-					date,
+				const filename = moment(date).format(
 					periodicSettings.format || defaultFormat(periodicity),
 				);
 				const folder = (periodicSettings.folder || "").replace(/^\/+|\/+$/g, "");
@@ -642,10 +641,6 @@ export function registerPeriodicNotesTools(app: App, push: ToolPusher, gate: Wri
 	);
 }
 
-function pad(n: number): string {
-	return n.toString().padStart(2, "0");
-}
-
 function defaultFormat(p: Periodicity): string {
 	switch (p) {
 		case "daily":
@@ -659,53 +654,6 @@ function defaultFormat(p: Periodicity): string {
 		case "yearly":
 			return "YYYY";
 	}
-}
-
-/** Minimal moment.js-like date formatter — supports the tokens Periodic Notes uses. */
-function formatDateByPattern(date: Date, pattern: string): string {
-	const y = date.getFullYear();
-	const m = date.getMonth() + 1;
-	const d = date.getDate();
-	const w = getIsoWeek(date);
-	const isoY = getIsoWeekYear(date);
-	const q = Math.floor((m - 1) / 3) + 1;
-	return pattern.replace(/\[([^\]]+)\]|GGGG|YYYY|gggg|MM|DD|WW|ww|Q/g, (match, literal) => {
-		if (literal) return literal;
-		switch (match) {
-			case "YYYY":
-				return String(y);
-			case "GGGG":
-			case "gggg":
-				return String(isoY);
-			case "MM":
-				return pad(m);
-			case "DD":
-				return pad(d);
-			case "WW":
-			case "ww":
-				return pad(w);
-			case "Q":
-				return String(q);
-			default:
-				return match;
-		}
-	});
-}
-
-function getIsoWeek(date: Date): number {
-	const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-	const dayNr = (target.getUTCDay() + 6) % 7;
-	target.setUTCDate(target.getUTCDate() - dayNr + 3);
-	const firstThursday = new Date(Date.UTC(target.getUTCFullYear(), 0, 4));
-	const diff = (target.getTime() - firstThursday.getTime()) / 86400000;
-	return 1 + Math.round((diff - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
-}
-
-function getIsoWeekYear(date: Date): number {
-	const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-	const dayNr = (target.getUTCDay() + 6) % 7;
-	target.setUTCDate(target.getUTCDate() - dayNr + 3);
-	return target.getUTCFullYear();
 }
 
 // ── Discovery / introspection ───────────────────────

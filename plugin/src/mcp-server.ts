@@ -43,8 +43,8 @@ export interface McpServerConfig {
 	getWriteDir: () => string;
 	pathFilter?: PathFilter;
 	hooks?: McpServerHooks;
-	toolTimeoutMs?: number;
-	reviewTimeoutMs?: number;
+	toolTimeoutMs: number;
+	reviewTimeoutMs: number;
 }
 
 const SESSION_TIMEOUT_MS = 10 * 60_000;
@@ -54,8 +54,6 @@ const RATE_WINDOW_MS = 60_000;
 const RATE_LIMIT_READ = 60;
 const RATE_LIMIT_WRITE = 20;
 const AUDIT_MAX_ENTRIES = 200;
-const TOOL_TIMEOUT_MS = 10_000;
-const REVIEW_TIMEOUT_MS = 180_000;
 
 // ── Rate limiter ─────────────────────────────────────
 
@@ -482,9 +480,7 @@ export class ObsidianMcpServer {
 		const mayTriggerReview =
 			tool.tier === "writeReviewed" ||
 			(tool.tier === "manage" && this.config.enabledTiers.has("writeReviewed"));
-		return mayTriggerReview
-			? (this.config.reviewTimeoutMs ?? REVIEW_TIMEOUT_MS)
-			: (this.config.toolTimeoutMs ?? TOOL_TIMEOUT_MS);
+		return mayTriggerReview ? this.config.reviewTimeoutMs : this.config.toolTimeoutMs;
 	}
 
 	/** Run a tool's handler under timeout + response-truncation. Returns the

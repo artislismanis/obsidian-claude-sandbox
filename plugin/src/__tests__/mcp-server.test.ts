@@ -123,6 +123,8 @@ describe("ObsidianMcpServer", () => {
 			token: TEST_TOKEN,
 			enabledTiers: new Set(["read", "writeScoped"]),
 			getWriteDir: () => "agent-workspace",
+			toolTimeoutMs: 10_000,
+			reviewTimeoutMs: 180_000,
 		});
 		await server.start();
 	});
@@ -330,6 +332,8 @@ describe("ObsidianMcpServer", () => {
 				token: "temp",
 				enabledTiers: new Set(["read"]),
 				getWriteDir: () => "agent-workspace",
+				toolTimeoutMs: 10_000,
+				reviewTimeoutMs: 180_000,
 			});
 			await tempServer.start();
 			expect(tempServer.isRunning()).toBe(true);

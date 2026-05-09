@@ -1,13 +1,17 @@
 import { describe, it, expect, vi } from "vitest";
 import type { TFile } from "obsidian";
 
-vi.mock("obsidian", () => {
+vi.mock("obsidian", async () => {
 	class TFile {}
+	const momentModule = (await import("moment")) as unknown as {
+		default: (input?: Date | string | number) => { format: (fmt: string) => string };
+	};
 	return {
 		prepareSimpleSearch: vi.fn(() => () => null),
 		prepareFuzzySearch: vi.fn(() => () => null),
 		FileSystemAdapter: class {},
 		TFile,
+		moment: momentModule.default,
 	};
 });
 
