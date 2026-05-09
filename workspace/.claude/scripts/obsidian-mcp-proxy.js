@@ -78,22 +78,32 @@ function httpPost(message) {
 				let buf = "";
 				const messages = [];
 
+				// SSE events are terminated by a blank line ("\n\n"). An event
+				// can have multiple `data:` lines that must be concatenated with
+				// "\n" into a single payload before parsing.
+				const flushEvent = (event) => {
+					const dataLines = event
+						.split("\n")
+						.filter((l) => l.startsWith("data:"))
+						.map((l) => (l.startsWith("data: ") ? l.slice(6) : l.slice(5)));
+					if (dataLines.length === 0) return;
+					const text = dataLines.join("\n").trim();
+					if (text) try { messages.push(JSON.parse(text)); } catch {}
+				};
+
 				res.on("data", (chunk) => {
 					buf += chunk.toString();
 					if (!ct.includes("text/event-stream")) return;
-					const lines = buf.split("\n");
-					buf = lines.pop();
-					for (const line of lines) {
-						if (!line.startsWith("data: ")) continue;
-						const text = line.slice(6).trim();
-						if (text) try { messages.push(JSON.parse(text)); } catch {}
+					let sep;
+					while ((sep = buf.indexOf("\n\n")) !== -1) {
+						flushEvent(buf.slice(0, sep));
+						buf = buf.slice(sep + 2);
 					}
 				});
 
 				res.on("end", () => {
 					if (ct.includes("text/event-stream")) {
-						const text = buf.startsWith("data: ") ? buf.slice(6).trim() : "";
-						if (text) try { messages.push(JSON.parse(text)); } catch {}
+						if (buf) flushEvent(buf);
 						resolve(messages);
 					} else {
 						try { resolve([JSON.parse(buf)]); } catch { resolve([]); }
