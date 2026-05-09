@@ -48,7 +48,7 @@ function getInstalledPlugin<T>(app: App, pluginId: string): T | null {
 		"Extensions",
 		`${pluginId}: ${plugin ? "found" : "not found via getPlugin/plugins"}`,
 	);
-	return (plugin as T | null) ?? null;
+	return plugin as T | null;
 }
 
 function resolveCanvasFile(app: App, path: string): TFile | null {
