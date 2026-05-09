@@ -16,19 +16,34 @@ Pre-commit hooks run `lint-staged` (eslint --fix + prettier) on staged files aut
 
 ## Architecture
 
-Hub-and-spoke pattern. `main.ts` orchestrates leaf modules, plus a shared utility:
+Hub-and-spoke. `main.ts` orchestrates leaf modules; a few small shared utilities cross-cut.
 
 ```
 main.ts (Plugin entry, commands, lifecycle, context menu, firewall toggle)
-├── settings.ts        — Settings interface + tabbed UI (General/Terminal/Advanced)
-├── docker.ts          — DockerManager: WSL → docker compose commands + firewall
-├── status-bar.ts      — StatusBarManager + FirewallStatusBar: state display
-├── terminal-view.ts   — TerminalView: xterm.js + WebSocket to ttyd
-├── ttyd-client.ts     — Pure functions: polling, auth token, URL building
-└── validation.ts      — Shared input validators (used by settings.ts and docker.ts)
+├── settings.ts          — Settings interface + tabbed UI (General/Terminal/Advanced/MCP)
+├── docker.ts            — DockerManager: WSL → docker compose commands + firewall
+├── status-bar.ts        — StatusBarManager + FirewallStatusBar: state + composed tooltip
+├── terminal-view.ts     — TerminalView: xterm.js + WebSocket to ttyd
+├── ttyd-client.ts       — Pure functions: polling, auth token, URL building
+├── analyze.ts           — AnalyzeManager: prompt-template runner for "Analyze in Sandbox"
+├── session-ui.ts        — Session picker / cleanup modals
+├── modals.ts            — confirmModal / inputModal helpers (reused across modules)
+├── activity.ts          — ActivityUi (per-session prefix routing) + AgentOutputNotifier
+├── diff-review-modal.ts — DiffReviewModal + BatchReviewModal for reviewed writes
+├── mcp-server.ts        — ObsidianMcpServer: HTTP+SSE transport, auth, audit log
+├── mcp-tools.ts         — buildTools(): all read/write/manage MCP tools
+├── mcp-extensions.ts    — Extensions tier: Dataview / Templater / Tasks / Canvas / Periodic Notes
+├── mcp-cache.ts         — VaultCache: graph + tag/property counts, invalidated on metadata `resolved`
+├── permission-tiers.ts  — Tier metadata + reviewsRequired() / vaultWriteTiers() derivations
+├── prompt-template.ts   — Tiny template-string interpolator used by analyze.ts
+├── templater-adapter.ts — Templater plugin probe + folder-template resolution
+├── obsidian-internals.ts — Centralised casts for unstable Obsidian internals
+├── view-types.ts        — VIEW_TYPE_TERMINAL constant (shared between activity.ts and terminal-view.ts to avoid a cycle)
+├── validation.ts        — Shared input validators (used by settings.ts, docker.ts, mcp-*.ts)
+└── logger.ts            — Levelled logger + errMsg() helper
 ```
 
-No leaf module imports from another leaf — only `main.ts` wires them together. `validation.ts` is a shared utility (pure functions, no deps) that both `settings.ts` and `docker.ts` import. Exception: `settings.ts` imports the plugin type from `main.ts` for the settings tab constructor.
+`main.ts` wires the leaves together. Most leaves are independent, but a few have intentional in-tree dependencies — e.g. `mcp-tools.ts` re-exports `gateVaultWrite` to `mcp-extensions.ts`, `activity.ts` uses `view-types.ts` to talk about terminal leaves without importing `terminal-view.ts`, and several MCP modules share `obsidian-internals.ts`. `validation.ts` and `logger.ts` are leaf-of-leaves, used everywhere.
 
 ## Key patterns
 
@@ -52,13 +67,22 @@ Three automated layers — see `docs/testing.md` for full setup, prerequisites, 
 | Integration (`test/integration/`) | `npm run test:integration` | ~30s | Docker + built `oas-sandbox:latest` |
 | E2E (`test/e2e/specs/`) | `npm run test:e2e` / `test:e2e:headless` | ~25s | Obsidian (auto-downloaded); display or xvfb |
 
-Vitest unit test files (`npm run test`):
-- `docker.test.ts` — `parseIsRunning()` static method, compose path validation
-- `docker-command.test.ts` — `buildWslCommand()` escaping/validation, `buildLocalCommand()` double-quote escaping, `windowsToWslPath()` conversion, env var injection
-- `status-bar.test.ts` — `StatusBarManager` state transitions and tooltips, `FirewallStatusBar` states/clicks/destroy
-- `ttyd-client.test.ts` — Polling, URL construction (mocks `requestUrl`)
-- `validation.test.ts` — All input validators (writeDir, privateHosts, memory, cpus, bindAddress) with octet/CIDR range checks, edge cases, DockerManager integration, busy guard
-- `mcp-auth.test.ts`, `mcp-path-traversal.test.ts`, `mcp-tools.test.ts` — MCP auth, path-safety, tool handlers
+Vitest unit test files (`npm run test`) live in `src/__tests__/`:
+- `docker.test.ts` / `docker-command.test.ts` — DockerManager status parsing + WSL/local command building, escaping, env-var injection
+- `status-bar.test.ts` — StatusBarManager state transitions, tooltip composition, FirewallStatusBar
+- `ttyd-client.test.ts` — Polling and URL construction (mocks `requestUrl`)
+- `validation.test.ts` — All input validators
+- `settings-tiers.test.ts` — Tier-toggle wiring through settings into the MCP server config
+- `mcp-server.test.ts` — Transport/auth/rate-limit/timeout integration; `mcp-symlink.test.ts` — symlink-traversal guard
+- `mcp-tools.test.ts` / `mcp-tool-handlers.test.ts` — Tool registration + per-handler behaviour
+- `mcp-review.test.ts` / `mcp-batch-review.test.ts` — Review-gating for writeReviewed and batch flows
+- `mcp-activity.test.ts` — `agent_status_set` and onActivity routing
+- `mcp-extensions.test.ts` — Dataview / Templater / Tasks / Canvas / Periodic Notes tools
+- `mcp-cache.test.ts` — VaultCache invalidation on `resolved`
+- `activity.test.ts` — ActivityUi attention propagation; AgentOutputNotifier debounce
+- `analyze.test.ts` / `prompt-templates.test.ts` — AnalyzeManager + the template interpolator
+- `diff-review-modal.test.ts` — Diff modal approval/rejection flow
+- `fixtures.ts` — Shared mock app / TFile builders (no tests of its own)
 
 Integration tests share one `oas-test-sandbox` container via `globalSetup.ts`. The container is isolated from your live `oas-sandbox` via the `oas-test` compose project prefix. Claude-Code subsuite seeds auth from the live `oas_oas-claude-config` volume when present (see `docs/testing.md` for setup), otherwise skips.
 
