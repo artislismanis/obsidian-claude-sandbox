@@ -17,6 +17,34 @@ export function isValidWriteDir(dir: string): boolean {
 	return !dir.includes("..") && !dir.startsWith("/") && dir !== ".";
 }
 
+/**
+ * Validate a memory-file name: bare filename only (no slashes, no path
+ * traversal, no leading dot to avoid hidden files). Empty rejected.
+ */
+export function isValidMemoryFileName(name: string): boolean {
+	const t = name.trim();
+	if (!t) return false;
+	if (t.includes("/") || t.includes("\\") || t.includes("..")) return false;
+	if (t.startsWith(".")) return false;
+	return /^[A-Za-z0-9_.-]+$/.test(t);
+}
+
+/**
+ * Validate a comma-separated list of vault-relative path prefixes used in
+ * MCP allow/block lists. Each entry: non-empty, no `..`, no leading slash,
+ * no backslashes. Empty list = valid (no restriction).
+ */
+export function isValidPathPrefixList(value: string): boolean {
+	if (!value.trim()) return true;
+	return splitCsv(value).every(
+		(entry) =>
+			entry.length > 0 &&
+			!entry.includes("..") &&
+			!entry.includes("\\") &&
+			!entry.startsWith("/"),
+	);
+}
+
 export function isPathWithinDir(filePath: string, dir: string): boolean {
 	const normalized = posixPath.normalize(filePath).replace(/^\//, "");
 	const normalizedDir = posixPath.normalize(dir).replace(/^\//, "");

@@ -5,6 +5,8 @@ import {
 	isValidMemory,
 	isValidCpus,
 	isValidBindAddress,
+	isValidMemoryFileName,
+	isValidPathPrefixList,
 	isPathAllowed,
 } from "../validation";
 import { DockerManager } from "../docker";
@@ -156,4 +158,28 @@ describe("isPathAllowed", () => {
 	it("rejects path-prefix attacks", () => {
 		expect(isPathAllowed("notes-evil/file.md", ["notes/"], [])).toBe(false);
 	});
+});
+
+describe("isValidMemoryFileName", () => {
+	it("rejects empty", () => expect(isValidMemoryFileName("")).toBe(false));
+	it("rejects whitespace-only", () => expect(isValidMemoryFileName("   ")).toBe(false));
+	it("rejects '..'", () => expect(isValidMemoryFileName("..")).toBe(false));
+	it("rejects path traversal", () => expect(isValidMemoryFileName("../etc/passwd")).toBe(false));
+	it("rejects forward slashes", () => expect(isValidMemoryFileName("a/b.json")).toBe(false));
+	it("rejects backslashes", () => expect(isValidMemoryFileName("a\\b.json")).toBe(false));
+	it("rejects hidden files", () => expect(isValidMemoryFileName(".secret")).toBe(false));
+	it("accepts memory.json", () => expect(isValidMemoryFileName("memory.json")).toBe(true));
+	it("accepts custom-name.json", () =>
+		expect(isValidMemoryFileName("custom-name.json")).toBe(true));
+});
+
+describe("isValidPathPrefixList", () => {
+	it("accepts empty", () => expect(isValidPathPrefixList("")).toBe(true));
+	it("accepts a single prefix", () => expect(isValidPathPrefixList("notes/")).toBe(true));
+	it("accepts comma-separated", () =>
+		expect(isValidPathPrefixList("notes/, projects/")).toBe(true));
+	it("rejects '..' anywhere", () =>
+		expect(isValidPathPrefixList("notes/, ../escape")).toBe(false));
+	it("rejects leading slash", () => expect(isValidPathPrefixList("/abs")).toBe(false));
+	it("rejects backslashes", () => expect(isValidPathPrefixList("a\\b")).toBe(false));
 });

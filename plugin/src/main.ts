@@ -311,6 +311,9 @@ export default class AgentSandboxPlugin extends Plugin {
 		this.stopHealthPoll();
 		this.agentOutput?.dispose();
 		void this.mcpServer?.stop();
+		// Cancel any pending debounced save so the explicit one below isn't
+		// overwritten by a stale trailing call.
+		this.debouncedSaveSettings.cancel?.();
 		void this.saveData(this.settings);
 		this.app.workspace.detachLeavesOfType(VIEW_TYPE_TERMINAL);
 		this.firewallBar.destroy();
@@ -542,6 +545,15 @@ export default class AgentSandboxPlugin extends Plugin {
 		if (!this.mcpServer?.isRunning()) return;
 		await this.stopMcpServer();
 		await this.startMcpServer();
+	}
+
+	/** Apply a new mcpEnabled value to the running server (start or stop). */
+	async applyMcpEnabled(enabled: boolean): Promise<void> {
+		if (enabled && !this.mcpServer?.isRunning()) {
+			await this.startMcpServer();
+		} else if (!enabled && this.mcpServer?.isRunning()) {
+			await this.stopMcpServer();
+		}
 	}
 
 	private async startMcpServer(): Promise<void> {
