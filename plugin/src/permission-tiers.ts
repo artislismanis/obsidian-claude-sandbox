@@ -49,3 +49,8 @@ export function vaultWriteTiers(mode: VaultWriteMode): PermissionTier[] {
 	if (mode === "full") return ["writeVault"];
 	return [];
 }
+
+/** Single source of truth for "should reviews fire?" derived from VaultWriteMode. */
+export function reviewsRequired(mode: VaultWriteMode): boolean {
+	return mode === "reviewed";
+}

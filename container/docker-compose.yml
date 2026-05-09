@@ -56,7 +56,10 @@ services:
     stdin_open: true
     tty: true
     healthcheck:
-      test: ["CMD", "bash", "-c", "curl -so /dev/null -w '%{http_code}' http://localhost:7681/ | grep -q '200'"]
+      # $$TTYD_PORT is escaped so compose passes a literal $TTYD_PORT into the
+      # healthcheck shell, where it expands against the container's env
+      # (set by the TTYD_PORT key above) instead of the host shell.
+      test: ["CMD", "bash", "-c", "curl -so /dev/null -w '%{http_code}' http://localhost:$$TTYD_PORT/ | grep -q '200'"]
       interval: 30s
       timeout: 3s
       retries: 3

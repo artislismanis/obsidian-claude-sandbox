@@ -21,6 +21,7 @@ import {
 import { isValidWriteDir, splitCsv } from "./validation";
 import { setLogLevel, logger, errMsg } from "./logger";
 import { ObsidianMcpServer, generateToken } from "./mcp-server";
+import { reviewsRequired } from "./permission-tiers";
 import { ActivityUi, AgentOutputNotifier } from "./activity";
 import { showSessionCleanup, showSessionPicker } from "./session-ui";
 
@@ -558,14 +559,12 @@ export default class AgentSandboxPlugin extends Plugin {
 						? { allowlist, blocklist }
 						: undefined,
 				hooks: {
-					review:
-						this.settings.mcpVaultWrites === "reviewed"
-							? async (req) => new DiffReviewModal(this.app, req).review()
-							: undefined,
-					reviewBatch:
-						this.settings.mcpVaultWrites === "reviewed"
-							? async (req) => new BatchReviewModal(this.app, req).review()
-							: undefined,
+					review: reviewsRequired(this.settings.mcpVaultWrites)
+						? async (req) => new DiffReviewModal(this.app, req).review()
+						: undefined,
+					reviewBatch: reviewsRequired(this.settings.mcpVaultWrites)
+						? async (req) => new BatchReviewModal(this.app, req).review()
+						: undefined,
 					onActivity: (update) => this.activityUi.route(update),
 				},
 				toolTimeoutMs: this.settings.mcpToolTimeout * 1000,

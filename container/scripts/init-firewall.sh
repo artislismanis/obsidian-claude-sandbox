@@ -78,12 +78,17 @@ mkdir -p "$(dirname "$SOURCES_FILE")"
 declare -A SEEN
 declare -a ALLOWED_DOMAINS=()
 
+_trim() {
+  local s="$1"
+  s="${s#"${s%%[![:space:]]*}"}"
+  s="${s%"${s##*[![:space:]]}"}"
+  printf '%s' "$s"
+}
+
 add_entry() {
   local tag="$1"
-  local entry="$2"
-  # Trim whitespace
-  entry="${entry#"${entry%%[![:space:]]*}"}"
-  entry="${entry%"${entry##*[![:space:]]}"}"
+  local entry
+  entry="$(_trim "$2")"
   [ -z "$entry" ] && return
   # Skip duplicates but record the additional source tag
   if [ -n "${SEEN[$entry]:-}" ]; then
@@ -208,9 +213,7 @@ fi
 if [ -n "${ALLOWED_PRIVATE_HOSTS:-}" ]; then
   IFS=',' read -ra HOSTS <<< "$ALLOWED_PRIVATE_HOSTS"
   for host in "${HOSTS[@]}"; do
-    # Trim whitespace using bash parameter expansion (safer than xargs)
-    host="${host#"${host%%[![:space:]]*}"}"
-    host="${host%"${host##*[![:space:]]}"}"
+    host="$(_trim "$host")"
     [ -n "$host" ] && iptables -A OUTPUT -d "$host" -j ACCEPT
   done
 fi

@@ -44,10 +44,6 @@ const CLOSE_CODE_NAMES: Record<number, string> = {
 	1015: "tls-handshake",
 };
 
-function closeCodeName(code: number): string {
-	return CLOSE_CODE_NAMES[code] ?? `code-${code}`;
-}
-
 export interface TerminalConnectionEvent {
 	at: number;
 	instanceId: number;
@@ -588,7 +584,7 @@ export class TerminalView extends ItemView {
 			const opened = this.wsOpenedAt > 0;
 			const sessionMs = opened ? now - this.wsOpenedAt : now - this.wsConnectStartedAt;
 			const idleMs = this.wsLastRxAt > 0 ? now - this.wsLastRxAt : -1;
-			const codeName = closeCodeName(event.code);
+			const codeName = CLOSE_CODE_NAMES[event.code] ?? `code-${event.code}`;
 			const detail =
 				`code=${event.code} (${codeName}) reason="${event.reason || ""}" wasClean=${event.wasClean} ` +
 				`opened=${opened} sessionMs=${sessionMs} idleMsBeforeClose=${idleMs} ` +

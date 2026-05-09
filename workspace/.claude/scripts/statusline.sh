@@ -2,12 +2,20 @@
 # Status line for Claude Code
 input=$(cat)
 
-model=$(echo "$input" | jq -r '.model.display_name // empty')
-used=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
-total_in=$(echo "$input" | jq -r '.context_window.total_input_tokens // empty')
-total_out=$(echo "$input" | jq -r '.context_window.total_output_tokens // empty')
-five_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
-five_resets=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
+# Extract every field in one jq invocation so we don't fork the process
+# six times per status-line redraw.
+IFS='	' read -r model used total_in total_out five_pct five_resets <<EOF
+$(echo "$input" | jq -r '
+  [
+    .model.display_name // "",
+    (.context_window.used_percentage // ""|tostring),
+    (.context_window.total_input_tokens // ""|tostring),
+    (.context_window.total_output_tokens // ""|tostring),
+    (.rate_limits.five_hour.used_percentage // ""|tostring),
+    (.rate_limits.five_hour.resets_at // ""|tostring)
+  ] | @tsv
+')
+EOF
 
 # Model name in yellow
 [ -n "$model" ] && printf '\033[00;33m[%s]\033[00m' "$model"
