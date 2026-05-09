@@ -425,11 +425,16 @@ export default class AgentSandboxPlugin extends Plugin {
 
 	// ── Container actions ──────────────────────────────────
 
-	private async startContainer(): Promise<void> {
+	private guardBusy(): boolean {
 		if (this.docker.isBusy()) {
 			new Notice("Another container operation is in progress.");
-			return;
+			return true;
 		}
+		return false;
+	}
+
+	private async startContainer(): Promise<void> {
+		if (this.guardBusy()) return;
 		let conflicts = await this.checkStartupPortConflicts();
 		if (conflicts.length > 0) {
 			// A previous `docker compose down` started by plugin disable may still
@@ -493,10 +498,7 @@ export default class AgentSandboxPlugin extends Plugin {
 	}
 
 	private async stopContainer(): Promise<void> {
-		if (this.docker.isBusy()) {
-			new Notice("Another container operation is in progress.");
-			return;
-		}
+		if (this.guardBusy()) return;
 		await this.runDockerCommand({
 			action: () => this.docker.stop(),
 			postState: "stopped",
@@ -510,10 +512,7 @@ export default class AgentSandboxPlugin extends Plugin {
 	}
 
 	async restartContainer(): Promise<void> {
-		if (this.docker.isBusy()) {
-			new Notice("Another container operation is in progress.");
-			return;
-		}
+		if (this.guardBusy()) return;
 		const ok = await this.runDockerCommand({
 			preState: "starting",
 			action: () => this.docker.restart(),
@@ -552,10 +551,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			new Notice("Container is not running. Start it first.");
 			return;
 		}
-		if (this.docker.isBusy()) {
-			new Notice("Another container operation is in progress.");
-			return;
-		}
+		if (this.guardBusy()) return;
 		try {
 			if (this.firewallBar.getState() === "enabled") {
 				await this.docker.disableFirewall();
