@@ -365,40 +365,38 @@ export class TerminalView extends ItemView {
 			.filter(Boolean)
 			.join(", ");
 
-		if (mode === "dark") {
-			return {
-				fontFamily,
-				theme: {
-					background: "#1e1e1e",
-					foreground: "#d4d4d4",
-					cursor: "#f0f0f0",
-					selectionBackground: "#264f78",
-				},
-			};
-		}
+		const cssVar = (name: string, fallback: string) =>
+			styles.getPropertyValue(name).trim() || fallback;
 
-		if (mode === "light") {
-			return {
-				fontFamily,
-				theme: {
-					background: "#ffffff",
-					foreground: "#383a42",
-					cursor: "#526eff",
-					selectionBackground: "#add6ff",
-				},
-			};
-		}
-
-		return {
-			fontFamily,
-			theme: {
-				background: styles.getPropertyValue("--background-primary").trim() || "#1e1e1e",
-				foreground: styles.getPropertyValue("--text-normal").trim() || "#d4d4d4",
-				cursor: styles.getPropertyValue("--text-accent").trim() || "#f0f0f0",
-				selectionBackground:
-					styles.getPropertyValue("--text-selection").trim() || "#264f78",
-			},
+		type ThemeColors = {
+			background: string;
+			foreground: string;
+			cursor: string;
+			selectionBackground: string;
 		};
+
+		const THEMES: Record<TerminalThemeMode, () => ThemeColors> = {
+			dark: () => ({
+				background: "#1e1e1e",
+				foreground: "#d4d4d4",
+				cursor: "#f0f0f0",
+				selectionBackground: "#264f78",
+			}),
+			light: () => ({
+				background: "#ffffff",
+				foreground: "#383a42",
+				cursor: "#526eff",
+				selectionBackground: "#add6ff",
+			}),
+			obsidian: () => ({
+				background: cssVar("--background-primary", "#1e1e1e"),
+				foreground: cssVar("--text-normal", "#d4d4d4"),
+				cursor: cssVar("--text-accent", "#f0f0f0"),
+				selectionBackground: cssVar("--text-selection", "#264f78"),
+			}),
+		};
+
+		return { fontFamily, theme: THEMES[mode]() };
 	}
 
 	private async initTerminal(container: HTMLElement, gen: number): Promise<void> {

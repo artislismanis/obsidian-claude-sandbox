@@ -194,6 +194,30 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 			});
 	}
 
+	/** Add a plain text Setting that saves on every change with no validation. */
+	private addPlainTextSetting(
+		el: HTMLElement,
+		opts: {
+			name: string;
+			desc: string;
+			key: keyof AgentSandboxSettings;
+			placeholder?: string;
+			requiresRestart?: boolean;
+		},
+	): void {
+		new Setting(el)
+			.setName(opts.name)
+			.setDesc(opts.desc)
+			.addText((text) => {
+				if (opts.placeholder) text.setPlaceholder(opts.placeholder);
+				text.setValue(String(this.plugin.settings[opts.key])).onChange(async (value) => {
+					(this.plugin.settings[opts.key] as string) = value;
+					this.plugin.saveSettings();
+					if (opts.requiresRestart) this.markRestart();
+				});
+			});
+	}
+
 	/**
 	 * Add a text Setting whose input is validated by a string validator. Invalid
 	 * input shows the error class and is dropped (not saved).
@@ -332,52 +356,34 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 		);
 
 		if (isWsl) {
-			new Setting(el)
-				.setName("WSL distribution")
-				.setDesc("The WSL distribution used for running Docker commands. Requires restart.")
-				.addText((text) =>
-					text.setValue(this.plugin.settings.wslDistroName).onChange(async (value) => {
-						this.plugin.settings.wslDistroName = value;
-						this.plugin.saveSettings();
-						this.markRestart();
-					}),
-				);
+			this.addPlainTextSetting(el, {
+				name: "WSL distribution",
+				desc: "The WSL distribution used for running Docker commands. Requires restart.",
+				key: "wslDistroName",
+				requiresRestart: true,
+			});
 		}
 
-		new Setting(el)
-			.setName("Vault write directory")
-			.setDesc(
+		this.addPlainTextSetting(el, {
+			name: "Vault write directory",
+			desc:
 				"Folder inside the vault where the container can write. " +
-					"The rest of the vault is mounted read-only. Created automatically on start. " +
-					"Requires restart.",
-			)
-			.addText((text) =>
-				text
-					.setPlaceholder("agent-workspace")
-					.setValue(this.plugin.settings.vaultWriteDir)
-					.onChange(async (value) => {
-						this.plugin.settings.vaultWriteDir = value;
-						this.plugin.saveSettings();
-						this.markRestart();
-					}),
-			);
+				"The rest of the vault is mounted read-only. Created automatically on start. " +
+				"Requires restart.",
+			key: "vaultWriteDir",
+			placeholder: "agent-workspace",
+			requiresRestart: true,
+		});
 
-		new Setting(el)
-			.setName("Memory file name")
-			.setDesc(
+		this.addPlainTextSetting(el, {
+			name: "Memory file name",
+			desc:
 				"Filename for the memory MCP server, stored in the vault's .oas/ directory " +
-					"(independent of the write directory). Requires restart.",
-			)
-			.addText((text) =>
-				text
-					.setPlaceholder("memory.json")
-					.setValue(this.plugin.settings.memoryFileName)
-					.onChange(async (value) => {
-						this.plugin.settings.memoryFileName = value;
-						this.plugin.saveSettings();
-						this.markRestart();
-					}),
-			);
+				"(independent of the write directory). Requires restart.",
+			key: "memoryFileName",
+			placeholder: "memory.json",
+			requiresRestart: true,
+		});
 
 		new Setting(el)
 			.setName("Auto-start on load")
@@ -473,21 +479,14 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		new Setting(el)
-			.setName("Terminal font")
-			.setDesc(
+		this.addPlainTextSetting(el, {
+			name: "Terminal font",
+			desc:
 				"Custom font family for the terminal. Leave empty for automatic fallback " +
-					"(Obsidian theme font, then Cascadia Code, Consolas, Menlo, DejaVu Sans Mono).",
-			)
-			.addText((text) =>
-				text
-					.setPlaceholder("e.g. Fira Code, JetBrains Mono")
-					.setValue(this.plugin.settings.terminalFont)
-					.onChange(async (value) => {
-						this.plugin.settings.terminalFont = value;
-						this.plugin.saveSettings();
-					}),
-			);
+				"(Obsidian theme font, then Cascadia Code, Consolas, Menlo, DejaVu Sans Mono).",
+			key: "terminalFont",
+			placeholder: "e.g. Fira Code, JetBrains Mono",
+		});
 
 		this.addNumberSetting(el, {
 			name: "Font size",
@@ -785,22 +784,15 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 			}
 		});
 
-		new Setting(el)
-			.setName("Sudo password")
-			.setDesc(
+		this.addPlainTextSetting(el, {
+			name: "Sudo password",
+			desc:
 				"Password for the narrow apt-get/apt sudo inside the container. " +
-					"Used by humans during interactive sessions to test-install tools. " +
-					"Matches the default in container/.env.example. Requires restart.",
-			)
-			.addText((text) =>
-				text
-					.setPlaceholder("(use container/.env value)")
-					.setValue(this.plugin.settings.sudoPassword)
-					.onChange(async (value) => {
-						this.plugin.settings.sudoPassword = value;
-						this.plugin.saveSettings();
-						this.markRestart();
-					}),
-			);
+				"Used by humans during interactive sessions to test-install tools. " +
+				"Matches the default in container/.env.example. Requires restart.",
+			key: "sudoPassword",
+			placeholder: "(use container/.env value)",
+			requiresRestart: true,
+		});
 	}
 }
