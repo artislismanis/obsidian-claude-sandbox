@@ -87,6 +87,29 @@ function pushConnectionEvent(ev: TerminalConnectionEvent): void {
 	}
 }
 
+/**
+ * Send a ttyd INPUT frame (`'0' + UTF-8 bytes`) over the socket, returning the
+ * number of bytes written or 0 if the socket isn't open. Over-allocates worst-case
+ * UTF-8 length (3 bytes/char) for the encode buffer, then trims.
+ */
+function sendInputText(ws: WebSocket | null, text: string): number {
+	if (!ws || ws.readyState !== WebSocket.OPEN) return 0;
+	const payload = new Uint8Array(text.length * 3 + 1);
+	payload[0] = CLIENT_MSG.INPUT.charCodeAt(0);
+	const { written = 0 } = textEncoder.encodeInto(text, payload.subarray(1));
+	ws.send(payload.subarray(0, written + 1));
+	return written + 1;
+}
+
+function sendInputByte(ws: WebSocket | null, byte: number): number {
+	if (!ws || ws.readyState !== WebSocket.OPEN) return 0;
+	const payload = new Uint8Array(2);
+	payload[0] = CLIENT_MSG.INPUT.charCodeAt(0);
+	payload[1] = byte;
+	ws.send(payload);
+	return 2;
+}
+
 export function getTerminalConnectionLog(): TerminalConnectionEvent[] {
 	return connectionLog.slice();
 }
@@ -235,12 +258,7 @@ export class TerminalView extends ItemView {
 		// translates Escape into the same 0x1b byte via onData → WebSocket.
 		this.scope = new Scope(this.app.scope);
 		this.scope.register([], "Escape", () => {
-			if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-				const payload = new Uint8Array(2);
-				payload[0] = CLIENT_MSG.INPUT.charCodeAt(0);
-				payload[1] = 0x1b;
-				this.ws.send(payload);
-			}
+			sendInputByte(this.ws, 0x1b);
 			return false;
 		});
 
@@ -452,14 +470,7 @@ export class TerminalView extends ItemView {
 		// (which swaps this.ws) keeps working without re-registering listeners.
 		this.termDisposables.push(
 			term.onData((input) => {
-				const ws = this.ws;
-				if (ws && ws.readyState === WebSocket.OPEN) {
-					const payload = new Uint8Array(input.length * 3 + 1);
-					payload[0] = CLIENT_MSG.INPUT.charCodeAt(0);
-					const { written } = textEncoder.encodeInto(input, payload.subarray(1));
-					this.wsTxBytes += (written ?? 0) + 1;
-					ws.send(payload.subarray(0, (written ?? 0) + 1));
-				}
+				this.wsTxBytes += sendInputText(this.ws, input);
 			}),
 		);
 
@@ -553,12 +564,8 @@ export class TerminalView extends ItemView {
 			if (this.sessionName) {
 				const cmd = `session ${this.sessionName}\n`;
 				setTimeout(() => {
-					if (ws.readyState === WebSocket.OPEN && gen === this.generation) {
-						const payload = new Uint8Array(cmd.length + 1);
-						payload[0] = CLIENT_MSG.INPUT.charCodeAt(0);
-						textEncoder.encodeInto(cmd, payload.subarray(1));
-						this.wsTxBytes += cmd.length + 1;
-						ws.send(payload.subarray(0, cmd.length + 1));
+					if (gen === this.generation) {
+						this.wsTxBytes += sendInputText(ws, cmd);
 					}
 				}, 300);
 			}
@@ -570,12 +577,10 @@ export class TerminalView extends ItemView {
 				const cmd = `claude '${escaped}'\n`;
 				const delay = this.sessionName ? 700 : 300;
 				setTimeout(() => {
-					if (ws.readyState === WebSocket.OPEN && gen === this.generation) {
-						const payload = new Uint8Array(cmd.length + 1);
-						payload[0] = CLIENT_MSG.INPUT.charCodeAt(0);
-						textEncoder.encodeInto(cmd, payload.subarray(1));
-						this.wsTxBytes += cmd.length + 1;
-						ws.send(payload.subarray(0, cmd.length + 1));
+					if (gen !== this.generation) return;
+					const sent = sendInputText(ws, cmd);
+					if (sent > 0) {
+						this.wsTxBytes += sent;
 						this.initialPrompt = null;
 					}
 				}, delay);

@@ -71,8 +71,7 @@ export function registerCanvasTools(app: App, push: ToolPusher, gate: WriteGate)
 				path: z.string().describe("Canvas file path from vault root (.canvas extension)"),
 			},
 
-			handler: async (args) => {
-				const path = args.path as string;
+			handler: async ({ path }) => {
 				const f = resolveCanvasFile(app, path);
 				if (!f) return error("Canvas file not found (must end in .canvas).");
 				const raw = await app.vault.read(f);
@@ -103,9 +102,7 @@ export function registerCanvasTools(app: App, push: ToolPusher, gate: WriteGate)
 					),
 			},
 
-			handler: async (args) => {
-				const path = args.path as string;
-				const changesRaw = args.changes as string;
+			handler: async ({ path, changes: changesRaw }) => {
 				const f = resolveCanvasFile(app, path);
 				if (!f) return error("Canvas file not found (must end in .canvas).");
 
@@ -216,8 +213,7 @@ export function registerDataviewTools(app: App, push: ToolPusher): void {
 					.describe("Full DQL source (e.g. 'TABLE rating FROM #book SORT rating DESC')"),
 			},
 
-			handler: async (args) => {
-				const query = args.query as string;
+			handler: async ({ query }) => {
 				const dv = getDataview(app);
 				if (!dv?.api?.query) return error("Dataview is not available.");
 				try {
@@ -317,14 +313,15 @@ export function registerTasksTools(app: App, push: ToolPusher): void {
 				limit: z.number().optional().describe("Max results (default 100)"),
 			},
 
-			handler: async (args) => {
-				const wantStatus = (args.status as "open" | "done" | "any" | undefined) ?? "open";
-				const tagFilter = args.tag as string | undefined;
-				const dueLimit = args.dueOnOrBefore as string | undefined;
-				const folder = args.folder as string | undefined;
-				const limit = (args.limit as number | undefined) ?? 100;
+			handler: async ({
+				status: wantStatus = "open",
+				tag: tagFilter,
+				dueOnOrBefore: dueLimit,
+				folder,
+				limit = 100,
+				priorityAtLeast: minPriority,
+			}) => {
 				const priorityOrder = ["lowest", "low", "medium", "high", "highest"] as const;
-				const minPriority = args.priorityAtLeast as TaskEntry["priority"] | undefined;
 				const minIdx = minPriority ? priorityOrder.indexOf(minPriority) : -1;
 
 				const files = app.vault
@@ -385,9 +382,7 @@ export function registerTasksTools(app: App, push: ToolPusher): void {
 				line: z.number().describe("1-based line number of the task"),
 			},
 
-			handler: async (args) => {
-				const path = args.path as string;
-				const line = args.line as number;
+			handler: async ({ path, line }) => {
 				const plugin = getTasks(app);
 				if (!plugin?.apiV1?.executeToggleTaskDoneCommand)
 					return error("Tasks plugin is not available.");
@@ -459,13 +454,10 @@ export function registerTemplaterTools(app: App, push: ToolPusher, gate: WriteGa
 				filename: z.string().optional().describe("Output filename without extension"),
 			},
 
-			handler: async (args) => {
+			handler: async ({ template: templatePath, folder, filename }) => {
 				const plugin = getTemplater(app);
 				if (!plugin?.templater?.create_new_note_from_template)
 					return error("Templater plugin is not available.");
-				const templatePath = args.template as string;
-				const folder = args.folder as string | undefined;
-				const filename = args.filename as string | undefined;
 				// Templater's API treats a string `template` arg inconsistently across
 				// versions — in current builds it writes the string as literal content
 				// instead of resolving it as a template file. Resolve to a TFile ourselves.
@@ -544,7 +536,7 @@ export function registerPeriodicNotesTools(app: App, push: ToolPusher, gate: Wri
 				create: z.boolean().optional().describe("Create if missing (default false)"),
 			},
 
-			handler: async (args) => {
+			handler: async ({ periodicity, date: dateArg, create = false }) => {
 				const plugin = getPeriodicNotes(app);
 				if (!plugin) return error("Periodic Notes plugin is not installed or enabled.");
 				const raw = plugin as Record<string, unknown>;
@@ -561,9 +553,6 @@ export function registerPeriodicNotesTools(app: App, push: ToolPusher, gate: Wri
 						"Periodic Notes plugin found but settings structure is unexpected. Check DevTools for details.",
 					);
 				}
-				const periodicity = args.periodicity as Periodicity;
-				const dateArg = args.date as string | undefined;
-				const create = (args.create as boolean | undefined) ?? false;
 
 				const periodicSettings = (settings as Record<string, unknown>)[periodicity] as
 					| { enabled?: boolean; folder?: string; format?: string; template?: string }

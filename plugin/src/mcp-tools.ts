@@ -376,8 +376,8 @@ export function buildTools(
 				path: z.string().optional().describe("Exact path from vault root"),
 			},
 
-			handler: async (args) => {
-				const f = resolveFile(app, args, pathFilter);
+			handler: async ({ file, path }) => {
+				const f = resolveFile(app, { file, path }, pathFilter);
 				if (!f) return error("File not found.");
 				return text(fileToInfo(f));
 			},
@@ -396,8 +396,8 @@ export function buildTools(
 				path: z.string().optional().describe("Exact path from vault root"),
 			},
 
-			handler: async (args) => {
-				const f = resolveFile(app, args, pathFilter);
+			handler: async ({ file, path }) => {
+				const f = resolveFile(app, { file, path }, pathFilter);
 				if (f) {
 					const cache = app.metadataCache.getFileCache(f);
 					const tags = formatTags(cache);
@@ -430,17 +430,18 @@ export function buildTools(
 				property: z.string().optional().describe("Specific property to read"),
 			},
 
-			handler: async (args) => {
-				const f = resolveFile(app, args, pathFilter);
+			handler: async ({ file, path, property }) => {
+				const f = resolveFile(app, { file, path }, pathFilter);
 				if (!f) return error("File not found.");
 				const cache = app.metadataCache.getFileCache(f);
 				const fm = cache?.frontmatter;
 				if (!fm) return text("(no frontmatter)");
-				const prop = args.property as string | undefined;
-				if (prop) {
-					const val = fm[prop];
+				if (property) {
+					const val = fm[property];
 					return text(
-						val !== undefined ? JSON.stringify(val) : `(property '${prop}' not found)`,
+						val !== undefined
+							? JSON.stringify(val)
+							: `(property '${property}' not found)`,
 					);
 				}
 				const filtered = Object.fromEntries(
@@ -462,8 +463,8 @@ export function buildTools(
 				path: z.string().optional().describe("Exact path from vault root"),
 			},
 
-			handler: async (args) => {
-				const f = resolveFile(app, args, pathFilter);
+			handler: async ({ file, path }) => {
+				const f = resolveFile(app, { file, path }, pathFilter);
 				if (!f) return error("File not found.");
 				const resolved = app.metadataCache.resolvedLinks[f.path] ?? {};
 				const entries = Object.entries(resolved).map(
@@ -485,8 +486,8 @@ export function buildTools(
 				path: z.string().optional().describe("Exact path from vault root"),
 			},
 
-			handler: async (args) => {
-				const f = resolveFile(app, args, pathFilter);
+			handler: async ({ file, path }) => {
+				const f = resolveFile(app, { file, path }, pathFilter);
 				if (!f) return error("File not found.");
 				const backlinks: string[] = [];
 				for (const [source, targets] of Object.entries(app.metadataCache.resolvedLinks)) {
@@ -508,8 +509,8 @@ export function buildTools(
 				path: z.string().optional().describe("Exact path from vault root"),
 			},
 
-			handler: async (args) => {
-				const f = resolveFile(app, args, pathFilter);
+			handler: async ({ file, path }) => {
+				const f = resolveFile(app, { file, path }, pathFilter);
 				if (!f) return error("File not found.");
 				const cache = app.metadataCache.getFileCache(f);
 				const headings = cache?.headings ?? [];
@@ -570,13 +571,10 @@ export function buildTools(
 				extension: z.string().optional().describe("Filter by extension"),
 			},
 
-			handler: async (args) => {
-				const limit = (args.limit as number | undefined) ?? 20;
+			handler: async ({ limit = 20, folder, extension }) => {
 				let files = app.vault.getFiles();
-				const folder = args.folder as string | undefined;
-				const ext = args.extension as string | undefined;
 				if (folder) files = files.filter((f) => f.path.startsWith(folder + "/"));
-				if (ext) files = files.filter((f) => f.extension === ext);
+				if (extension) files = files.filter((f) => f.extension === extension);
 				files.sort((a, b) => b.stat.mtime - a.stat.mtime);
 				const results = files.slice(0, limit).map((f) => {
 					const date = new Date(f.stat.mtime).toISOString();
@@ -601,22 +599,21 @@ export function buildTools(
 					.describe("Property name to get distinct values for"),
 			},
 
-			handler: async (args) => {
-				const prop = args.property as string | undefined;
-				if (prop) {
+			handler: async ({ property }) => {
+				if (property) {
 					const values: Record<string, number> = {};
 					for (const file of app.vault.getMarkdownFiles()) {
 						const cache = app.metadataCache.getFileCache(file);
 						const fm = cache?.frontmatter;
-						if (fm && prop in fm) {
-							const val = JSON.stringify(fm[prop]);
+						if (fm && property in fm) {
+							const val = JSON.stringify(fm[property]);
 							values[val] = (values[val] ?? 0) + 1;
 						}
 					}
 					const sorted = Object.entries(values).sort((a, b) => b[1] - a[1]);
 					return text(
 						sorted.map(([val, count]) => `${val}: ${count}`).join("\n") ||
-							`(no files have property '${prop}')`,
+							`(no files have property '${property}')`,
 					);
 				}
 				const counts: Record<string, number> = {};
@@ -673,10 +670,10 @@ export function buildTools(
 				depth: z.number().optional().describe("Max hops (1-5, default 1)"),
 			},
 
-			handler: async (args) => {
-				const f = resolveFile(app, args, pathFilter);
+			handler: async ({ file, path, depth: depthArg }) => {
+				const f = resolveFile(app, { file, path }, pathFilter);
 				if (!f) return error("File not found.");
-				const depth = Math.min(Math.max((args.depth as number | undefined) ?? 1, 1), 5);
+				const depth = Math.min(Math.max(depthArg ?? 1, 1), 5);
 				const graph = buildLinkGraph();
 				const visited = new Set<string>([f.path]);
 				let frontier = new Set<string>([f.path]);
@@ -720,9 +717,7 @@ export function buildTools(
 				target: z.string().describe("Target file path"),
 			},
 
-			handler: async (args) => {
-				const sourcePath = args.source as string;
-				const targetPath = args.target as string;
+			handler: async ({ source: sourcePath, target: targetPath }) => {
 				if (!app.vault.getFileByPath(sourcePath)) return error("Source file not found.");
 				if (!app.vault.getFileByPath(targetPath)) return error("Target file not found.");
 				if (sourcePath === targetPath) return text(sourcePath);
@@ -758,9 +753,7 @@ export function buildTools(
 				maxClusters: z.number().optional().describe("Max clusters to return (default 10)"),
 			},
 
-			handler: async (args) => {
-				const minSize = (args.minSize as number | undefined) ?? 3;
-				const maxClusters = (args.maxClusters as number | undefined) ?? 10;
+			handler: async ({ minSize = 3, maxClusters = 10 }) => {
 				const graph = buildLinkGraph();
 
 				const allNodes = new Set<string>();
@@ -830,8 +823,8 @@ export function buildTools(
 				path: z.string().optional().describe("Exact path from vault root"),
 			},
 
-			handler: async (args) => {
-				const f = resolveFile(app, args, pathFilter);
+			handler: async ({ file, path }) => {
+				const f = resolveFile(app, { file, path }, pathFilter);
 				if (!f) return error("File not found.");
 				const content = await app.vault.read(f);
 				const cache = app.metadataCache.getFileCache(f);
@@ -876,10 +869,9 @@ export function buildTools(
 				limit: z.number().optional().describe("Max suggestions (default 10)"),
 			},
 
-			handler: async (args) => {
-				const f = resolveFile(app, args, pathFilter);
+			handler: async ({ file, path, limit = 10 }) => {
+				const f = resolveFile(app, { file, path }, pathFilter);
 				if (!f) return error("File not found.");
-				const limit = (args.limit as number | undefined) ?? 10;
 				const content = await app.vault.read(f);
 				const alreadyLinked = new Set(
 					Object.keys(app.metadataCache.resolvedLinks[f.path] ?? {}),
@@ -1008,15 +1000,14 @@ export function buildTools(
 					content: z.string().optional().describe("Initial content (default empty)"),
 				},
 
-				handler: async (args) => {
-					const path = args.path as string;
+				handler: async ({ path, content: contentArg }) => {
 					const guard = guardPath(path);
 					if (guard) return guard;
 					if (!isVaultPathSafe(app, path))
 						return error("Path resolves outside the vault (symlink).");
 					if (app.vault.getFileByPath(path))
 						return error("File already exists. Use vault_modify to update it.");
-					const content = (args.content as string | undefined) ?? "";
+					const content = contentArg ?? "";
 					// Only auto-apply the folder template when the caller didn't supply
 					// content; otherwise we'd silently clobber the agent's intended payload.
 					const tryTemplate = content === "" && path.endsWith(".md");
@@ -1059,19 +1050,18 @@ export function buildTools(
 					content: z.string().describe("New file content"),
 				},
 
-				handler: async (args) => {
-					const result = resolveForWrite(args);
+				handler: async ({ file, path, content }) => {
+					const result = resolveForWrite({ file, path });
 					if ("isError" in result) return result as McpToolResult;
 					const f = result as TFile;
-					const newContent = args.content as string;
 					return runWrite({
 						operation: "modify",
 						filePath: f.path,
 						oldContent: review ? await app.vault.read(f) : undefined,
-						newContent,
+						newContent: content,
 						description: `Modify file: ${f.path}`,
 						review,
-						apply: () => app.vault.modify(f, newContent),
+						apply: () => app.vault.modify(f, content),
 						successMsg: `Modified ${f.path}`,
 					});
 				},
@@ -1090,11 +1080,10 @@ export function buildTools(
 					content: z.string().describe("Content to append"),
 				},
 
-				handler: async (args) => {
-					const result = resolveForWrite(args);
+				handler: async ({ file, path, content: addition }) => {
+					const result = resolveForWrite({ file, path });
 					if ("isError" in result) return result as McpToolResult;
 					const f = result as TFile;
-					const addition = args.content as string;
 					const oldContent = review ? await app.vault.read(f) : undefined;
 					return runWrite({
 						operation: "append",
@@ -1124,12 +1113,10 @@ export function buildTools(
 					value: z.string().describe("Property value (JSON-encoded for objects/arrays)"),
 				},
 
-				handler: async (args) => {
-					const result = resolveForWrite(args);
+				handler: async ({ file, path, property, value: raw }) => {
+					const result = resolveForWrite({ file, path });
 					if ("isError" in result) return result as McpToolResult;
 					const f = result as TFile;
-					const prop = args.property as string;
-					const raw = args.value as string;
 					let value: unknown;
 					try {
 						value = JSON.parse(raw);
@@ -1141,14 +1128,14 @@ export function buildTools(
 						operation: "frontmatter_set",
 						filePath: f.path,
 						oldContent: JSON.stringify(oldFm, null, 2),
-						newContent: JSON.stringify({ ...oldFm, [prop]: value }, null, 2),
-						description: `Set frontmatter '${prop}' on ${f.path}`,
+						newContent: JSON.stringify({ ...oldFm, [property]: value }, null, 2),
+						description: `Set frontmatter '${property}' on ${f.path}`,
 						review,
 						apply: () =>
 							app.fileManager.processFrontMatter(f, (fm) => {
-								fm[prop] = value;
+								fm[property] = value;
 							}),
-						successMsg: `Set ${prop} on ${f.path}`,
+						successMsg: `Set ${property} on ${f.path}`,
 					});
 				},
 			}),
@@ -1166,29 +1153,28 @@ export function buildTools(
 					property: z.string().describe("Property name to delete"),
 				},
 
-				handler: async (args) => {
-					const result = resolveForWrite(args);
+				handler: async ({ file, path, property }) => {
+					const result = resolveForWrite({ file, path });
 					if ("isError" in result) return result as McpToolResult;
 					const f = result as TFile;
-					const prop = args.property as string;
 					const cache = app.metadataCache.getFileCache(f);
-					if (!cache?.frontmatter || !(prop in cache.frontmatter))
-						return error(`Property '${prop}' not found in frontmatter.`);
+					if (!cache?.frontmatter || !(property in cache.frontmatter))
+						return error(`Property '${property}' not found in frontmatter.`);
 					const oldFm = frontmatterSnapshot(f);
-					const { [prop]: _removed, ...newFm } = oldFm;
+					const { [property]: _removed, ...newFm } = oldFm;
 					void _removed;
 					return runWrite({
 						operation: "frontmatter_delete",
 						filePath: f.path,
 						oldContent: JSON.stringify(oldFm, null, 2),
 						newContent: JSON.stringify(newFm, null, 2),
-						description: `Delete frontmatter '${prop}' from ${f.path}`,
+						description: `Delete frontmatter '${property}' from ${f.path}`,
 						review,
 						apply: () =>
 							app.fileManager.processFrontMatter(f, (fm) => {
-								delete fm[prop];
+								delete fm[property];
 							}),
-						successMsg: `Deleted ${prop} from ${f.path}`,
+						successMsg: `Deleted ${property} from ${f.path}`,
 					});
 				},
 			}),
@@ -1212,15 +1198,18 @@ export function buildTools(
 						.describe("Case-sensitive match (default true)"),
 				},
 
-				handler: async (args) => {
-					const result = resolveForWrite(args);
+				handler: async ({
+					file,
+					path,
+					search,
+					replace: replacement,
+					regex: useRegex = false,
+					caseSensitive = true,
+				}) => {
+					const result = resolveForWrite({ file, path });
 					if ("isError" in result) return result as McpToolResult;
 					const f = result as TFile;
 					const content = await app.vault.read(f);
-					const search = args.search as string;
-					const replacement = args.replace as string;
-					const useRegex = (args.regex as boolean | undefined) ?? false;
-					const caseSensitive = (args.caseSensitive as boolean | undefined) ?? true;
 
 					let pattern: RegExp;
 					if (useRegex) {
@@ -1269,8 +1258,8 @@ export function buildTools(
 					content: z.string().describe("Content to prepend"),
 				},
 
-				handler: async (args) => {
-					const result = resolveForWrite(args);
+				handler: async ({ file, path, content }) => {
+					const result = resolveForWrite({ file, path });
 					if ("isError" in result) return result as McpToolResult;
 					const f = result as TFile;
 					const existing = await app.vault.read(f);
@@ -1288,7 +1277,7 @@ export function buildTools(
 					const before = existing.slice(0, insertPos);
 					const after = existing.slice(insertPos);
 					const sep = insertPos > 0 && !before.endsWith("\n") ? "\n" : "";
-					const updated = before + sep + (args.content as string) + "\n" + after;
+					const updated = before + sep + content + "\n" + after;
 					return runWrite({
 						operation: "prepend",
 						filePath: f.path,
@@ -1324,16 +1313,19 @@ export function buildTools(
 						.describe("Where to insert relative to target (default 'after')"),
 				},
 
-				handler: async (args) => {
-					const result = resolveForWrite(args);
+				handler: async ({
+					file,
+					path,
+					content: insertContent,
+					heading: headingArg,
+					line: lineArg,
+					position = "after",
+				}) => {
+					const result = resolveForWrite({ file, path });
 					if ("isError" in result) return result as McpToolResult;
 					const f = result as TFile;
 					const existing = await app.vault.read(f);
 					const lines = existing.split("\n");
-					const insertContent = args.content as string;
-					const position = (args.position as string | undefined) ?? "after";
-					const headingArg = args.heading as string | undefined;
-					const lineArg = args.line as number | undefined;
 
 					if (!headingArg && lineArg === undefined)
 						return error("Provide either 'heading' or 'line' target.");
@@ -1464,10 +1456,10 @@ export function buildTools(
 				newTab: z.boolean().optional().describe("Open in a new tab"),
 			},
 
-			handler: async (args) => {
-				const f = resolveFile(app, args, pathFilter);
+			handler: async ({ file, path, newTab }) => {
+				const f = resolveFile(app, { file, path }, pathFilter);
 				if (!f) return error("File not found.");
-				const leaf = app.workspace.getLeaf(args.newTab ? "tab" : false);
+				const leaf = app.workspace.getLeaf(newTab ? "tab" : false);
 				await leaf.openFile(f);
 				return text(`Opened ${f.path}`);
 			},
@@ -1496,10 +1488,9 @@ export function buildTools(
 				name: z.string().describe("New file name (extension preserved if omitted)"),
 			},
 
-			handler: async (args) => {
-				const f = resolveFile(app, args, pathFilter);
+			handler: async ({ file, path, name: newName }) => {
+				const f = resolveFile(app, { file, path }, pathFilter);
 				if (!f) return error("File not found.");
-				const newName = args.name as string;
 				const ext = newName.includes(".") ? "" : `.${f.extension}`;
 				const dir = f.parent?.path ?? "";
 				const newPath = dir ? `${dir}/${newName}${ext}` : `${newName}${ext}`;
@@ -1528,10 +1519,9 @@ export function buildTools(
 				to: z.string().describe("Destination folder path"),
 			},
 
-			handler: async (args) => {
-				const f = resolveFile(app, args, pathFilter);
+			handler: async ({ file, path, to: dest }) => {
+				const f = resolveFile(app, { file, path }, pathFilter);
 				if (!f) return error("File not found.");
-				const dest = args.to as string;
 				const newPath = `${dest}/${f.name}`;
 				return runWrite({
 					operation: "move",
@@ -1557,8 +1547,8 @@ export function buildTools(
 				path: z.string().optional().describe("Exact path from vault root"),
 			},
 
-			handler: async (args) => {
-				const f = resolveFile(app, args, pathFilter);
+			handler: async ({ file, path }) => {
+				const f = resolveFile(app, { file, path }, pathFilter);
 				if (!f) return error("File not found.");
 				return runWrite({
 					operation: "delete",
@@ -1583,8 +1573,7 @@ export function buildTools(
 				path: z.string().describe("Folder path from vault root"),
 			},
 
-			handler: async (args) => {
-				const path = args.path as string;
+			handler: async ({ path }) => {
 				if (!isVaultPathSafe(app, path))
 					return error("Path resolves outside the vault (symlink).");
 				return gateVaultWrite({
@@ -1620,12 +1609,7 @@ export function buildTools(
 				dryRun: z.boolean().optional().describe("Preview only, no changes (default true)"),
 			},
 
-			handler: async (args) => {
-				const query = args.query as string;
-				const property = args.property as string;
-				const rawValue = args.value as string | undefined;
-				const dryRun = (args.dryRun as boolean | undefined) ?? true;
-
+			handler: async ({ query, property, value: rawValue, dryRun = true }) => {
 				const search = prepareSimpleSearch(query);
 				const matched: TFile[] = [];
 				await forEachMarkdown((file, content) => {
@@ -1705,10 +1689,10 @@ export function buildTools(
 
 	// ── Agent tier ────────────────────────────────────
 
-	tools.push({
-		name: "agent_status_set",
-		tier: "agent",
-		config: {
+	tools.push(
+		defineTool({
+			name: "agent_status_set",
+			tier: "agent",
 			title: "Set agent activity status",
 			description:
 				"Report the current agent lifecycle state so the plugin can show which sessions are working, awaiting input, or idle. Call on transitions (e.g. at the start of a long tool call, when a user prompt is needed, when you're done).",
@@ -1727,16 +1711,13 @@ export function buildTools(
 					.optional()
 					.describe("Short human-readable context (e.g. tool name, question)"),
 			},
-		},
-		handler: async (args) => {
-			const status = args.status as AgentStatus;
-			const sessionName =
-				((args.sessionName as string | undefined) ?? "").trim() || "__default__";
-			const detail = (args.detail as string | undefined) ?? undefined;
-			onActivity?.({ sessionName, status, detail });
-			return text("OK");
-		},
-	});
+			handler: async ({ status, sessionName, detail }) => {
+				const name = (sessionName ?? "").trim() || "__default__";
+				onActivity?.({ sessionName: name, status, detail });
+				return text("OK");
+			},
+		}),
+	);
 
 	return tools;
 }

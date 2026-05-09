@@ -86,8 +86,47 @@ export function computeUnifiedDiff(oldText: string, newText: string): string {
 	return output.join("\n");
 }
 
-export class DiffReviewModal extends Modal {
-	private resolve: ((result: ReviewResult) => void) | null = null;
+interface ReviewButton<T> {
+	text: string;
+	cls: string;
+	result: () => T;
+}
+
+abstract class ReviewModalBase<T> extends Modal {
+	private resolve: ((result: T) => void) | null = null;
+
+	review(): Promise<T> {
+		return new Promise<T>((resolve) => {
+			this.resolve = resolve;
+			this.open();
+		});
+	}
+
+	protected addButtons(buttons: ReviewButton<T>[]): void {
+		this.contentEl.createDiv({ cls: "modal-button-container" }, (div) => {
+			for (const b of buttons) {
+				div.createEl("button", { text: b.text, cls: b.cls }, (btn) => {
+					btn.addEventListener("click", () => {
+						this.resolve?.(b.result());
+						this.close();
+					});
+				});
+			}
+		});
+	}
+
+	protected abstract defaultResult(): T;
+
+	onClose(): void {
+		if (this.resolve) {
+			this.resolve(this.defaultResult());
+			this.resolve = null;
+		}
+		this.contentEl.empty();
+	}
+}
+
+export class DiffReviewModal extends ReviewModalBase<ReviewResult> {
 	private request: ReviewRequest;
 
 	constructor(app: App, request: ReviewRequest) {
@@ -95,11 +134,8 @@ export class DiffReviewModal extends Modal {
 		this.request = request;
 	}
 
-	review(): Promise<ReviewResult> {
-		return new Promise<ReviewResult>((resolve) => {
-			this.resolve = resolve;
-			this.open();
-		});
+	protected defaultResult(): ReviewResult {
+		return { approved: false };
 	}
 
 	onOpen(): void {
@@ -113,19 +149,15 @@ export class DiffReviewModal extends Modal {
 
 		contentEl.createEl("div", { cls: "diff-review-path", text: this.request.filePath });
 
-		if (this.request.affectedLinks && this.request.affectedLinks.length > 0) {
+		const links = this.request.affectedLinks;
+		if (links && links.length > 0) {
 			const header = contentEl.createEl("div", { cls: "diff-review-affected-header" });
-			header.setText(`${this.request.affectedLinks.length} note(s) link here:`);
+			header.setText(`${links.length} note(s) link here:`);
 			const list = contentEl.createEl("ul", {
 				cls: "diff-review-affected-list sandbox-diff-affected-list",
 			});
-			for (const link of this.request.affectedLinks) {
-				list.createEl("li", { text: link });
-			}
-		} else if (
-			this.request.affectedLinks !== undefined &&
-			this.request.affectedLinks.length === 0
-		) {
+			for (const link of links) list.createEl("li", { text: link });
+		} else if (links !== undefined) {
 			contentEl.createEl("div", {
 				cls: "diff-review-affected-empty",
 				text: "No other notes link to this file.",
@@ -150,28 +182,10 @@ export class DiffReviewModal extends Modal {
 			}
 		}
 
-		contentEl.createDiv({ cls: "modal-button-container" }, (div) => {
-			div.createEl("button", { text: "Reject", cls: "mod-muted" }, (btn) => {
-				btn.addEventListener("click", () => {
-					this.resolve?.({ approved: false });
-					this.close();
-				});
-			});
-			div.createEl("button", { text: "Approve", cls: "mod-cta" }, (btn) => {
-				btn.addEventListener("click", () => {
-					this.resolve?.({ approved: true });
-					this.close();
-				});
-			});
-		});
-	}
-
-	onClose(): void {
-		if (this.resolve) {
-			this.resolve({ approved: false });
-			this.resolve = null;
-		}
-		this.contentEl.empty();
+		this.addButtons([
+			{ text: "Reject", cls: "mod-muted", result: () => ({ approved: false }) },
+			{ text: "Approve", cls: "mod-cta", result: () => ({ approved: true }) },
+		]);
 	}
 }
 
@@ -186,8 +200,7 @@ export interface BatchReviewResult {
 	approvedPaths: string[];
 }
 
-export class BatchReviewModal extends Modal {
-	private resolve: ((result: BatchReviewResult) => void) | null = null;
+export class BatchReviewModal extends ReviewModalBase<BatchReviewResult> {
 	private request: BatchReviewRequest;
 	private selected = new Set<string>();
 
@@ -197,11 +210,8 @@ export class BatchReviewModal extends Modal {
 		for (const item of request.items) this.selected.add(item.filePath);
 	}
 
-	review(): Promise<BatchReviewResult> {
-		return new Promise<BatchReviewResult>((resolve) => {
-			this.resolve = resolve;
-			this.open();
-		});
+	protected defaultResult(): BatchReviewResult {
+		return { approved: false, approvedPaths: [] };
 	}
 
 	onOpen(): void {
@@ -234,30 +244,13 @@ export class BatchReviewModal extends Modal {
 			row.createEl("span", { text: item.filePath });
 		}
 
-		contentEl.createDiv({ cls: "modal-button-container" }, (div) => {
-			div.createEl("button", { text: "Reject all", cls: "mod-muted" }, (btn) => {
-				btn.addEventListener("click", () => {
-					this.resolve?.({ approved: false, approvedPaths: [] });
-					this.close();
-				});
-			});
-			div.createEl("button", { text: "Approve selected", cls: "mod-cta" }, (btn) => {
-				btn.addEventListener("click", () => {
-					this.resolve?.({
-						approved: true,
-						approvedPaths: [...this.selected],
-					});
-					this.close();
-				});
-			});
-		});
-	}
-
-	onClose(): void {
-		if (this.resolve) {
-			this.resolve({ approved: false, approvedPaths: [] });
-			this.resolve = null;
-		}
-		this.contentEl.empty();
+		this.addButtons([
+			{ text: "Reject all", cls: "mod-muted", result: () => this.defaultResult() },
+			{
+				text: "Approve selected",
+				cls: "mod-cta",
+				result: () => ({ approved: true, approvedPaths: [...this.selected] }),
+			},
+		]);
 	}
 }
