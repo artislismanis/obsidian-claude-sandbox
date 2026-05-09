@@ -50,8 +50,11 @@ export function confirmModal(app: App, opts: ConfirmOptions): Promise<boolean> {
 
 export interface InputOptions {
 	title: string;
-	message: string;
+	message?: string;
 	placeholder?: string;
+	defaultValue?: string;
+	/** Single-line `<input>` if false, multi-line `<textarea>` if true (default). */
+	multiline?: boolean;
 	ctaLabel?: string;
 	cancelLabel?: string;
 }
@@ -67,11 +70,27 @@ export function inputModal(app: App, opts: InputOptions): Promise<string | null>
 			resolve(v);
 		};
 		modal.titleEl.setText(opts.title);
-		modal.contentEl.createEl("p", { text: opts.message });
-		const input = modal.contentEl.createEl("textarea", {
-			cls: "sandbox-modal-input-multiline",
-		});
+		if (opts.message) modal.contentEl.createEl("p", { text: opts.message });
+		const multiline = opts.multiline ?? true;
+		const input: HTMLInputElement | HTMLTextAreaElement = multiline
+			? modal.contentEl.createEl("textarea", { cls: "sandbox-modal-input-multiline" })
+			: modal.contentEl.createEl("input", { type: "text", cls: "sandbox-modal-input-full" });
 		if (opts.placeholder) input.placeholder = opts.placeholder;
+		if (opts.defaultValue) input.value = opts.defaultValue;
+		const submit = () => {
+			const body = input.value.trim();
+			settle(body || null);
+			modal.close();
+		};
+		if (!multiline) {
+			(input as HTMLInputElement).addEventListener("keydown", (e: KeyboardEvent) => {
+				if (e.key === "Enter") submit();
+				else if (e.key === "Escape") {
+					settle(null);
+					modal.close();
+				}
+			});
+		}
 		modal.contentEl.createDiv({ cls: "modal-button-container" }, (div) => {
 			div.createEl(
 				"button",
@@ -84,11 +103,7 @@ export function inputModal(app: App, opts: InputOptions): Promise<string | null>
 				},
 			);
 			div.createEl("button", { text: opts.ctaLabel ?? "OK", cls: "mod-cta" }, (btn) => {
-				btn.addEventListener("click", () => {
-					const body = input.value.trim();
-					settle(body || null);
-					modal.close();
-				});
+				btn.addEventListener("click", submit);
 			});
 		});
 		modal.onClose = () => settle(null);

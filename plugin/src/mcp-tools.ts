@@ -949,13 +949,24 @@ export function buildTools(
 		return text(typeof op.successMsg === "function" ? op.successMsg() : op.successMsg);
 	}
 
+	function withoutKey(obj: Record<string, unknown>, key: string): Record<string, unknown> {
+		return Object.fromEntries(Object.entries(obj).filter(([k]) => k !== key));
+	}
+
+	/** Parse `raw` as JSON; fall back to the raw string if it isn't valid JSON. */
+	function parseJsonOrString(raw: string): unknown {
+		try {
+			return JSON.parse(raw);
+		} catch {
+			return raw;
+		}
+	}
+
 	/** Snapshot a file's frontmatter for review preview. Excludes Obsidian's internal `position`. */
 	function frontmatterSnapshot(f: TFile): Record<string, unknown> {
 		const fm = app.metadataCache.getFileCache(f)?.frontmatter;
 		if (!fm) return {};
-		const { position: _p, ...rest } = fm as Record<string, unknown>;
-		void _p;
-		return rest;
+		return withoutKey(fm as Record<string, unknown>, "position");
 	}
 
 	interface WriteToolConfig {
@@ -1101,12 +1112,7 @@ export function buildTools(
 					const result = resolveForWrite({ file, path });
 					if ("isError" in result) return result as McpToolResult;
 					const f = result as TFile;
-					let value: unknown;
-					try {
-						value = JSON.parse(raw);
-					} catch {
-						value = raw;
-					}
+					const value = parseJsonOrString(raw);
 					const oldFm = frontmatterSnapshot(f);
 					return runWrite({
 						operation: "frontmatter_set",
@@ -1145,8 +1151,7 @@ export function buildTools(
 					if (!cache?.frontmatter || !(property in cache.frontmatter))
 						return error(`Property '${property}' not found in frontmatter.`);
 					const oldFm = frontmatterSnapshot(f);
-					const { [property]: _removed, ...newFm } = oldFm;
-					void _removed;
+					const newFm = withoutKey(oldFm, property);
 					return runWrite({
 						operation: "frontmatter_delete",
 						filePath: f.path,
@@ -1609,14 +1614,7 @@ export function buildTools(
 					);
 				}
 
-				let value: unknown;
-				if (rawValue !== undefined) {
-					try {
-						value = JSON.parse(rawValue);
-					} catch {
-						value = rawValue;
-					}
-				}
+				const value = rawValue !== undefined ? parseJsonOrString(rawValue) : undefined;
 
 				let targets: TFile[] = matched;
 				if (reviewBatchFn) {
@@ -1625,11 +1623,7 @@ export function buildTools(
 						const newFm =
 							rawValue !== undefined
 								? { ...oldFm, [property]: value }
-								: (() => {
-										const { [property]: _r, ...rest } = oldFm;
-										void _r;
-										return rest;
-									})();
+								: withoutKey(oldFm, property);
 						return {
 							filePath: file.path,
 							oldContent: JSON.stringify(oldFm, null, 2),
