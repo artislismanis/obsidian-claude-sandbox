@@ -15,7 +15,7 @@ import type {
 } from "./mcp-tools";
 import { buildTools } from "./mcp-tools";
 import { VaultCache } from "./mcp-cache";
-import { logger } from "./logger";
+import { logger, errMsg } from "./logger";
 import { ALWAYS_ON_TIERS, GATED_TIERS } from "./permission-tiers";
 
 export interface ActivityEntry {
@@ -368,10 +368,8 @@ export class ObsidianMcpServer {
 		try {
 			if (req.method === "POST") {
 				await this.handlePost(req, res);
-			} else if (req.method === "GET") {
-				await this.handleGet(req, res);
-			} else if (req.method === "DELETE") {
-				await this.handleDelete(req, res);
+			} else if (req.method === "GET" || req.method === "DELETE") {
+				await this.forwardToTransport(req, res);
 			} else {
 				res.writeHead(405);
 				res.end("Method Not Allowed");
@@ -528,7 +526,7 @@ export class ObsidianMcpServer {
 					return result;
 				} catch (err: unknown) {
 					success = false;
-					const msg = err instanceof Error ? err.message : String(err);
+					const msg = errMsg(err);
 					logger.error("MCP", `Tool ${tool.name} threw`, err);
 					return {
 						content: [{ type: "text" as const, text: `Error: ${msg}` }],
@@ -590,25 +588,14 @@ export class ObsidianMcpServer {
 		}
 	}
 
-	private async handleGet(req: IncomingMessage, res: ServerResponse): Promise<void> {
+	private async forwardToTransport(req: IncomingMessage, res: ServerResponse): Promise<void> {
 		const sessionId = req.headers["mcp-session-id"] as string | undefined;
-		if (!sessionId || !this.transports.has(sessionId)) {
+		const transport = sessionId ? this.transports.get(sessionId) : undefined;
+		if (!transport) {
 			res.writeHead(400, { "Content-Type": "application/json" });
 			res.end(JSON.stringify({ error: "Invalid or missing session ID" }));
 			return;
 		}
-		const transport = this.transports.get(sessionId)!;
-		await transport.handleRequest(req, res);
-	}
-
-	private async handleDelete(req: IncomingMessage, res: ServerResponse): Promise<void> {
-		const sessionId = req.headers["mcp-session-id"] as string | undefined;
-		if (!sessionId || !this.transports.has(sessionId)) {
-			res.writeHead(400, { "Content-Type": "application/json" });
-			res.end(JSON.stringify({ error: "Invalid or missing session ID" }));
-			return;
-		}
-		const transport = this.transports.get(sessionId)!;
 		await transport.handleRequest(req, res);
 	}
 }

@@ -1,7 +1,7 @@
 import type { App } from "obsidian";
 import { Modal, PluginSettingTab, Setting } from "obsidian";
 import type AgentSandboxPlugin from "./main";
-import { setLogLevel } from "./logger";
+import { setLogLevel, errMsg } from "./logger";
 import type { PermissionTier } from "./mcp-tools";
 import {
 	ALWAYS_ON_TIERS,
@@ -162,6 +162,78 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 
 	private markRestart(): void {
 		this.restartNeeded = true;
+	}
+
+	/**
+	 * Add a numeric Setting whose input parses as int and validates against
+	 * [min, max]. Invalid input shows the error class and is dropped (not saved).
+	 */
+	private addNumberSetting(
+		el: HTMLElement,
+		opts: {
+			name: string;
+			desc: string;
+			key: keyof AgentSandboxSettings;
+			min: number;
+			max: number;
+			placeholder?: string;
+			requiresRestart?: boolean;
+			narrow?: boolean;
+		},
+	): void {
+		new Setting(el)
+			.setName(opts.name)
+			.setDesc(opts.desc)
+			.addText((text) => {
+				if (opts.placeholder) text.setPlaceholder(opts.placeholder);
+				text.setValue(String(this.plugin.settings[opts.key])).onChange(async (value) => {
+					const n = parseInt(value, 10);
+					if (!isNaN(n) && n >= opts.min && n <= opts.max) {
+						(this.plugin.settings[opts.key] as number) = n;
+						this.plugin.saveSettings();
+						if (opts.requiresRestart) this.markRestart();
+						text.inputEl.removeClass("sandbox-input-error");
+					} else {
+						text.inputEl.addClass("sandbox-input-error");
+					}
+				});
+				if (opts.narrow) text.inputEl.addClass("sandbox-settings-narrow-input");
+			});
+	}
+
+	/**
+	 * Add a text Setting whose input is validated by a string validator. Invalid
+	 * input shows the error class and is dropped (not saved).
+	 */
+	private addValidatedTextSetting(
+		el: HTMLElement,
+		opts: {
+			name: string;
+			desc: string;
+			key: keyof AgentSandboxSettings;
+			validator: (value: string) => boolean;
+			placeholder?: string;
+			requiresRestart?: boolean;
+			onChange?: () => void;
+		},
+	): void {
+		new Setting(el)
+			.setName(opts.name)
+			.setDesc(opts.desc)
+			.addText((text) => {
+				if (opts.placeholder) text.setPlaceholder(opts.placeholder);
+				text.setValue(String(this.plugin.settings[opts.key])).onChange(async (value) => {
+					if (opts.validator(value)) {
+						(this.plugin.settings[opts.key] as string) = value;
+						this.plugin.saveSettings();
+						if (opts.requiresRestart) this.markRestart();
+						text.inputEl.removeClass("sandbox-input-error");
+						opts.onChange?.();
+					} else {
+						text.inputEl.addClass("sandbox-input-error");
+					}
+				});
+			});
 	}
 
 	display(): void {
@@ -365,24 +437,14 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 	}
 
 	private renderTerminal(el: HTMLElement): void {
-		new Setting(el)
-			.setName("Port")
-			.setDesc(
-				"The host port mapped to ttyd inside the container (default: 7681). Requires restart.",
-			)
-			.addText((text) => {
-				text.setValue(String(this.plugin.settings.ttydPort)).onChange(async (value) => {
-					const port = parseInt(value, 10);
-					if (!isNaN(port) && port > 0 && port <= 65535) {
-						this.plugin.settings.ttydPort = port;
-						this.plugin.saveSettings();
-						this.markRestart();
-						text.inputEl.removeClass("sandbox-input-error");
-					} else {
-						text.inputEl.addClass("sandbox-input-error");
-					}
-				});
-			});
+		this.addNumberSetting(el, {
+			name: "Port",
+			desc: "The host port mapped to ttyd inside the container (default: 7681). Requires restart.",
+			key: "ttydPort",
+			min: 1,
+			max: 65535,
+			requiresRestart: true,
+		});
 
 		const bindDesc =
 			this.plugin.settings.ttydBindAddress === "0.0.0.0"
@@ -391,24 +453,15 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 				: "IP address ttyd binds to on the host. Default 127.0.0.1 (localhost only). " +
 					"Requires restart.";
 
-		new Setting(el)
-			.setName("Bind address")
-			.setDesc(bindDesc)
-			.addText((text) => {
-				text.setPlaceholder("127.0.0.1")
-					.setValue(this.plugin.settings.ttydBindAddress)
-					.onChange(async (value) => {
-						if (isValidBindAddress(value)) {
-							this.plugin.settings.ttydBindAddress = value;
-							this.plugin.saveSettings();
-							this.markRestart();
-							text.inputEl.removeClass("sandbox-input-error");
-							this.display();
-						} else {
-							text.inputEl.addClass("sandbox-input-error");
-						}
-					});
-			});
+		this.addValidatedTextSetting(el, {
+			name: "Bind address",
+			desc: bindDesc,
+			key: "ttydBindAddress",
+			validator: isValidBindAddress,
+			placeholder: "127.0.0.1",
+			requiresRestart: true,
+			onChange: () => this.display(),
+		});
 
 		new Setting(el).setName("Appearance").setHeading();
 
@@ -443,41 +496,23 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		new Setting(el)
-			.setName("Font size")
-			.setDesc("Terminal font size in pixels (8–32).")
-			.addText((text) => {
-				text.setPlaceholder("14")
-					.setValue(String(this.plugin.settings.terminalFontSize))
-					.onChange(async (value) => {
-						const size = parseInt(value, 10);
-						if (!isNaN(size) && size >= 8 && size <= 32) {
-							this.plugin.settings.terminalFontSize = size;
-							this.plugin.saveSettings();
-							text.inputEl.removeClass("sandbox-input-error");
-						} else {
-							text.inputEl.addClass("sandbox-input-error");
-						}
-					});
-			});
+		this.addNumberSetting(el, {
+			name: "Font size",
+			desc: "Terminal font size in pixels (8–32).",
+			key: "terminalFontSize",
+			min: 8,
+			max: 32,
+			placeholder: "14",
+		});
 
-		new Setting(el)
-			.setName("Scrollback")
-			.setDesc("Number of lines of terminal history to keep (100–100,000).")
-			.addText((text) => {
-				text.setPlaceholder("10000")
-					.setValue(String(this.plugin.settings.terminalScrollback))
-					.onChange(async (value) => {
-						const lines = parseInt(value, 10);
-						if (!isNaN(lines) && lines >= 100 && lines <= 100000) {
-							this.plugin.settings.terminalScrollback = lines;
-							this.plugin.saveSettings();
-							text.inputEl.removeClass("sandbox-input-error");
-						} else {
-							text.inputEl.addClass("sandbox-input-error");
-						}
-					});
-			});
+		this.addNumberSetting(el, {
+			name: "Scrollback",
+			desc: "Number of lines of terminal history to keep (100–100,000).",
+			key: "terminalScrollback",
+			min: 100,
+			max: 100000,
+			placeholder: "10000",
+		});
 
 		new Setting(el)
 			.setName("Auto-copy on selection")
@@ -508,23 +543,14 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 				}),
 			);
 
-		new Setting(el)
-			.setName("MCP port")
-			.setDesc("Port for the MCP Streamable HTTP endpoint.")
-			.addText((text) => {
-				text.setPlaceholder("28080")
-					.setValue(String(this.plugin.settings.mcpPort))
-					.onChange(async (value) => {
-						const port = parseInt(value, 10);
-						if (!isNaN(port) && port > 0 && port <= 65535) {
-							this.plugin.settings.mcpPort = port;
-							this.plugin.saveSettings();
-							text.inputEl.removeClass("sandbox-input-error");
-						} else {
-							text.inputEl.addClass("sandbox-input-error");
-						}
-					});
-			});
+		this.addNumberSetting(el, {
+			name: "MCP port",
+			desc: "Port for the MCP Streamable HTTP endpoint.",
+			key: "mcpPort",
+			min: 1,
+			max: 65535,
+			placeholder: "28080",
+		});
 
 		new Setting(el)
 			.setName("Auth token")
@@ -637,45 +663,25 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 
 		new Setting(el).setName("Timeouts").setHeading();
 
-		new Setting(el)
-			.setName("Tool timeout (seconds)")
-			.setDesc("Max time for a normal MCP tool call to complete before failing.")
-			.addText((text) => {
-				text.setPlaceholder("10")
-					.setValue(String(this.plugin.settings.mcpToolTimeout))
-					.onChange(async (value) => {
-						const n = parseInt(value, 10);
-						if (n > 0 && n <= 300) {
-							this.plugin.settings.mcpToolTimeout = n;
-							this.plugin.saveSettings();
-							text.inputEl.removeClass("sandbox-input-error");
-						} else {
-							text.inputEl.addClass("sandbox-input-error");
-						}
-					});
-				text.inputEl.addClass("sandbox-settings-narrow-input");
-			});
+		this.addNumberSetting(el, {
+			name: "Tool timeout (seconds)",
+			desc: "Max time for a normal MCP tool call to complete before failing.",
+			key: "mcpToolTimeout",
+			min: 1,
+			max: 300,
+			placeholder: "10",
+			narrow: true,
+		});
 
-		new Setting(el)
-			.setName("Review timeout (seconds)")
-			.setDesc(
-				"How long you have to approve or reject a write in the review modal before it times out.",
-			)
-			.addText((text) => {
-				text.setPlaceholder("180")
-					.setValue(String(this.plugin.settings.mcpReviewTimeout))
-					.onChange(async (value) => {
-						const n = parseInt(value, 10);
-						if (n > 0 && n <= 600) {
-							this.plugin.settings.mcpReviewTimeout = n;
-							this.plugin.saveSettings();
-							text.inputEl.removeClass("sandbox-input-error");
-						} else {
-							text.inputEl.addClass("sandbox-input-error");
-						}
-					});
-				text.inputEl.addClass("sandbox-settings-narrow-input");
-			});
+		this.addNumberSetting(el, {
+			name: "Review timeout (seconds)",
+			desc: "How long you have to approve or reject a write in the review modal before it times out.",
+			key: "mcpReviewTimeout",
+			min: 1,
+			max: 600,
+			placeholder: "180",
+			narrow: true,
+		});
 	}
 
 	private renderAdvanced(el: HTMLElement): void {
@@ -703,44 +709,25 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 
 		new Setting(el).setName("Resource limits").setHeading();
 
-		new Setting(el)
-			.setName("Memory limit")
-			.setDesc(
+		this.addValidatedTextSetting(el, {
+			name: "Memory limit",
+			desc:
 				"Maximum memory for the container (e.g. 4G, 8G, 16G). " +
-					"On WSL2, also check .wslconfig memory allocation. Requires restart.",
-			)
-			.addText((text) => {
-				text.setPlaceholder("8G")
-					.setValue(this.plugin.settings.containerMemory)
-					.onChange(async (value) => {
-						if (isValidMemory(value)) {
-							this.plugin.settings.containerMemory = value;
-							this.plugin.saveSettings();
-							this.markRestart();
-							text.inputEl.removeClass("sandbox-input-error");
-						} else {
-							text.inputEl.addClass("sandbox-input-error");
-						}
-					});
-			});
+				"On WSL2, also check .wslconfig memory allocation. Requires restart.",
+			key: "containerMemory",
+			validator: isValidMemory,
+			placeholder: "8G",
+			requiresRestart: true,
+		});
 
-		new Setting(el)
-			.setName("CPU limit")
-			.setDesc("Maximum CPU cores for the container. Requires restart.")
-			.addText((text) => {
-				text.setPlaceholder("4")
-					.setValue(this.plugin.settings.containerCpus)
-					.onChange(async (value) => {
-						if (isValidCpus(value)) {
-							this.plugin.settings.containerCpus = value;
-							this.plugin.saveSettings();
-							this.markRestart();
-							text.inputEl.removeClass("sandbox-input-error");
-						} else {
-							text.inputEl.addClass("sandbox-input-error");
-						}
-					});
-			});
+		this.addValidatedTextSetting(el, {
+			name: "CPU limit",
+			desc: "Maximum CPU cores for the container. Requires restart.",
+			key: "containerCpus",
+			validator: isValidCpus,
+			placeholder: "4",
+			requiresRestart: true,
+		});
 
 		new Setting(el).setName("Security").setHeading();
 
@@ -757,49 +744,29 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 				}),
 			);
 
-		new Setting(el)
-			.setName("Allowed private hosts")
-			.setDesc(
+		this.addValidatedTextSetting(el, {
+			name: "Allowed private hosts",
+			desc:
 				"Comma-separated IPs or CIDRs allowed through the firewall. " +
-					"Use for local services like NAS, API servers, etc. " +
-					"The Docker gateway is always allowed. Requires restart.",
-			)
-			.addText((text) => {
-				text.setPlaceholder("e.g. 192.168.1.100, 10.0.0.0/8")
-					.setValue(this.plugin.settings.allowedPrivateHosts)
-					.onChange(async (value) => {
-						if (isValidPrivateHosts(value)) {
-							this.plugin.settings.allowedPrivateHosts = value;
-							this.plugin.saveSettings();
-							this.markRestart();
-							text.inputEl.removeClass("sandbox-input-error");
-						} else {
-							text.inputEl.addClass("sandbox-input-error");
-						}
-					});
-			});
+				"Use for local services like NAS, API servers, etc. " +
+				"The Docker gateway is always allowed. Requires restart.",
+			key: "allowedPrivateHosts",
+			validator: isValidPrivateHosts,
+			placeholder: "e.g. 192.168.1.100, 10.0.0.0/8",
+			requiresRestart: true,
+		});
 
-		new Setting(el)
-			.setName("Additional firewall domains")
-			.setDesc(
+		this.addValidatedTextSetting(el, {
+			name: "Additional firewall domains",
+			desc:
 				"Comma-separated domains to add to the firewall allowlist (e.g. api.atlassian.com, slack.com). " +
-					"Adds to — never overrides — the built-in baseline. For host-managed rules Claude cannot see, " +
-					"edit container/firewall-extras.txt instead. Requires restart.",
-			)
-			.addText((text) => {
-				text.setPlaceholder("e.g. api.atlassian.com, slack.com")
-					.setValue(this.plugin.settings.additionalFirewallDomains)
-					.onChange(async (value) => {
-						if (isValidDomainList(value)) {
-							this.plugin.settings.additionalFirewallDomains = value;
-							this.plugin.saveSettings();
-							this.markRestart();
-							text.inputEl.removeClass("sandbox-input-error");
-						} else {
-							text.inputEl.addClass("sandbox-input-error");
-						}
-					});
-			});
+				"Adds to — never overrides — the built-in baseline. For host-managed rules Claude cannot see, " +
+				"edit container/firewall-extras.txt instead. Requires restart.",
+			key: "additionalFirewallDomains",
+			validator: isValidDomainList,
+			placeholder: "e.g. api.atlassian.com, slack.com",
+			requiresRestart: true,
+		});
 
 		const sourcesBox = el.createDiv({ cls: "setting-item sandbox-settings-sources" });
 		const sourcesHeader = sourcesBox.createDiv({ cls: "sandbox-settings-sources-header" });
@@ -820,7 +787,7 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 				const output = await this.plugin.firewallSources();
 				sourcesOutput.setText(output.trim() || "(empty)");
 			} catch (e: unknown) {
-				const msg = e instanceof Error ? e.message : String(e);
+				const msg = errMsg(e);
 				sourcesOutput.setText(`Error: ${msg}\n\nIs the container running?`);
 			}
 		});

@@ -76,8 +76,50 @@ function pushConnectionEvent(ev: TerminalConnectionEvent): void {
 	}
 }
 
+/**
+ * Send a ttyd INPUT frame (`'0' + UTF-8 bytes`) over the socket, returning the
+ * number of bytes written or 0 if the socket isn't open. Over-allocates worst-case
+ * UTF-8 length (3 bytes/char) for the encode buffer, then trims.
+ */
+function sendInputText(ws: WebSocket | null, text: string): number {
+	if (!ws || ws.readyState !== WebSocket.OPEN) return 0;
+	const payload = new Uint8Array(text.length * 3 + 1);
+	payload[0] = CLIENT_MSG.INPUT.charCodeAt(0);
+	const { written = 0 } = textEncoder.encodeInto(text, payload.subarray(1));
+	ws.send(payload.subarray(0, written + 1));
+	return written + 1;
+}
+
+function sendInputByte(ws: WebSocket | null, byte: number): number {
+	if (!ws || ws.readyState !== WebSocket.OPEN) return 0;
+	const payload = new Uint8Array(2);
+	payload[0] = CLIENT_MSG.INPUT.charCodeAt(0);
+	payload[1] = byte;
+	ws.send(payload);
+	return 2;
+}
+
 export function getTerminalConnectionLog(): TerminalConnectionEvent[] {
 	return connectionLog.slice();
+}
+
+/** Format a connection event ring buffer for the "Copy connection log" command. */
+export function formatConnectionLog(events: TerminalConnectionEvent[]): string {
+	return events
+		.map((e) => {
+			const ts = new Date(e.at).toISOString();
+			const head = `${ts}  inst=${e.instanceId} gen=${e.gen} ${e.kind}`;
+			const parts: string[] = [];
+			if (e.code != null) parts.push(`code=${e.code}(${e.codeName})`);
+			if (e.reason) parts.push(`reason="${e.reason}"`);
+			if (e.durationMs != null) parts.push(`duration=${e.durationMs}ms`);
+			if (e.idleMsBeforeClose != null) parts.push(`idleBeforeClose=${e.idleMsBeforeClose}ms`);
+			if (e.rxBytes != null) parts.push(`rx=${e.rxBytes}b/${e.rxMsgs}msgs`);
+			if (e.txBytes != null) parts.push(`tx=${e.txBytes}b`);
+			if (e.attempt) parts.push(`attempt=${e.attempt}`);
+			return parts.length ? `${head}  ${parts.join(" ")}` : head;
+		})
+		.join("\n");
 }
 
 export type ActivityPrefix = "working" | "awaiting_input" | null;
@@ -100,7 +142,7 @@ export class TerminalView extends ItemView {
 	private resizeObserver: ResizeObserver | null = null;
 	private resizeRafId: number | null = null;
 	private termDisposables: { dispose(): void }[] = [];
-	private wsDisposables: { dispose(): void }[] = [];
+	private wsDispose: (() => void) | null = null;
 
 	// Lifecycle stats — reset per WS attach. Used for close diagnostics.
 	private wsConnectStartedAt = 0;
@@ -205,12 +247,7 @@ export class TerminalView extends ItemView {
 		// translates Escape into the same 0x1b byte via onData → WebSocket.
 		this.scope = new Scope(this.app.scope);
 		this.scope.register([], "Escape", () => {
-			if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-				const payload = new Uint8Array(2);
-				payload[0] = CLIENT_MSG.INPUT.charCodeAt(0);
-				payload[1] = 0x1b;
-				this.ws.send(payload);
-			}
+			sendInputByte(this.ws, 0x1b);
 			return false;
 		});
 
@@ -422,14 +459,7 @@ export class TerminalView extends ItemView {
 		// (which swaps this.ws) keeps working without re-registering listeners.
 		this.termDisposables.push(
 			term.onData((input) => {
-				const ws = this.ws;
-				if (ws && ws.readyState === WebSocket.OPEN) {
-					const payload = new Uint8Array(input.length * 3 + 1);
-					payload[0] = CLIENT_MSG.INPUT.charCodeAt(0);
-					const { written } = textEncoder.encodeInto(input, payload.subarray(1));
-					this.wsTxBytes += (written ?? 0) + 1;
-					ws.send(payload.subarray(0, (written ?? 0) + 1));
-				}
+				this.wsTxBytes += sendInputText(this.ws, input);
 			}),
 		);
 
@@ -458,8 +488,8 @@ export class TerminalView extends ItemView {
 		if (!term) return;
 
 		// Tear down any prior socket listeners so close handlers don't fire twice.
-		for (const d of this.wsDisposables) d.dispose();
-		this.wsDisposables = [];
+		this.wsDispose?.();
+		this.wsDispose = null;
 		if (this.ws) {
 			try {
 				this.ws.close();
@@ -523,12 +553,8 @@ export class TerminalView extends ItemView {
 			if (this.sessionName) {
 				const cmd = `session ${this.sessionName}\n`;
 				setTimeout(() => {
-					if (ws.readyState === WebSocket.OPEN && gen === this.generation) {
-						const payload = new Uint8Array(cmd.length + 1);
-						payload[0] = CLIENT_MSG.INPUT.charCodeAt(0);
-						textEncoder.encodeInto(cmd, payload.subarray(1));
-						this.wsTxBytes += cmd.length + 1;
-						ws.send(payload.subarray(0, cmd.length + 1));
+					if (gen === this.generation) {
+						this.wsTxBytes += sendInputText(ws, cmd);
 					}
 				}, 300);
 			}
@@ -540,12 +566,10 @@ export class TerminalView extends ItemView {
 				const cmd = `claude '${escaped}'\n`;
 				const delay = this.sessionName ? 700 : 300;
 				setTimeout(() => {
-					if (ws.readyState === WebSocket.OPEN && gen === this.generation) {
-						const payload = new Uint8Array(cmd.length + 1);
-						payload[0] = CLIENT_MSG.INPUT.charCodeAt(0);
-						textEncoder.encodeInto(cmd, payload.subarray(1));
-						this.wsTxBytes += cmd.length + 1;
-						ws.send(payload.subarray(0, cmd.length + 1));
+					if (gen !== this.generation) return;
+					const sent = sendInputText(ws, cmd);
+					if (sent > 0) {
+						this.wsTxBytes += sent;
 						this.initialPrompt = null;
 					}
 				}, delay);
@@ -624,14 +648,12 @@ export class TerminalView extends ItemView {
 		ws.addEventListener("message", onMessage);
 		ws.addEventListener("close", onClose);
 		ws.addEventListener("error", onError);
-		this.wsDisposables.push({
-			dispose: () => {
-				ws.removeEventListener("open", onOpen);
-				ws.removeEventListener("message", onMessage);
-				ws.removeEventListener("close", onClose);
-				ws.removeEventListener("error", onError);
-			},
-		});
+		this.wsDispose = () => {
+			ws.removeEventListener("open", onOpen);
+			ws.removeEventListener("message", onMessage);
+			ws.removeEventListener("close", onClose);
+			ws.removeEventListener("error", onError);
+		};
 	}
 
 	private scheduleReconnect(container: HTMLElement, gen: number): void {
@@ -687,8 +709,8 @@ export class TerminalView extends ItemView {
 	private dispose(): void {
 		for (const d of this.termDisposables) d.dispose();
 		this.termDisposables = [];
-		for (const d of this.wsDisposables) d.dispose();
-		this.wsDisposables = [];
+		this.wsDispose?.();
+		this.wsDispose = null;
 		if (this.reconnectTimer != null) {
 			window.clearTimeout(this.reconnectTimer);
 			this.reconnectTimer = null;

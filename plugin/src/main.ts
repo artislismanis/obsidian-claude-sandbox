@@ -11,16 +11,17 @@ import {
 import { DockerManager } from "./docker";
 import type { ContainerState } from "./status-bar";
 import { FirewallStatusBar, StatusBarManager } from "./status-bar";
-import { TerminalView, VIEW_TYPE_TERMINAL, getTerminalConnectionLog } from "./terminal-view";
+import {
+	TerminalView,
+	VIEW_TYPE_TERMINAL,
+	formatConnectionLog,
+	getTerminalConnectionLog,
+} from "./terminal-view";
 import { isValidWriteDir } from "./validation";
-import { setLogLevel, logger } from "./logger";
+import { setLogLevel, logger, errMsg } from "./logger";
 import { ObsidianMcpServer, generateToken } from "./mcp-server";
 import { ActivityUi, AgentOutputNotifier } from "./activity";
 import { showSessionCleanup, showSessionPicker } from "./session-ui";
-
-function toErrorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
 
 const TOOLTIP_STOPPED = "Container is not running\nClick for options";
 const HEALTH_POLL_INTERVAL = 30_000;
@@ -35,8 +36,6 @@ export default class AgentSandboxPlugin extends Plugin {
 	private docker!: DockerManager;
 	private statusBar!: StatusBarManager;
 	private firewallBar!: FirewallStatusBar;
-	private statusBarEl: HTMLElement | null = null;
-	private statusBarClickHandler: ((evt: MouseEvent) => void) | null = null;
 	private healthPollId: number | null = null;
 	private firewallPollId: number | null = null;
 	private lastFirewallRefreshAt = 0;
@@ -79,11 +78,10 @@ export default class AgentSandboxPlugin extends Plugin {
 			mcpPort: this.settings.mcpEnabled ? this.settings.mcpPort : undefined,
 		}));
 
-		this.statusBarEl = this.addStatusBarItem();
-		this.statusBar = new StatusBarManager(this.statusBarEl);
+		const statusBarEl = this.addStatusBarItem();
+		this.statusBar = new StatusBarManager(statusBarEl);
 		this.statusBar.setDetails(TOOLTIP_STOPPED);
-		this.statusBarClickHandler = (evt) => void this.showStatusMenu(evt);
-		this.statusBarEl.addEventListener("click", this.statusBarClickHandler);
+		this.registerDomEvent(statusBarEl, "click", (evt) => void this.showStatusMenu(evt));
 
 		this.activityUi = new ActivityUi(
 			this.app,
@@ -221,21 +219,7 @@ export default class AgentSandboxPlugin extends Plugin {
 					new Notice("No terminal connection events recorded yet.");
 					return;
 				}
-				const lines = events.map((e) => {
-					const ts = new Date(e.at).toISOString();
-					const head = `${ts}  inst=${e.instanceId} gen=${e.gen} ${e.kind}`;
-					const parts: string[] = [];
-					if (e.code != null) parts.push(`code=${e.code}(${e.codeName})`);
-					if (e.reason) parts.push(`reason="${e.reason}"`);
-					if (e.durationMs != null) parts.push(`duration=${e.durationMs}ms`);
-					if (e.idleMsBeforeClose != null)
-						parts.push(`idleBeforeClose=${e.idleMsBeforeClose}ms`);
-					if (e.rxBytes != null) parts.push(`rx=${e.rxBytes}b/${e.rxMsgs}msgs`);
-					if (e.txBytes != null) parts.push(`tx=${e.txBytes}b`);
-					if (e.attempt) parts.push(`attempt=${e.attempt}`);
-					return parts.length ? `${head}  ${parts.join(" ")}` : head;
-				});
-				const text = lines.join("\n");
+				const text = formatConnectionLog(events);
 				await navigator.clipboard.writeText(text);
 				logger.info("Terminal", `Connection log (${events.length} events):\n${text}`);
 				new Notice(`Copied ${events.length} terminal connection events to clipboard.`);
@@ -334,9 +318,6 @@ export default class AgentSandboxPlugin extends Plugin {
 		void this.saveData(this.settings);
 		this.app.workspace.detachLeavesOfType(VIEW_TYPE_TERMINAL);
 		this.firewallBar.destroy();
-		if (this.statusBarEl && this.statusBarClickHandler) {
-			this.statusBarEl.removeEventListener("click", this.statusBarClickHandler);
-		}
 
 		this.docker.stopDetached();
 	}
@@ -424,11 +405,16 @@ export default class AgentSandboxPlugin extends Plugin {
 
 	// ── Container actions ──────────────────────────────────
 
-	private async startContainer(): Promise<void> {
+	private guardBusy(): boolean {
 		if (this.docker.isBusy()) {
 			new Notice("Another container operation is in progress.");
-			return;
+			return true;
 		}
+		return false;
+	}
+
+	private async startContainer(): Promise<void> {
+		if (this.guardBusy()) return;
 		let conflicts = await this.checkStartupPortConflicts();
 		if (conflicts.length > 0) {
 			// A previous `docker compose down` started by plugin disable may still
@@ -492,10 +478,7 @@ export default class AgentSandboxPlugin extends Plugin {
 	}
 
 	private async stopContainer(): Promise<void> {
-		if (this.docker.isBusy()) {
-			new Notice("Another container operation is in progress.");
-			return;
-		}
+		if (this.guardBusy()) return;
 		await this.runDockerCommand({
 			action: () => this.docker.stop(),
 			postState: "stopped",
@@ -509,10 +492,7 @@ export default class AgentSandboxPlugin extends Plugin {
 	}
 
 	async restartContainer(): Promise<void> {
-		if (this.docker.isBusy()) {
-			new Notice("Another container operation is in progress.");
-			return;
-		}
+		if (this.guardBusy()) return;
 		const ok = await this.runDockerCommand({
 			preState: "starting",
 			action: () => this.docker.restart(),
@@ -535,7 +515,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			} catch (error: unknown) {
 				this.firewallBar.setState("disabled");
 				new Notice(
-					`Auto-enable firewall failed: ${toErrorMessage(error)}. You can enable it manually from the status bar.`,
+					`Auto-enable firewall failed: ${errMsg(error)}. You can enable it manually from the status bar.`,
 				);
 			}
 		} else {
@@ -551,10 +531,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			new Notice("Container is not running. Start it first.");
 			return;
 		}
-		if (this.docker.isBusy()) {
-			new Notice("Another container operation is in progress.");
-			return;
-		}
+		if (this.guardBusy()) return;
 		try {
 			if (this.firewallBar.getState() === "enabled") {
 				await this.docker.disableFirewall();
@@ -567,7 +544,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			}
 			this.updateTooltip();
 		} catch (error: unknown) {
-			new Notice(`Firewall toggle failed: ${toErrorMessage(error)}`);
+			new Notice(`Firewall toggle failed: ${errMsg(error)}`);
 		}
 	}
 
@@ -632,7 +609,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			});
 			await this.mcpServer.start();
 		} catch (error: unknown) {
-			new Notice(`MCP server failed to start: ${toErrorMessage(error)}`);
+			new Notice(`MCP server failed to start: ${errMsg(error)}`);
 		}
 	}
 
@@ -779,7 +756,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			await this.docker.ensureWslReady();
 		} catch (error: unknown) {
 			this.statusBar.setState("error");
-			const msg = toErrorMessage(error);
+			const msg = errMsg(error);
 			this.statusBar.setDetails(`WSL error: ${msg}\nClick for options`);
 			new Notice(`Sandbox: ${msg}`);
 			this.app.workspace.detachLeavesOfType(VIEW_TYPE_TERMINAL);
@@ -804,7 +781,7 @@ export default class AgentSandboxPlugin extends Plugin {
 		} catch (error: unknown) {
 			this.app.workspace.detachLeavesOfType(VIEW_TYPE_TERMINAL);
 			this.statusBar.setState("error");
-			const msg = toErrorMessage(error);
+			const msg = errMsg(error);
 			this.statusBar.setDetails(`Docker error: ${msg}\nClick for options`);
 			new Notice(`Sandbox: ${msg}`);
 		}
@@ -837,7 +814,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			if (isRunning) await this.checkContainerIdDrift();
 		} catch (error: unknown) {
 			this.statusBar.setState("error");
-			const msg = toErrorMessage(error);
+			const msg = errMsg(error);
 			this.statusBar.setDetails(`Docker error: ${msg}\nClick for options`);
 			this.stopHealthPoll();
 		}
@@ -910,7 +887,7 @@ export default class AgentSandboxPlugin extends Plugin {
 		try {
 			await this.app.vault.createFolder(dir);
 		} catch (error: unknown) {
-			const msg = toErrorMessage(error).toLowerCase();
+			const msg = errMsg(error).toLowerCase();
 			if (!msg.includes("exist")) throw error;
 		}
 	}
@@ -933,7 +910,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			return true;
 		} catch (error: unknown) {
 			this.statusBar.setState("error");
-			const msg = toErrorMessage(error);
+			const msg = errMsg(error);
 			this.statusBar.setDetails(`Container error: ${msg}\nClick for options`);
 			new Notice(`${opts.failurePrefix}: ${msg}`);
 			return false;
@@ -949,7 +926,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			this.startHealthPoll();
 		} catch (error: unknown) {
 			this.statusBar.setState("error");
-			new Notice(`Failed to get status: ${toErrorMessage(error)}`);
+			new Notice(`Failed to get status: ${errMsg(error)}`);
 		}
 	}
 

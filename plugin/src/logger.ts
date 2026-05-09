@@ -18,6 +18,11 @@ function fmt(component: string, msg: string): string {
 	return `${PREFIX} [${component}] ${msg}`;
 }
 
+/** Extract a string message from an unknown thrown value. */
+export function errMsg(e: unknown): string {
+	return e instanceof Error ? e.message : String(e);
+}
+
 export const logger = {
 	debug(component: string, msg: string, ...args: unknown[]): void {
 		if (shouldLog("debug"))
