@@ -34,15 +34,10 @@ export interface ActivityUpdate {
 }
 
 export class ActivityUi {
-	private lastWaitingCount = 0;
-
 	constructor(
 		private app: App,
 		private statusBar: StatusBarManager,
 		private getActivity: () => ReadonlyMap<string, ActivityEntry> | undefined,
-		/** Restores the default tooltip (container state, MCP, firewall). Called
-		 * when the attention-tooltip override is no longer applicable. */
-		private refreshDefaultTooltip: () => void,
 	) {}
 
 	route(update: ActivityUpdate): void {
@@ -60,13 +55,9 @@ export class ActivityUi {
 	}
 
 	clear(): void {
-		this.statusBar.setAttentionCount(0);
+		this.statusBar.setAttention(0);
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
 			(leaf.view as TerminalView).setActivityPrefix(null);
-		}
-		if (this.lastWaitingCount > 0) {
-			this.lastWaitingCount = 0;
-			this.refreshDefaultTooltip();
 		}
 	}
 
@@ -83,19 +74,8 @@ export class ActivityUi {
 	}
 
 	private refreshAttentionBadge(): void {
-		const prevCount = this.lastWaitingCount;
 		const { count, names } = this.computeWaiting();
-		this.statusBar.setAttentionCount(count);
-		this.lastWaitingCount = count;
-		if (count > 0 && this.statusBar.getState() === "running") {
-			this.statusBar.setDetails(
-				`Sandbox running. ${count} session(s) awaiting input: ${names.join(", ")}\nClick for options`,
-			);
-		} else if (prevCount > 0) {
-			// Transition to zero — restore the default tooltip instead of leaving
-			// the stale "N awaiting input" string on the status bar.
-			this.refreshDefaultTooltip();
-		}
+		this.statusBar.setAttention(count, names);
 	}
 }
 

@@ -45,15 +45,11 @@ function getTool(tools: McpToolDef[], name: string): McpToolDef {
 
 describe("agent_status_set", () => {
 	it("is registered under the 'agent' tier", () => {
-		const tools = buildTools(
-			createMockApp() as never,
-			() => "agent-workspace",
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-		);
+		const tools = buildTools({
+			app: createMockApp() as never,
+			getWriteDir: () => "agent-workspace",
+			onActivity: undefined,
+		});
 		const tool = tools.find((t) => t.name === "agent_status_set");
 		expect(tool).toBeDefined();
 		expect(tool!.tier).toBe("agent");
@@ -61,15 +57,11 @@ describe("agent_status_set", () => {
 
 	it("invokes onActivity with status + sessionName + detail", async () => {
 		const onActivity = vi.fn();
-		const tools = buildTools(
-			createMockApp() as never,
-			() => "agent-workspace",
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			onActivity,
-		);
+		const tools = buildTools({
+			app: createMockApp() as never,
+			getWriteDir: () => "agent-workspace",
+			onActivity: onActivity,
+		});
 		const result = await getTool(tools, "agent_status_set").handler({
 			status: "awaiting_input",
 			sessionName: "work",
@@ -89,22 +81,21 @@ describe("agent_status_set", () => {
 
 	it("uses __default__ when sessionName is omitted or empty", async () => {
 		const onActivity = vi.fn();
-		const tools = buildTools(
-			createMockApp() as never,
-			() => "agent-workspace",
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			onActivity,
-		);
+		const tools = buildTools({
+			app: createMockApp() as never,
+			getWriteDir: () => "agent-workspace",
+			onActivity: onActivity,
+		});
 		await getTool(tools, "agent_status_set").handler({ status: "working" });
 		const firstCall = onActivity.mock.calls[0] as unknown as [{ sessionName: string }];
 		expect(firstCall[0].sessionName).toBe("__default__");
 	});
 
 	it("succeeds even when onActivity is not provided", async () => {
-		const tools = buildTools(createMockApp() as never, () => "agent-workspace");
+		const tools = buildTools({
+			app: createMockApp() as never,
+			getWriteDir: () => "agent-workspace",
+		});
 		const result = await getTool(tools, "agent_status_set").handler({ status: "idle" });
 		expect(result.isError ?? false).toBe(false);
 	});

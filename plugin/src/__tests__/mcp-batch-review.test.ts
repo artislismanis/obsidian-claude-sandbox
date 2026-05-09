@@ -22,14 +22,11 @@ describe("vault_batch_frontmatter batch review", () => {
 			approved: true,
 			approvedPaths: ["a.md", "c.md"],
 		}));
-		const tools = buildTools(
-			app as never,
-			() => "agent-workspace",
-			undefined,
-			undefined,
-			undefined,
-			reviewBatch,
-		);
+		const tools = buildTools({
+			app: app as never,
+			getWriteDir: () => "agent-workspace",
+			reviewBatch: reviewBatch,
+		});
 		const result = await getTool(tools, "vault_batch_frontmatter").handler({
 			query: "anything",
 			property: "status",
@@ -50,14 +47,11 @@ describe("vault_batch_frontmatter batch review", () => {
 			approved: false,
 			approvedPaths: [],
 		}));
-		const tools = buildTools(
-			app as never,
-			() => "agent-workspace",
-			undefined,
-			undefined,
-			undefined,
-			reviewBatch,
-		);
+		const tools = buildTools({
+			app: app as never,
+			getWriteDir: () => "agent-workspace",
+			reviewBatch: reviewBatch,
+		});
 		const result = await getTool(tools, "vault_batch_frontmatter").handler({
 			query: "anything",
 			property: "status",
@@ -69,7 +63,7 @@ describe("vault_batch_frontmatter batch review", () => {
 	});
 
 	it("falls through to direct apply when reviewBatchFn is absent", async () => {
-		const tools = buildTools(app as never, () => "agent-workspace");
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		const result = await getTool(tools, "vault_batch_frontmatter").handler({
 			query: "anything",
 			property: "status",
@@ -85,14 +79,11 @@ describe("vault_batch_frontmatter batch review", () => {
 			approved: true,
 			approvedPaths: ["a.md"],
 		}));
-		const tools = buildTools(
-			app as never,
-			() => "agent-workspace",
-			undefined,
-			undefined,
-			undefined,
-			reviewBatch,
-		);
+		const tools = buildTools({
+			app: app as never,
+			getWriteDir: () => "agent-workspace",
+			reviewBatch: reviewBatch,
+		});
 		const result = await getTool(tools, "vault_batch_frontmatter").handler({
 			query: "anything",
 			property: "status",
