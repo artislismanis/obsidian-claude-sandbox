@@ -308,18 +308,11 @@ export class DockerManager {
 			if (validate && !validate(v)) throw new Error(invalidMsg!);
 			envVars[key] = v;
 		}
-		// On Windows, inject the actual Windows host IP so the container can
-		// reach host.docker.internal correctly under Rancher Desktop / WSL2.
-		// The Docker bridge address (172.17.x.x) or Rancher's internal DNS
-		// (192.168.127.x) that host-gateway resolves to inside WSL2 is not
-		// reachable from within the container. The vEthernet WSL adapter IP
-		// (typically 172.20.x.1) is the correct gateway.
-		//
-		// Mirrored mode is different: there is no vEthernet(WSL) adapter path
-		// to the host — the primary LAN adapter is. And Docker's default
-		// MASQUERADE rewrites the container source IP to that same LAN IP,
-		// which Windows' Hyper-V firewall (allowlist: 172.16.0.0/12) then
-		// drops. So disable masquerade on the bridge in mirrored mode only.
+		// On Windows, inject the actual Windows host IP so containers can reach
+		// the host: the docker-bridge / Rancher DNS that host-gateway resolves
+		// to inside WSL2 is not reachable from the container. In mirrored mode
+		// disable Docker's bridge MASQUERADE — it rewrites to the LAN IP, which
+		// Windows' Hyper-V firewall (allowlist: 172.16.0.0/12) then drops.
 		const { mode: wslMode, hostIp: wslHostIp } = await this.getWslProbe(wslDistro);
 		if (wslHostIp) {
 			envVars.OAS_HOST_IP = wslHostIp;
@@ -403,12 +396,7 @@ export class DockerManager {
 		}
 	}
 
-	/**
-	 * `docker compose up -d` is idempotent: compose reuses an existing
-	 * container when its effective config matches, and recreates it when
-	 * anything differs. No `down` first — that would destroy a healthy
-	 * container on every start. For a forced clean recreate, use `restart()`.
-	 */
+	/** `up -d` only — compose reconciles config matches. For a forced clean recreate, use `restart()`. */
 	async start(): Promise<string> {
 		return this.withGuard(() => this.run("docker compose up -d"));
 	}
@@ -494,13 +482,7 @@ export class DockerManager {
 		}
 	}
 
-	/**
-	 * Force a clean recreate: `down` then `up -d`. Use this when you
-	 * want to discard in-container runtime state (tmpfs, background
-	 * processes, interactive apt-installed packages) or recover from
-	 * a container whose state has drifted. Unlike `start()`, this
-	 * always destroys and recreates regardless of config match.
-	 */
+	/** Force a clean recreate (`down` then `up -d`); discards in-container runtime state. */
 	async restart(): Promise<string> {
 		this.wslProbeCache = null;
 		return this.withGuard(async () => {
@@ -565,11 +547,8 @@ export class DockerManager {
 		}
 	}
 
-	/**
-	 * True if compose has any container for this project, regardless of state
-	 * (running, exited, restarting, removing). Use this to detect a half-stopped
-	 * container that still holds host port mappings while teardown completes.
-	 */
+	/** True if compose has any container for this project, regardless of state.
+	 * Used to detect a half-stopped container still holding host port mappings. */
 	async hasAnyContainer(): Promise<boolean> {
 		try {
 			const output = await this.run(`docker compose ps -a -q ${SERVICE_NAME}`, PROBE_TIMEOUT);

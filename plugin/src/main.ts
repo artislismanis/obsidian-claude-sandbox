@@ -28,9 +28,8 @@ import { showSessionCleanup, showSessionPicker } from "./session-ui";
 
 const TOOLTIP_STOPPED = "Container is not running\nClick for options";
 const HEALTH_POLL_INTERVAL = 30_000;
-// Firewall can be toggled out-of-band (user runs init-firewall.sh in the
-// container), so we refresh on user-visible events (hover, window focus) and
-// keep this long safety-net poll to heal any missed transition.
+// Long safety-net poll — firewall can be toggled out-of-band (user runs
+// init-firewall.sh in the container) and event-driven refreshes can miss it.
 const FIREWALL_REFRESH_INTERVAL = 5 * 60_000;
 const FIREWALL_EVENT_THROTTLE = 10_000;
 
@@ -133,8 +132,6 @@ export default class AgentSandboxPlugin extends Plugin {
 			return view;
 		});
 
-		// Fast-fail (5s) probe keeps a missing WSL/Docker from blocking
-		// vault load for the default 30s exec timeout.
 		this.app.workspace.onLayoutReady(() => {
 			void this.backgroundStartup();
 		});
@@ -266,9 +263,6 @@ export default class AgentSandboxPlugin extends Plugin {
 			void this.startMcpServer();
 		}
 
-		// Agent output sync — watch the vault write directory for new / modified
-		// files and surface a non-intrusive Notice. Uses Obsidian's own vault
-		// events so no node fs watcher is needed. Debounced to collapse bursts.
 		this.registerEvent(
 			this.app.vault.on("create", (file) => {
 				if (!("extension" in file)) return;
@@ -391,10 +385,10 @@ export default class AgentSandboxPlugin extends Plugin {
 		if (this.guardBusy()) return;
 		let conflicts = await this.checkStartupPortConflicts();
 		if (conflicts.length > 0) {
-			// A previous `docker compose down` started by plugin disable may still
-			// be tearing the container down — it no longer reports as "running"
-			// but its host port mapping is still held. Treat any compose-managed
-			// container (running or not) as ours and run `down` to finish cleanup.
+			// A previous `docker compose down` may still be tearing the container
+			// down — it no longer reports as "running" but the host port mapping
+			// is still held. Treat any compose-managed container as ours so we
+			// can finish that cleanup before retrying.
 			const stale = await this.docker.probeStatus();
 			const isRunning = DockerManager.parseIsRunning(stale);
 			const hasContainer = isRunning || (await this.docker.hasAnyContainer());
@@ -403,9 +397,6 @@ export default class AgentSandboxPlugin extends Plugin {
 					"Plugin",
 					`Port conflict from ${isRunning ? "running" : "half-stopped"} sandbox container — running compose down before retry`,
 				);
-				// Show the hourglass during cleanup so the status bar reflects
-				// the in-progress work rather than staying on "Stopped" while
-				// the toast disappears.
 				this.statusBar.setState("starting");
 				this.statusBar.setDetails(
 					"Waiting for previous container to shut down before starting...",

@@ -41,7 +41,7 @@ export async function pollUntilReady(
 	return false;
 }
 
-/** Exponential backoff: 500 ms × 1.5^n, capped at 5 s. Matches the terminal-view retry schedule. */
+/** Exponential backoff: 500 ms × 1.5^n, capped at 5 s. */
 export function exponentialBackoff(attemptIdx: number): number {
 	return Math.min(5000, Math.round(500 * Math.pow(1.5, attemptIdx)));
 }

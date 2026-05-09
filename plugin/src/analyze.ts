@@ -1,8 +1,4 @@
-/**
- * "Analyze in Sandbox" plumbing — URI handlers, file-menu submenu, prompt
- * template loading, and the custom-prompt modal. Kept out of main.ts so the
- * plugin entry doesn't carry filesystem / file-menu wiring inline.
- */
+/** "Analyze in Sandbox": URI handlers, file-menu submenu, prompt-template loader. */
 
 import type { App, Menu, TFile } from "obsidian";
 import { Notice } from "obsidian";

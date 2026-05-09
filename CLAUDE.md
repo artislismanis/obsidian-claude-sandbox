@@ -19,12 +19,12 @@ workspace/  Claude's domain — .claude/, .mcp.json, skills, agents, commands. M
 docs/       Host-facing docs (architecture, testing checklist)
 ```
 
-The split between `container/` and `workspace/` is the key architectural decision — infra vs Claude's domain. See `docs/architecture.md` for the full rationale and the three-tier extensibility model.
+The split between `container/` and `workspace/` is the key architectural decision — infra vs Claude's domain. See `docs/explanation/architecture.md` for the full rationale and the three-tier extensibility model.
 
 See `plugin/CLAUDE.md` for plugin architecture, patterns, and conventions.
 See `container/CLAUDE.md` for infra rules (Dockerfile, compose, firewall).
 See `workspace/CLAUDE.md` for the rules Claude follows inside the sandbox.
-See `docs/architecture.md` for the architectural rationale.
+See `docs/explanation/architecture.md` for the architectural rationale.
 See `docs/testing.md` for the test automation guide (three layers — unit, integration, e2e) and the short manual checklist.
 
 ## Naming convention

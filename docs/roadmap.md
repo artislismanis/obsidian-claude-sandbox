@@ -162,7 +162,7 @@ Deeper Obsidian integration and workflow improvements.
 The container's `init-firewall.sh` allowlist stays minimal by default (Anthropic, GitHub, npm, PyPI, CDNs, apt mirrors). Per-user expansion via two additive routes: a plugin setting and a host-managed config file.
 - [x] Plugin setting `additionalFirewallDomains` (validated domain list) → `OAS_ALLOWED_DOMAINS` env var tagged `[plugin]`.
 - [x] Host-managed `container/firewall-extras.txt` mounted read-only at `/etc/oas/firewall-extras.txt`, tagged `[file]`. Invisible to Claude.
-- [x] `init-firewall.sh --list-sources` inspects the effective allowlist grouped by origin; displayed in plugin Security tab (Refresh button) and `verify.sh`. No override semantics — all sources additive.
+- [x] `init-firewall.sh --list-sources` inspects the effective allowlist grouped by origin; displayed in plugin Advanced → Security section (Refresh button) and `verify.sh`. No override semantics — all sources additive.
 - [x] `docs/how-to/configure-firewall.md` documents the three sources, when to use each, and skip-worktree for keeping personal edits out of git.
 
 ### Activity feedback
@@ -203,7 +203,7 @@ Everything else on the roadmap is delivered.
 ## Completed
 
 - [x] Windows Local Docker mode (buildLocalWindowsCommand)
-- [x] MCP server with granular vault permissions (22 tools, 5 tiers)
+- [x] MCP server with granular vault permissions (30+ tools across 8 tiers)
 - [x] MCP security hardening (path traversal, timing-safe auth, body limit, try-catch)
 - [x] MCP settings tab (4th tab with server config + permission toggles)
 - [x] MCP manual testing checklist (sections 21-30)
@@ -220,7 +220,7 @@ Everything else on the roadmap is delivered.
 - [x] Full skill set: `research-topic`, `link-hygiene`, `reviewed-edit`, `tag-audit`, `daily-review`, `note-refactor`
 - [x] `/simplify` S1–S6 series: `McpServerConfig.hooks` consolidation; inline modal/settings styles → CSS classes; `ActivityUi` + `AgentOutputNotifier` extracted to `src/activity.ts`; `AnalyzeManager` extracted to `src/analyze.ts`; `showSessionPicker` + `showSessionCleanup` extracted to `src/session-ui.ts`; `defineTool` helper wraps all tool registrations in runtime zod parsing for typed handler args.
 - [x] Post-review bug fixes: `ActivityUi` tooltip reset on attention-count 1→0 (and on `clear()`); `AgentOutputNotifier` re-arms debounce under rate-limit instead of dropping buffered events; `AnalyzeManager` pre-warms template cache at onload so context-menu submenu has no async-after-render race; `showSessionPicker` re-queries leaves per render + revalidates at click; `VIEW_TYPE_TERMINAL` moved to `src/view-types.ts` so activity/session-ui are importable from tests without xterm.
-- [x] Tests grown from 233 → 326 (review coverage, tier derivation, chunked early-exit, cache invalidation, `agent_status_set` + ActivityUi transitions + AgentOutputNotifier debounce/rate-limit + AnalyzeManager template loading/caching/substitution, symlink path validation, batch-review, rename/move/delete affectedLinks, Canvas/Dataview/Tasks/Templater/Periodic-Notes integration handlers).
+- [x] Tests grown to 391 (review coverage, tier derivation, chunked early-exit, cache invalidation, `agent_status_set` + ActivityUi transitions + AgentOutputNotifier debounce/rate-limit + AnalyzeManager template loading/caching/substitution, symlink path validation, batch-review, rename/move/delete affectedLinks, Canvas/Dataview/Tasks/Templater/Periodic-Notes integration handlers, shell-injection coverage for `$`/backtick in env vars).
 
 ## Ecosystem References
 

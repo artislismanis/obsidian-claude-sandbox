@@ -486,9 +486,8 @@ export class ObsidianMcpServer {
 		return mayTriggerReview ? this.config.reviewTimeoutMs : this.config.toolTimeoutMs;
 	}
 
-	/** Run a tool's handler under timeout + response-truncation. Returns the
-	 * MCP result and whether the call was successful. Throws on timeout/handler
-	 * error so the caller can record the failure. */
+	/** Run a tool under the configured timeout and truncate oversize responses;
+	 * throws on timeout so the caller can record it as a failure. */
 	private async runToolWithLimits(
 		tool: McpToolDef,
 		args: Record<string, unknown>,

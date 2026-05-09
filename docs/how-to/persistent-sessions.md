@@ -21,7 +21,7 @@ Unattached sessions pile up. **Sandbox: Clean up empty sessions** lists candidat
 
 ## Configuration
 
-- Sessions live in the container at `/home/claude/.tmux/` and share the `oas-shell-history` volume so command history persists across container rebuilds.
+- Tmux sessions live in the container's runtime state (default socket under `/tmp/tmux-<uid>/`); the `oas-shell-history` volume keeps command history across container rebuilds.
 - If the container restarts, tmux sessions are gone. That's the only way to lose them.
 - No auto-GC is shipped — you decide when to clean up.
 

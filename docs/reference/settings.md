@@ -36,7 +36,7 @@ All plugin settings live in **Obsidian → Settings → Agent Sandbox**. Setting
 | Auto-enable firewall on start | off | Invokes `init-firewall.sh` after `docker compose up -d`. |
 | Allowed private hosts | `""` | Comma-separated IPs/CIDRs allowed through the firewall (e.g. `192.168.1.100, 10.0.0.0/8`). *(requires restart)* |
 | Additional firewall domains | `""` | Comma-separated domain names. Surfaces with `[plugin]` tag in `--list-sources`. *(requires restart)* |
-| Sudo password | `sandbox` | For the narrow apt-get/apt sudoers entry inside the container. *(requires restart)* |
+| Sudo password | `sandbox` | For the narrow apt-get/apt sudoers entry inside the container. Empty = sudo disabled. *(requires restart)* |
 
 ## MCP
 
@@ -51,7 +51,7 @@ All plugin settings live in **Obsidian → Settings → Agent Sandbox**. Setting
 
 Claude can call the always-on `mcp_capabilities` tool to introspect which tiers are enabled and the current write directory — use this when debugging unexpected "write rejected" errors rather than guessing.
 
-All write tools run under a 10 s server-side handler timeout (`TOOL_TIMEOUT_MS` in `plugin/src/mcp-server.ts`). A hung handler returns a structured error rather than stalling the proxy's request queue.
+Tool calls run under a configurable server-side handler timeout (default 10 s, settable via "Tool timeout" in MCP settings; review-modal prompts use a separate "Review timeout" defaulting to 180 s). A hung handler returns a structured error rather than stalling the proxy's request queue.
 
 ## Storage
 

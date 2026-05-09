@@ -157,11 +157,7 @@ function isVaultPathSafe(app: App, vaultPath: string): boolean {
 	return isRealPathWithinBase(adapter.getBasePath(), adapter.getFullPath(vaultPath));
 }
 
-/**
- * Parallel-chunked iteration over markdown files, short-circuiting when the
- * handler returns `true`. Used by any tool that wants parallel cachedReads
- * without loading the entire vault at once.
- */
+/** Parallel-chunked iteration over markdown files; handler returning true stops the walk. */
 export async function forEachMarkdownChunked(
 	app: App,
 	handler: (file: TFile, content: string) => boolean | void | Promise<boolean | void>,
@@ -272,7 +268,6 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 	} = opts;
 	const tools: McpToolDef[] = [];
 
-	/** App-bound alias of the module-level helper, so call sites stay terse. */
 	const forEachMarkdown: (
 		handler: (file: TFile, content: string) => boolean | void | Promise<boolean | void>,
 		files?: TFile[],
@@ -360,7 +355,6 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 				const limit = limitArg ?? 20;
 				const search = prepareSimpleSearch(query);
 				const results: string[] = [];
-				// Chunk size capped at limit so a tight limit stops sooner.
 				await forEachMarkdown(
 					(file, content) => {
 						const match = search(content);
