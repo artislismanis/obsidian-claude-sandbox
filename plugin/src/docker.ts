@@ -9,6 +9,14 @@ const exec = promisify(execCb);
 const VALID_DISTRO_NAME = /^[\w][\w.-]*$/;
 const VALID_SESSION_NAME = /^[\w.-]+$/;
 
+function assertValidDistro(name: string): void {
+	if (!VALID_DISTRO_NAME.test(name)) {
+		throw new Error(
+			`Invalid WSL distribution name '${name}'. Only alphanumeric characters, hyphens, underscores, and dots are allowed.`,
+		);
+	}
+}
+
 function assertSafeSessionName(name: string): void {
 	if (!VALID_SESSION_NAME.test(name)) {
 		throw new Error(
@@ -85,19 +93,24 @@ function escapeForOuterDoubleQuote(s: string): string {
 	return s.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$/g, "\\$").replace(/"/g, '\\"');
 }
 
+function buildBashCommand(
+	composePath: string,
+	dockerCmd: string,
+	envVars: Record<string, string>,
+	prefix: string,
+): string {
+	const cmdSafe = escapeForOuterDoubleQuote(buildInnerCommand(composePath, dockerCmd, envVars));
+	return `${prefix}bash -c "${cmdSafe}"`;
+}
+
 export function buildWslCommand(
 	composePath: string,
 	wslDistro: string,
 	dockerCmd: string,
 	envVars: Record<string, string> = {},
 ): string {
-	if (!VALID_DISTRO_NAME.test(wslDistro)) {
-		throw new Error(
-			`Invalid WSL distribution name '${wslDistro}'. Only alphanumeric characters, hyphens, underscores, and dots are allowed.`,
-		);
-	}
-	const cmdSafe = escapeForOuterDoubleQuote(buildInnerCommand(composePath, dockerCmd, envVars));
-	return `wsl -d ${wslDistro} -- bash -c "${cmdSafe}"`;
+	assertValidDistro(wslDistro);
+	return buildBashCommand(composePath, dockerCmd, envVars, `wsl -d ${wslDistro} -- `);
 }
 
 export function buildLocalCommand(
@@ -105,8 +118,7 @@ export function buildLocalCommand(
 	dockerCmd: string,
 	envVars: Record<string, string> = {},
 ): string {
-	const cmdSafe = escapeForOuterDoubleQuote(buildInnerCommand(composePath, dockerCmd, envVars));
-	return `bash -c "${cmdSafe}"`;
+	return buildBashCommand(composePath, dockerCmd, envVars, "");
 }
 
 /**
@@ -459,11 +471,7 @@ export class DockerManager {
 		const { dockerMode, wslDistro } = this.getSettings();
 		if (dockerMode !== "wsl") return;
 
-		if (!VALID_DISTRO_NAME.test(wslDistro)) {
-			throw new Error(
-				`Invalid WSL distribution name '${wslDistro}'. Only alphanumeric characters, hyphens, underscores, and dots are allowed.`,
-			);
-		}
+		assertValidDistro(wslDistro);
 
 		const command = `wsl -d ${wslDistro} -- echo ok`;
 		try {
@@ -505,20 +513,20 @@ export class DockerManager {
 		});
 	}
 
-	async enableFirewall(): Promise<string> {
-		return this.withGuard(() =>
-			this.run(
-				`docker compose exec --user root ${SERVICE_NAME} /usr/local/bin/init-firewall.sh`,
-			),
+	private firewallExec(args: string, timeout?: number): Promise<string> {
+		const argSuffix = args ? ` ${args}` : "";
+		return this.run(
+			`docker compose exec --user root ${SERVICE_NAME} /usr/local/bin/init-firewall.sh${argSuffix}`,
+			timeout,
 		);
 	}
 
+	async enableFirewall(): Promise<string> {
+		return this.withGuard(() => this.firewallExec(""));
+	}
+
 	async disableFirewall(): Promise<string> {
-		return this.withGuard(() =>
-			this.run(
-				`docker compose exec --user root ${SERVICE_NAME} /usr/local/bin/init-firewall.sh --disable`,
-			),
-		);
+		return this.withGuard(() => this.firewallExec("--disable"));
 	}
 
 	/**
@@ -579,9 +587,7 @@ export class DockerManager {
 	 */
 	async firewallStatus(): Promise<"enabled" | "disabled" | "unavailable"> {
 		try {
-			const output = await this.run(
-				`docker compose exec --user root ${SERVICE_NAME} /usr/local/bin/init-firewall.sh --status`,
-			);
+			const output = await this.firewallExec("--status");
 			return output.trim() === "enabled" ? "enabled" : "disabled";
 		} catch {
 			return "unavailable";
@@ -589,10 +595,7 @@ export class DockerManager {
 	}
 
 	async firewallSources(): Promise<string> {
-		return this.run(
-			`docker compose exec --user root ${SERVICE_NAME} /usr/local/bin/init-firewall.sh --list-sources`,
-			PROBE_TIMEOUT,
-		);
+		return this.firewallExec("--list-sources", PROBE_TIMEOUT);
 	}
 
 	private tmuxExec(subcmd: string, suppressErrors = false): Promise<string> {

@@ -9,6 +9,13 @@
  */
 
 import type { App, Menu, MenuItem, WorkspaceLeaf } from "obsidian";
+import { FileSystemAdapter } from "obsidian";
+
+/** Vault filesystem base path on desktop, or null on mobile/test adapters. */
+export function getVaultBasePath(app: App): string | null {
+	const adapter = app.vault.adapter;
+	return adapter instanceof FileSystemAdapter ? adapter.getBasePath() : null;
+}
 
 /** The plugin host exposed on `app.plugins` (Obsidian doesn't type this). */
 interface PluginsHost {

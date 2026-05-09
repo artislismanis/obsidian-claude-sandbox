@@ -54,3 +54,18 @@ export function vaultWriteTiers(mode: VaultWriteMode): PermissionTier[] {
 export function reviewsRequired(mode: VaultWriteMode): boolean {
 	return mode === "reviewed";
 }
+
+// Compile-time exhaustiveness check: if PermissionTier gains a new member,
+// this assignment errors until the new tier is added to one of the three
+// classification sources (always-on, vault-write, or gated).
+type _ClassifiedTier =
+	| (typeof ALWAYS_ON_TIERS)[number]
+	| (typeof GATED_TIERS)[number]["tier"]
+	| "writeReviewed"
+	| "writeVault";
+const _exhaustive: _ClassifiedTier extends PermissionTier
+	? PermissionTier extends _ClassifiedTier
+		? true
+		: false
+	: false = true;
+void _exhaustive;

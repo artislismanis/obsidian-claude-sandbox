@@ -1,5 +1,6 @@
 import type { TFile, WorkspaceLeaf } from "obsidian";
-import { FileSystemAdapter, Menu, Notice, Plugin, debounce } from "obsidian";
+import { Menu, Notice, Plugin, debounce } from "obsidian";
+import { getVaultBasePath } from "./obsidian-internals";
 import { confirmModal, inputModal } from "./modals";
 import { BatchReviewModal, DiffReviewModal } from "./diff-review-modal";
 import { AnalyzeManager } from "./analyze";
@@ -63,10 +64,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			dockerMode: this.settings.dockerMode,
 			composePath: this.settings.dockerComposeFilePath,
 			wslDistro: this.settings.wslDistroName,
-			vaultPath:
-				this.app.vault.adapter instanceof FileSystemAdapter
-					? this.app.vault.adapter.getBasePath()
-					: undefined,
+			vaultPath: getVaultBasePath(this.app) ?? undefined,
 			writeDir: this.settings.vaultWriteDir,
 			memoryFileName: this.settings.memoryFileName,
 			ttydPort: this.settings.ttydPort,
@@ -719,10 +717,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			this.statusBar.setDetails("Starting: probing WSL (5s fast-fail)…");
 			await this.docker.ensureWslReady();
 		} catch (error: unknown) {
-			this.statusBar.setState("error");
-			const msg = errMsg(error);
-			this.statusBar.setDetails(`WSL error: ${msg}\nClick for options`);
-			new Notice(`Sandbox: ${msg}`);
+			this.reportContainerError({ detailsPrefix: "WSL error", error, notice: true });
 			this.app.workspace.detachLeavesOfType(VIEW_TYPE_TERMINAL);
 			return;
 		}
@@ -744,10 +739,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			this.startHealthPoll();
 		} catch (error: unknown) {
 			this.app.workspace.detachLeavesOfType(VIEW_TYPE_TERMINAL);
-			this.statusBar.setState("error");
-			const msg = errMsg(error);
-			this.statusBar.setDetails(`Docker error: ${msg}\nClick for options`);
-			new Notice(`Sandbox: ${msg}`);
+			this.reportContainerError({ detailsPrefix: "Docker error", error, notice: true });
 		}
 	}
 
@@ -777,9 +769,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			await this.syncStatusBar(isRunning);
 			if (isRunning) await this.checkContainerIdDrift();
 		} catch (error: unknown) {
-			this.statusBar.setState("error");
-			const msg = errMsg(error);
-			this.statusBar.setDetails(`Docker error: ${msg}\nClick for options`);
+			this.reportContainerError({ detailsPrefix: "Docker error", error });
 			this.stopHealthPoll();
 		}
 	}
@@ -833,6 +823,26 @@ export default class AgentSandboxPlugin extends Plugin {
 		}
 	}
 
+	/**
+	 * Funnel for "container/docker/wsl call failed" status updates.
+	 * Sets state=error, details=`<prefix>: <msg>\nClick for options`, and
+	 * optionally raises a Notice (`true` → `Sandbox: <msg>`; string → `<string>: <msg>`).
+	 */
+	private reportContainerError(opts: {
+		detailsPrefix: string;
+		error: unknown;
+		notice?: string | true;
+	}): void {
+		this.statusBar.setState("error");
+		const msg = errMsg(opts.error);
+		this.statusBar.setDetails(`${opts.detailsPrefix}: ${msg}\nClick for options`);
+		if (opts.notice === true) {
+			new Notice(`Sandbox: ${msg}`);
+		} else if (typeof opts.notice === "string") {
+			new Notice(`${opts.notice}: ${msg}`);
+		}
+	}
+
 	private async runDockerCommand(opts: {
 		preState?: ContainerState;
 		preDetails?: string;
@@ -853,10 +863,11 @@ export default class AgentSandboxPlugin extends Plugin {
 			new Notice(opts.successMsg);
 			return true;
 		} catch (error: unknown) {
-			this.statusBar.setState("error");
-			const msg = errMsg(error);
-			this.statusBar.setDetails(`Container error: ${msg}\nClick for options`);
-			new Notice(`${opts.failurePrefix}: ${msg}`);
+			this.reportContainerError({
+				detailsPrefix: "Container error",
+				error,
+				notice: opts.failurePrefix,
+			});
 			return false;
 		}
 	}

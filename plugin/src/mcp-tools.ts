@@ -22,6 +22,10 @@ export type PermissionTier =
 
 export type AgentStatus = "idle" | "working" | "awaiting_input";
 
+/** Sentinel session key used by both ActivityUi and the MCP `agent_status_set` tool
+ *  to represent activity outside any explicit tmux session name. */
+export const DEFAULT_SESSION_KEY = "__default__";
+
 export type OnActivity = (update: {
 	sessionName: string;
 	status: AgentStatus;
@@ -942,8 +946,10 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 		newContent?: string;
 		description: string;
 		review: ReviewFn | undefined;
-		apply: () => Promise<unknown>;
-		successMsg: string | (() => string);
+		/** Optional context to splice into successMsg via the `{result}` placeholder. */
+		apply: () => Promise<string | void>;
+		/** `{result}` is replaced by the apply()'s returned string when present. */
+		successMsg: string;
 		affectedLinks?: string[];
 	}): Promise<McpToolResult> {
 		if (op.review) {
@@ -957,12 +963,9 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 			});
 			if (!result.approved) return error("Change rejected by user.");
 		}
-		await op.apply();
-		return text(typeof op.successMsg === "function" ? op.successMsg() : op.successMsg);
-	}
-
-	function withoutKey(obj: Record<string, unknown>, key: string): Record<string, unknown> {
-		return Object.fromEntries(Object.entries(obj).filter(([k]) => k !== key));
+		const applyResult = await op.apply();
+		const msg = op.successMsg.replace("{result}", applyResult ?? "");
+		return text(msg);
 	}
 
 	/** Parse `raw` as JSON; fall back to the raw string if it isn't valid JSON. */
@@ -978,7 +981,8 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 	function frontmatterSnapshot(f: TFile): Record<string, unknown> {
 		const fm = app.metadataCache.getFileCache(f)?.frontmatter;
 		if (!fm) return {};
-		return withoutKey(fm as Record<string, unknown>, "position");
+		const { position: _position, ...rest } = fm as Record<string, unknown>;
+		return rest;
 	}
 
 	interface WriteToolConfig {
@@ -989,13 +993,15 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 		 * about where the tool can operate, so it does not discover scope failures only by trial. */
 		scopeNote: string;
 		guardPath: (path: string) => McpToolResult | null;
-		resolveForWrite: (args: Record<string, unknown>) => TFile | McpToolResult;
+		resolveForWrite: (
+			args: Record<string, unknown>,
+		) => { ok: true; file: TFile } | { ok: false; error: McpToolResult };
 		review?: ReviewFn;
 	}
 
 	function addWriteTools(cfg: WriteToolConfig): void {
 		const { tier, suffix, scopeLabel, scopeNote, guardPath, resolveForWrite, review } = cfg;
-		const note = scopeNote ? ` ${scopeNote}` : "";
+		const note = ` ${scopeNote}`;
 		tools.push(
 			defineTool({
 				name: `vault_create${suffix}`,
@@ -1018,7 +1024,6 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 					// Only auto-apply the folder template when the caller didn't supply
 					// content; otherwise we'd silently clobber the agent's intended payload.
 					const tryTemplate = content === "" && path.endsWith(".md");
-					let appliedTemplate: string | null = null;
 					return runWrite({
 						operation: "create",
 						filePath: path,
@@ -1028,18 +1033,12 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 						apply: () =>
 							withTemplaterHookSuppressed(app, async () => {
 								const created = await app.vault.create(path, content);
-								if (tryTemplate) {
-									appliedTemplate = await applyTemplaterFolderTemplate(
-										app,
-										created,
-									);
-								}
-								return created;
+								const tmpl = tryTemplate
+									? await applyTemplaterFolderTemplate(app, created)
+									: null;
+								return tmpl ? ` (applied template ${tmpl})` : "";
 							}),
-						successMsg: () =>
-							appliedTemplate
-								? `Created ${path} (applied template ${appliedTemplate})`
-								: `Created ${path}`,
+						successMsg: `Created ${path}{result}`,
 					});
 				},
 			}),
@@ -1059,8 +1058,8 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 
 				handler: async ({ file, path, content }) => {
 					const result = resolveForWrite({ file, path });
-					if ("isError" in result) return result as McpToolResult;
-					const f = result as TFile;
+					if (!result.ok) return result.error;
+					const f = result.file;
 					return runWrite({
 						operation: "modify",
 						filePath: f.path,
@@ -1089,8 +1088,8 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 
 				handler: async ({ file, path, content: addition }) => {
 					const result = resolveForWrite({ file, path });
-					if ("isError" in result) return result as McpToolResult;
-					const f = result as TFile;
+					if (!result.ok) return result.error;
+					const f = result.file;
 					const oldContent = review ? await app.vault.read(f) : undefined;
 					return runWrite({
 						operation: "append",
@@ -1122,8 +1121,8 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 
 				handler: async ({ file, path, property, value: raw }) => {
 					const result = resolveForWrite({ file, path });
-					if ("isError" in result) return result as McpToolResult;
-					const f = result as TFile;
+					if (!result.ok) return result.error;
+					const f = result.file;
 					const value = parseJsonOrString(raw);
 					const oldFm = frontmatterSnapshot(f);
 					return runWrite({
@@ -1157,12 +1156,12 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 
 				handler: async ({ file, path, property }) => {
 					const result = resolveForWrite({ file, path });
-					if ("isError" in result) return result as McpToolResult;
-					const f = result as TFile;
+					if (!result.ok) return result.error;
+					const f = result.file;
 					const oldFm = frontmatterSnapshot(f);
 					if (!(property in oldFm))
 						return error(`Property '${property}' not found in frontmatter.`);
-					const newFm = withoutKey(oldFm, property);
+					const { [property]: _dropped, ...newFm } = oldFm;
 					return runWrite({
 						operation: "frontmatter_delete",
 						filePath: f.path,
@@ -1207,8 +1206,8 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 					caseSensitive = true,
 				}) => {
 					const result = resolveForWrite({ file, path });
-					if ("isError" in result) return result as McpToolResult;
-					const f = result as TFile;
+					if (!result.ok) return result.error;
+					const f = result.file;
 					const content = await app.vault.read(f);
 
 					let pattern: RegExp;
@@ -1266,8 +1265,8 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 
 				handler: async ({ file, path, content }) => {
 					const result = resolveForWrite({ file, path });
-					if ("isError" in result) return result as McpToolResult;
-					const f = result as TFile;
+					if (!result.ok) return result.error;
+					const f = result.file;
 					const existing = await app.vault.read(f);
 					const cache = app.metadataCache.getFileCache(f);
 					const fmEnd = cache?.frontmatterPosition?.end;
@@ -1328,8 +1327,8 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 					position = "after",
 				}) => {
 					const result = resolveForWrite({ file, path });
-					if ("isError" in result) return result as McpToolResult;
-					const f = result as TFile;
+					if (!result.ok) return result.error;
+					const f = result.file;
 					const existing = await app.vault.read(f);
 					const lines = existing.split("\n");
 
@@ -1407,8 +1406,12 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 		);
 	}
 
-	const resolveAnywhere = (args: Record<string, unknown>) =>
-		resolveFile(app, args, pathFilter) ?? error("File not found.");
+	const resolveAnywhere = (
+		args: Record<string, unknown>,
+	): { ok: true; file: TFile } | { ok: false; error: McpToolResult } => {
+		const f = resolveFile(app, args, pathFilter);
+		return f ? { ok: true, file: f } : { ok: false, error: error("File not found.") };
+	};
 
 	const writeDirForNote = getWriteDir();
 	addWriteTools({
@@ -1427,10 +1430,13 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 			if (path) {
 				const writeDir = getWriteDir();
 				if (!isPathWithinDir(path, writeDir))
-					return error(`Path must be within the write directory '${writeDir}'.`);
+					return {
+						ok: false,
+						error: error(`Path must be within the write directory '${writeDir}'.`),
+					};
 			}
 			const f = resolveFile(app, args, pathFilter);
-			return f ?? error("File not found.");
+			return f ? { ok: true, file: f } : { ok: false, error: error("File not found.") };
 		},
 	});
 
@@ -1658,10 +1664,13 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 				if (reviewBatchFn) {
 					const items = matched.map((file) => {
 						const oldFm = frontmatterSnapshot(file);
-						const newFm =
-							rawValue !== undefined
-								? { ...oldFm, [property]: value }
-								: withoutKey(oldFm, property);
+						let newFm: Record<string, unknown>;
+						if (rawValue !== undefined) {
+							newFm = { ...oldFm, [property]: value };
+						} else {
+							const { [property]: _dropped, ...rest } = oldFm;
+							newFm = rest;
+						}
 						return {
 							filePath: file.path,
 							oldContent: JSON.stringify(oldFm, null, 2),
@@ -1728,7 +1737,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 					.describe("Short human-readable context (e.g. tool name, question)"),
 			},
 			handler: async ({ status, sessionName, detail }) => {
-				const name = (sessionName ?? "").trim() || "__default__";
+				const name = (sessionName ?? "").trim() || DEFAULT_SESSION_KEY;
 				onActivity?.({ sessionName: name, status, detail });
 				return text("OK");
 			},
