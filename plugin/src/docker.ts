@@ -571,14 +571,20 @@ export class DockerManager {
 		}
 	}
 
-	async firewallStatus(): Promise<boolean> {
+	/**
+	 * Resolve the firewall state with three outcomes:
+	 *  - "enabled" / "disabled": container responded
+	 *  - "unavailable": container missing or exec failed (caller should hide UI,
+	 *    not display as "disabled")
+	 */
+	async firewallStatus(): Promise<"enabled" | "disabled" | "unavailable"> {
 		try {
 			const output = await this.run(
 				`docker compose exec --user root ${SERVICE_NAME} /usr/local/bin/init-firewall.sh --status`,
 			);
-			return output.trim() === "enabled";
+			return output.trim() === "enabled" ? "enabled" : "disabled";
 		} catch {
-			return false;
+			return "unavailable";
 		}
 	}
 

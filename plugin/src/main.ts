@@ -523,12 +523,8 @@ export default class AgentSandboxPlugin extends Plugin {
 	}
 
 	private async refreshFirewallStatus(): Promise<void> {
-		try {
-			const fwOn = await this.docker.firewallStatus();
-			this.firewallBar.setState(fwOn ? "enabled" : "disabled");
-		} catch {
-			this.firewallBar.setState("hidden");
-		}
+		const status = await this.docker.firewallStatus();
+		this.firewallBar.setState(status === "unavailable" ? "hidden" : status);
 		this.lastFirewallRefreshAt = Date.now();
 	}
 
@@ -839,6 +835,7 @@ export default class AgentSandboxPlugin extends Plugin {
 
 	private async runDockerCommand(opts: {
 		preState?: ContainerState;
+		preDetails?: string;
 		action: () => Promise<string>;
 		postState: ContainerState;
 		successMsg: string;
@@ -847,7 +844,9 @@ export default class AgentSandboxPlugin extends Plugin {
 		try {
 			if (opts.preState) {
 				this.statusBar.setState(opts.preState);
-				this.statusBar.setDetails("Container is starting up...");
+				// Honour caller-supplied details (e.g. "Waiting for previous
+				// container to shut down...") instead of clobbering with a generic.
+				this.statusBar.setDetails(opts.preDetails ?? "Container is starting up...");
 			}
 			await opts.action();
 			this.statusBar.setState(opts.postState);
