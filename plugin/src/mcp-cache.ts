@@ -23,10 +23,6 @@ export class VaultCache {
 		return value;
 	}
 
-	invalidate(key: string): void {
-		this.cache.delete(key);
-	}
-
 	invalidateAll(): void {
 		this.cache.clear();
 	}

@@ -45,9 +45,15 @@ export function isValidPathPrefixList(value: string): boolean {
 	);
 }
 
+/** Normalise a vault-relative path: collapse `.`/`..` segments, strip leading and trailing slashes. */
+function normaliseVaultPath(p: string): string {
+	return posixPath.normalize(p).replace(/^\/|\/$/g, "");
+}
+
 export function isPathWithinDir(filePath: string, dir: string): boolean {
-	const normalized = posixPath.normalize(filePath).replace(/^\//, "");
-	const normalizedDir = posixPath.normalize(dir).replace(/^\//, "");
+	const normalized = normaliseVaultPath(filePath);
+	const normalizedDir = normaliseVaultPath(dir);
+	if (normalizedDir === "") return true;
 	return normalized === normalizedDir || normalized.startsWith(normalizedDir + "/");
 }
 
@@ -76,10 +82,7 @@ function isValidIpOrCidr(entry: string): boolean {
 /** Validates comma-separated IPs/CIDRs. Empty string = valid (use defaults). */
 export function isValidPrivateHosts(value: string): boolean {
 	if (!value.trim()) return true;
-	return value.split(",").every((entry) => {
-		const trimmed = entry.trim();
-		return trimmed.length > 0 && isValidIpOrCidr(trimmed);
-	});
+	return splitCsv(value).every(isValidIpOrCidr);
 }
 
 const VALID_MEMORY = /^\d+[KkMmGgTt]$/;
@@ -109,10 +112,7 @@ const VALID_DOMAIN = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0
 /** Validates comma-separated list of domain names (e.g. "api.atlassian.com, slack.com"). Empty = valid. */
 export function isValidDomainList(value: string): boolean {
 	if (!value.trim()) return true;
-	return value.split(",").every((entry) => {
-		const trimmed = entry.trim();
-		return trimmed.length > 0 && VALID_DOMAIN.test(trimmed);
-	});
+	return splitCsv(value).every((entry) => VALID_DOMAIN.test(entry));
 }
 
 /**
@@ -122,13 +122,8 @@ export function isValidDomainList(value: string): boolean {
  * - Empty lists = no restriction.
  */
 export function isPathAllowed(filePath: string, allowlist: string[], blocklist: string[]): boolean {
-	const norm = (p: string) => posixPath.normalize(p).replace(/^\/|\/$/g, "");
-	const normalized = norm(filePath);
 	const matchesAnyPrefix = (prefixes: string[]): boolean =>
-		prefixes.some((p) => {
-			const np = norm(p);
-			return normalized === np || normalized.startsWith(np + "/");
-		});
+		prefixes.some((p) => isPathWithinDir(filePath, p));
 	if (matchesAnyPrefix(blocklist)) return false;
 	if (allowlist.length === 0) return true;
 	return matchesAnyPrefix(allowlist);

@@ -63,7 +63,6 @@ interface RateBucket {
 
 class RateLimiter {
 	private buckets = new Map<string, RateBucket>();
-	private limits = new Map<string, number>();
 	private defaultRead: number;
 	private defaultWrite: number;
 
@@ -72,12 +71,8 @@ class RateLimiter {
 		this.defaultWrite = defaultWrite;
 	}
 
-	setLimit(toolName: string, maxPerMinute: number): void {
-		this.limits.set(toolName, maxPerMinute);
-	}
-
 	check(toolName: string, tier: PermissionTier): boolean {
-		const limit = this.limits.get(toolName) ?? this.defaultForTier(tier);
+		const limit = tier === "read" || tier === "navigate" ? this.defaultRead : this.defaultWrite;
 		const now = Date.now();
 		let bucket = this.buckets.get(toolName);
 		if (!bucket) {
@@ -90,10 +85,6 @@ class RateLimiter {
 		if (bucket.timestamps.length >= limit) return false;
 		bucket.timestamps.push(now);
 		return true;
-	}
-
-	private defaultForTier(tier: PermissionTier): number {
-		return tier === "read" || tier === "navigate" ? this.defaultRead : this.defaultWrite;
 	}
 }
 

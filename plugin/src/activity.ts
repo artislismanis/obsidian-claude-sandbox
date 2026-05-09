@@ -19,7 +19,7 @@ import { VIEW_TYPE_TERMINAL } from "./view-types";
 import type { AgentStatus } from "./mcp-tools";
 import { isPathWithinDir } from "./validation";
 
-const DEFAULT_SESSION_KEY = "__default__";
+import { DEFAULT_SESSION_KEY } from "./mcp-tools";
 
 const STATUS_TO_PREFIX: Record<AgentStatus, ActivityPrefix> = {
 	working: "working",

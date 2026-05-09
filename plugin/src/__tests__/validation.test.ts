@@ -47,7 +47,8 @@ describe("isValidPrivateHosts", () => {
 	it("rejects CIDR prefix > 32", () => expect(isValidPrivateHosts("10.0.0.0/33")).toBe(false));
 	it("rejects leading zeros in octet", () =>
 		expect(isValidPrivateHosts("192.168.01.1")).toBe(false));
-	it("rejects trailing comma", () => expect(isValidPrivateHosts("192.168.1.1,")).toBe(false));
+	it("accepts trailing comma (treated as empty entry, ignored)", () =>
+		expect(isValidPrivateHosts("192.168.1.1,")).toBe(true));
 });
 
 describe("isValidMemory", () => {

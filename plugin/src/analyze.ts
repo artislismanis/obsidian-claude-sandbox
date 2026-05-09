@@ -5,11 +5,11 @@
  */
 
 import type { App, Menu, TFile } from "obsidian";
-import { FileSystemAdapter, Notice } from "obsidian";
+import { Notice } from "obsidian";
 import { inputModal } from "./modals";
 import { existsSync as fsExistsSync } from "fs";
 import { join as pathJoin } from "path";
-import { tryOpenSubmenu } from "./obsidian-internals";
+import { getVaultBasePath, tryOpenSubmenu } from "./obsidian-internals";
 import { parsePromptTemplate, substituteFilePlaceholder } from "./prompt-template";
 
 export interface PromptTemplate {
@@ -74,9 +74,8 @@ export class AnalyzeManager {
 	}
 
 	private resolvePromptsDir(): string | null {
-		const adapter = this.host.app.vault.adapter;
-		if (!(adapter instanceof FileSystemAdapter)) return null;
-		const base = adapter.getBasePath();
+		const base = getVaultBasePath(this.host.app);
+		if (!base) return null;
 		const candidates = [
 			pathJoin(base, ".claude", "prompts"),
 			pathJoin(base, "..", "workspace", ".claude", "prompts"),

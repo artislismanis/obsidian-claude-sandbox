@@ -34,15 +34,6 @@ describe("VaultCache", () => {
 		expect(compute).toHaveBeenCalledTimes(1);
 	});
 
-	it("recomputes after invalidate", () => {
-		let counter = 0;
-		const compute = vi.fn(() => ++counter);
-		expect(cache.get("key", compute)).toBe(1);
-		cache.invalidate("key");
-		expect(cache.get("key", compute)).toBe(2);
-		expect(compute).toHaveBeenCalledTimes(2);
-	});
-
 	it("invalidateAll clears all keys", () => {
 		cache.get("a", () => 1);
 		cache.get("b", () => 2);
