@@ -68,28 +68,26 @@ export class ActivityUi {
 		}
 	}
 
-	private refreshAttentionBadge(): void {
+	private computeWaiting(): { count: number; names: string[] } {
 		const activity = this.getActivity();
-		const prevCount = this.lastWaitingCount;
-		if (!activity) {
-			this.statusBar.setAttentionCount(0);
-			this.lastWaitingCount = 0;
-			if (prevCount > 0) this.refreshDefaultTooltip();
-			return;
-		}
-		let count = 0;
-		const waitingNames: string[] = [];
+		if (!activity) return { count: 0, names: [] };
+		const names: string[] = [];
 		for (const [name, entry] of activity) {
 			if (entry.status === "awaiting_input") {
-				count++;
-				waitingNames.push(name === DEFAULT_SESSION_KEY ? "(unnamed)" : name);
+				names.push(name === DEFAULT_SESSION_KEY ? "(unnamed)" : name);
 			}
 		}
+		return { count: names.length, names };
+	}
+
+	private refreshAttentionBadge(): void {
+		const prevCount = this.lastWaitingCount;
+		const { count, names } = this.computeWaiting();
 		this.statusBar.setAttentionCount(count);
 		this.lastWaitingCount = count;
 		if (count > 0 && this.statusBar.getState() === "running") {
 			this.statusBar.setDetails(
-				`Sandbox running. ${count} session(s) awaiting input: ${waitingNames.join(", ")}\nClick for options`,
+				`Sandbox running. ${count} session(s) awaiting input: ${names.join(", ")}\nClick for options`,
 			);
 		} else if (prevCount > 0) {
 			// Transition to zero — restore the default tooltip instead of leaving

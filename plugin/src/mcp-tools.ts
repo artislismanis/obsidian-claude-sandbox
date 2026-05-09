@@ -6,6 +6,7 @@ import { FileSystemAdapter } from "obsidian";
 import type { WriteOperation } from "./diff-review-modal";
 import { registerExtensionTools } from "./mcp-extensions";
 import { applyTemplaterFolderTemplate, withTemplaterHookSuppressed } from "./templater-adapter";
+import { errMsg } from "./logger";
 
 export type { WriteOperation };
 
@@ -90,6 +91,13 @@ export function defineTool<S extends Record<string, z.ZodType>>(def: {
 			return def.handler(parsed.data as z.infer<z.ZodObject<S>>);
 		},
 	};
+}
+
+/** Extract a 180-char window around the first match offset, with newlines flattened. */
+function extractSnippet(content: string, offset: number): string {
+	const start = Math.max(0, offset - 60);
+	const end = Math.min(content.length, offset + 120);
+	return content.slice(start, end).replace(/\n/g, " ");
 }
 
 function fileToInfo(file: TFile): string {
@@ -318,10 +326,7 @@ export function buildTools(
 				await forEachMarkdown((file, content) => {
 					const match = search(content);
 					if (!match) return;
-					const firstOffset = match.matches[0]?.[0] ?? 0;
-					const start = Math.max(0, firstOffset - 60);
-					const end = Math.min(content.length, firstOffset + 120);
-					const snippet = content.slice(start, end).replace(/\n/g, " ");
+					const snippet = extractSnippet(content, match.matches[0]?.[0] ?? 0);
 					results.push(`${file.path}: ...${snippet}...`);
 					return results.length >= limit;
 				});
@@ -348,10 +353,7 @@ export function buildTools(
 				await forEachMarkdown((file, content) => {
 					const match = search(content);
 					if (!match) return;
-					const firstOffset = match.matches[0]?.[0] ?? 0;
-					const start = Math.max(0, firstOffset - 60);
-					const end = Math.min(content.length, firstOffset + 120);
-					const snippet = content.slice(start, end).replace(/\n/g, " ");
+					const snippet = extractSnippet(content, match.matches[0]?.[0] ?? 0);
 					hits.push({ path: file.path, score: match.score, snippet });
 				});
 				hits.sort((a, b) => b.score - a.score);
@@ -1214,7 +1216,7 @@ export function buildTools(
 						try {
 							pattern = new RegExp(search, caseSensitive ? "g" : "gi");
 						} catch (e) {
-							return error(`Invalid regex: ${(e as Error).message}`);
+							return error(`Invalid regex: ${errMsg(e)}`);
 						}
 					} else {
 						const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

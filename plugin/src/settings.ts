@@ -1,7 +1,7 @@
 import type { App } from "obsidian";
 import { Modal, PluginSettingTab, Setting } from "obsidian";
 import type AgentSandboxPlugin from "./main";
-import { setLogLevel } from "./logger";
+import { setLogLevel, errMsg } from "./logger";
 import type { PermissionTier } from "./mcp-tools";
 import {
 	ALWAYS_ON_TIERS,
@@ -789,7 +789,7 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 				const output = await this.plugin.firewallSources();
 				sourcesOutput.setText(output.trim() || "(empty)");
 			} catch (e: unknown) {
-				const msg = e instanceof Error ? e.message : String(e);
+				const msg = errMsg(e);
 				sourcesOutput.setText(`Error: ${msg}\n\nIs the container running?`);
 			}
 		});

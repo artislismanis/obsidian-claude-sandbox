@@ -13,7 +13,7 @@ import { TFile as TFileClass } from "obsidian";
 import { z } from "zod/v4";
 import type { McpToolDef, PermissionTier, ReviewFn } from "./mcp-tools";
 import { defineTool, text, error, gateVaultWrite, forEachMarkdownChunked } from "./mcp-tools";
-import { logger } from "./logger";
+import { logger, errMsg } from "./logger";
 import { getPluginsHost } from "./obsidian-internals";
 
 type ToolPusher = (tool: McpToolDef) => void;
@@ -79,7 +79,7 @@ export function registerCanvasTools(app: App, push: ToolPusher, gate: WriteGate)
 					const parsed = JSON.parse(raw);
 					return text(JSON.stringify(parsed, null, 2));
 				} catch (e: unknown) {
-					const msg = e instanceof Error ? e.message : String(e);
+					const msg = errMsg(e);
 					return error(`Canvas JSON parse failed: ${msg}`);
 				}
 			},
@@ -115,7 +115,7 @@ export function registerCanvasTools(app: App, push: ToolPusher, gate: WriteGate)
 				try {
 					changes = JSON.parse(changesRaw);
 				} catch (e: unknown) {
-					const msg = e instanceof Error ? e.message : String(e);
+					const msg = errMsg(e);
 					return error(`Invalid JSON in 'changes': ${msg}`);
 				}
 
@@ -127,7 +127,7 @@ export function registerCanvasTools(app: App, push: ToolPusher, gate: WriteGate)
 				try {
 					doc = JSON.parse(raw);
 				} catch (e: unknown) {
-					const msg = e instanceof Error ? e.message : String(e);
+					const msg = errMsg(e);
 					return error(`Existing canvas JSON parse failed: ${msg}`);
 				}
 
@@ -223,7 +223,7 @@ export function registerDataviewTools(app: App, push: ToolPusher): void {
 					}
 					return text(JSON.stringify(result.value ?? null, null, 2));
 				} catch (e: unknown) {
-					const msg = e instanceof Error ? e.message : String(e);
+					const msg = errMsg(e);
 					return error(`Dataview threw: ${msg}`);
 				}
 			},
@@ -411,7 +411,7 @@ export function registerTasksTools(app: App, push: ToolPusher): void {
 					await app.vault.modify(f, newLines.join("\n"));
 					return text(`Toggled ${path}:${line}.`);
 				} catch (e: unknown) {
-					const msg = e instanceof Error ? e.message : String(e);
+					const msg = errMsg(e);
 					return error(`Tasks plugin threw: ${msg}`);
 				}
 			},

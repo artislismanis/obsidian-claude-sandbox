@@ -2,7 +2,7 @@ import { exec as execCb, spawn } from "child_process";
 import { createServer } from "net";
 import { networkInterfaces } from "os";
 import { promisify } from "util";
-import { logger } from "./logger";
+import { logger, errMsg } from "./logger";
 
 const exec = promisify(execCb);
 
@@ -292,41 +292,45 @@ export class DockerManager {
 
 			if (!quiet) logger.error("Docker", `Command failed: ${detail}`);
 
-			if (combined.includes("is not recognized")) {
-				throw new Error(
+			const dockerNotRunningPatterns = [
+				"Cannot connect to the Docker daemon",
+				"//./pipe/docker_engine",
+				"The system cannot find the file specified",
+			];
+			const errorPatterns: Array<[boolean, string]> = [
+				[
+					combined.includes("is not recognized"),
 					"WSL is not available. Please ensure WSL is installed and configured.",
-				);
-			}
-			if (
-				combined.includes("Cannot connect to the Docker daemon") ||
-				combined.includes("//./pipe/docker_engine") ||
-				combined.includes("The system cannot find the file specified")
-			) {
-				throw new Error("Docker is not running. Please start your Docker engine.");
-			}
-			if (combined.includes("No such distribution")) {
-				throw new Error(
+				],
+				[
+					dockerNotRunningPatterns.some((p) => combined.includes(p)),
+					"Docker is not running. Please start your Docker engine.",
+				],
+				[
+					combined.includes("No such distribution"),
 					`WSL distribution '${wslDistro}' not found. Check Settings > Docker.`,
-				);
-			}
-			if (combined.includes("no configuration file provided")) {
-				throw new Error(
+				],
+				[
+					combined.includes("no configuration file provided"),
 					"docker-compose.yml not found. Check Settings > Docker Compose path.",
-				);
-			}
-			// Only rewrite when the ENOENT is at the Node spawn level (cwd missing →
-			// phrase appears in err.message, stderr empty). When a downstream tool
-			// like tmux reports "No such file or directory" via stderr, leave the
-			// original error so callers can recognise it.
-			if (!err.stderr && err.message?.includes("No such file or directory")) {
-				throw new Error(
+				],
+				// Only rewrite when the ENOENT is at the Node spawn level (cwd missing →
+				// phrase appears in err.message, stderr empty). When a downstream tool
+				// like tmux reports "No such file or directory" via stderr, leave the
+				// original error so callers can recognise it.
+				[
+					!err.stderr && (err.message?.includes("No such file or directory") ?? false),
 					"Docker Compose directory not found. Check Settings > Docker Compose path.",
-				);
-			}
-			if (err.killed || combined.includes("ETIMEDOUT") || combined.includes("timed out")) {
-				throw new Error(
+				],
+				[
+					!!err.killed ||
+						combined.includes("ETIMEDOUT") ||
+						combined.includes("timed out"),
 					"Docker is not responding. It may still be starting — try again in a moment.",
-				);
+				],
+			];
+			for (const [match, message] of errorPatterns) {
+				if (match) throw new Error(message);
 			}
 			throw new Error(
 				"Unexpected Docker error. Open the developer console (Ctrl+Shift+I) for details.",
@@ -556,7 +560,7 @@ export class DockerManager {
 				.map((s) => s.trim())
 				.filter(Boolean);
 		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
+			const msg = errMsg(err);
 			if (
 				!msg.includes("No such file or directory") &&
 				!msg.includes("no server running") &&
