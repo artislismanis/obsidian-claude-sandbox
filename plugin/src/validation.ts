@@ -50,10 +50,21 @@ function normaliseVaultPath(p: string): string {
 	return posixPath.normalize(p).replace(/^\/|\/$/g, "");
 }
 
+/**
+ * Is `filePath` inside `dir`? Both args are vault-relative.
+ *
+ * **Empty `dir` returns `false` (fail-closed).** This is the load-bearing case:
+ * `vaultWriteDir` is the only thing gating writeScoped tools from spilling into
+ * the whole vault. If a hand-edited `data.json` (or a missing default) leaves
+ * the setting blank, every "is this path inside the write dir" check would
+ * otherwise return true and the writeScoped tier becomes vault-wide. Treat
+ * empty as "no writes allowed" instead. Callers that genuinely want
+ * "everywhere" must opt in explicitly (writeVault tier).
+ */
 export function isPathWithinDir(filePath: string, dir: string): boolean {
-	const normalized = normaliseVaultPath(filePath);
 	const normalizedDir = normaliseVaultPath(dir);
-	if (normalizedDir === "") return true;
+	if (normalizedDir === "") return false;
+	const normalized = normaliseVaultPath(filePath);
 	return normalized === normalizedDir || normalized.startsWith(normalizedDir + "/");
 }
 

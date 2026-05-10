@@ -173,14 +173,16 @@ if [ -f "$EXTRAS_FILE" ]; then
   done < "$EXTRAS_FILE"
 fi
 
-# Fail closed: set OUTPUT policy to DROP *before* DNS resolution. Without
-# this, a baseline DNS failure aborts via `exit 1` while OUTPUT is still
-# default-ACCEPT (first-run case), silently leaving the container wide open.
-# The brief window between this and the rule-rebuild below is acceptable —
-# the lock prevents concurrent invocations from racing the policy flip.
-iptables -P OUTPUT DROP
-
-# Build a temporary ipset, then atomically swap to avoid races
+# Resolve domains BEFORE flipping the OUTPUT policy. The previous design
+# flipped to DROP first and exited 1 on baseline-DNS failure, which left
+# the container with a DROP-policy + no-rules state — effectively bricked
+# until manual recovery. Resolving first means a transient DNS hiccup on
+# first-run produces an error without leaving the container in a broken
+# half-applied state. Existing rules from a prior successful init keep
+# protecting until the swap below.
+#
+# Build a fresh ipset in parallel with the existing one — only swap on
+# success.
 ipset create allowed_ips hash:net -exist
 ipset create allowed_ips_new hash:net -exist
 ipset flush allowed_ips_new
@@ -192,6 +194,25 @@ echo "Resolving domains..."
 # may have typo'd a domain or be working offline.
 declare -A IS_BASELINE
 for d in "${BASELINE_DOMAINS[@]}"; do IS_BASELINE[$d]=1; done
+
+# Resolve a single domain with up to N retries. Baseline domains use the
+# retried path so transient resolver glitches (rate limits, brief upstream
+# timeouts on container start) don't brick the firewall apply. Optional
+# domains use a single attempt — if a user-supplied domain doesn't
+# resolve we want to surface that fast, not paper over a typo.
+_resolve_domain() {
+  local domain="$1" tries="$2" attempt=0 ips=""
+  while [ "$attempt" -lt "$tries" ]; do
+    ips=$(dig +time=2 +tries=1 +short A "$domain" 2>/dev/null | grep -E '^[0-9]+\.' || true)
+    if [ -n "$ips" ]; then
+      printf '%s\n' "$ips"
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    [ "$attempt" -lt "$tries" ] && sleep 1
+  done
+  return 1
+}
 
 PIDS=()
 PID_DOMAIN=()
@@ -211,23 +232,23 @@ for entry in "${ALLOWED_DOMAINS[@]}"; do
     fi
     continue
   fi
+  if [ -n "${IS_BASELINE[$entry]:-}" ]; then
+    tries=3
+    tier="baseline"
+  else
+    tries=1
+    tier="optional"
+  fi
   (
     set -e
-    ips=$(dig +time=2 +tries=1 +short A "$entry" 2>/dev/null | grep -E '^[0-9]+\.' || true)
-    if [ -z "$ips" ]; then
-      exit 1
-    fi
+    ips="$(_resolve_domain "$entry" "$tries")" || exit 1
     for ip in $ips; do
       ipset add allowed_ips_new "${ip}/32" -exist
     done
   ) &
   PIDS+=($!)
   PID_DOMAIN+=("$entry")
-  if [ -n "${IS_BASELINE[$entry]:-}" ]; then
-    PID_TIER+=("baseline")
-  else
-    PID_TIER+=("optional")
-  fi
+  PID_TIER+=("$tier")
 done
 
 BASELINE_FAILED=0
@@ -250,6 +271,9 @@ done
 if [ "$BASELINE_FAILED" -gt 0 ]; then
   echo "ERROR: $BASELINE_FAILED baseline domain(s) failed to resolve — refusing to apply firewall with required gaps" >&2
   ipset destroy allowed_ips_new 2>/dev/null || true
+  # Existing OUTPUT chain (if any) is left intact: we never touched the
+  # policy or rules, so the container's network state is whatever it was
+  # before this invocation.
   exit 1
 fi
 if [ "$OPTIONAL_FAILED" -gt 0 ]; then
@@ -271,79 +295,82 @@ fi
 ipset swap allowed_ips_new allowed_ips
 ipset destroy allowed_ips_new
 
-# Flush existing OUTPUT rules (idempotent). Capture stderr so we can
-# distinguish "no rules to flush" (fine) from "iptables broken" (fatal —
-# subsequent rule appends would silently attach to nothing).
-flush_err=$(iptables -F OUTPUT 2>&1 >/dev/null) || {
-  echo "ERROR: iptables -F OUTPUT failed: $flush_err" >&2
-  exit 1
-}
-
-# Allow loopback
-iptables -A OUTPUT -o lo -j ACCEPT
-
-# Allow established/related connections
-iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
-
-# DNS — restrict to configured resolvers only (prevents DNS tunneling)
-for ns in $(grep -oP 'nameserver \K[\d.]+' /etc/resolv.conf); do
-  iptables -A OUTPUT -d "$ns" -p udp --dport 53 -j ACCEPT
-  iptables -A OUTPUT -d "$ns" -p tcp --dport 53 -j ACCEPT
-done
-
-# Block cloud metadata endpoint BEFORE the allowlist ACCEPTs — defense in depth
-# in case 169.254.169.254 ever ends up in allowed_ips by mistake.
-iptables -A OUTPUT -d 169.254.169.254 -j DROP
-
-# Allow traffic to allowlisted IPs
-iptables -A OUTPUT -m set --match-set allowed_ips dst -p tcp --dport 443 -j ACCEPT
-iptables -A OUTPUT -m set --match-set allowed_ips dst -p tcp --dport 80 -j ACCEPT
-
-# Docker gateway — restricted to HTTP/HTTPS and the MCP port. Previously
-# this rule allowed *all* ports to the gateway; that was effectively a
-# wide-open hole because in NAT mode the gateway is also the path to
-# the host's MCP listener and any other host service. Narrow it to the
-# same ports the rest of the allowlist uses.
+# Build the OUTPUT chain into a single iptables-restore transaction so the
+# chain is replaced atomically. Previous design did `-F OUTPUT` followed by
+# ~10 `-A OUTPUT` calls one at a time; with the policy already DROP from a
+# prior init, that left a sub-second window where the chain had no rules
+# and traffic was silently dropped. iptables-restore commits all rules in
+# one kernel transaction.
 MCP_PORT="${OAS_MCP_PORT:-28080}"
 GATEWAY=$(ip route | awk '/default/ {print $3}')
-if [ -n "$GATEWAY" ]; then
-  iptables -A OUTPUT -d "$GATEWAY" -p tcp --dport 80 -j ACCEPT
-  iptables -A OUTPUT -d "$GATEWAY" -p tcp --dport 443 -j ACCEPT
-  iptables -A OUTPUT -d "$GATEWAY" -p tcp --dport "$MCP_PORT" -j ACCEPT
-fi
-
-# Obsidian MCP host — resolve host.docker.internal and allow the MCP port.
-# Always append the MCP-port rule even when host.docker.internal == gateway:
-# the gateway rule above is now port-scoped, so this rule keeps MCP working
-# regardless of whether host.docker.internal resolves to the gateway IP or
-# to a separately mapped host adapter (WSL2 mirrored mode).
 OAS_HOST=$(getent hosts host.docker.internal 2>/dev/null | awk '{print $1; exit}')
-if [ -n "$OAS_HOST" ]; then
-    iptables -A OUTPUT -d "$OAS_HOST" -p tcp --dport "$MCP_PORT" -j ACCEPT
-fi
 
-# Configurable private hosts (NAS, local services, etc.). Accepts IPv4 or
-# IPv4/CIDR ONLY — hostnames are rejected because we cannot safely resolve
-# them here (the firewall is what restricts DNS in the first place) and
-# silently ignoring them would surprise the operator. Restricted to the
-# same ports as the domain allowlist + the MCP port.
-if [ -n "${ALLOWED_PRIVATE_HOSTS:-}" ]; then
-  IFS=',' read -ra HOSTS <<< "$ALLOWED_PRIVATE_HOSTS"
-  for host in "${HOSTS[@]}"; do
-    host="$(_trim "$host")"
-    [ -z "$host" ] && continue
-    if ! _is_ipv4_or_cidr "$host"; then
-      echo "ERROR: ALLOWED_PRIVATE_HOSTS entry '$host' is not a valid IPv4 address or CIDR — hostnames are not accepted here. Skipping." >&2
-      continue
-    fi
-    iptables -A OUTPUT -d "$host" -p tcp --dport 80 -j ACCEPT
-    iptables -A OUTPUT -d "$host" -p tcp --dport 443 -j ACCEPT
-    iptables -A OUTPUT -d "$host" -p tcp --dport "$MCP_PORT" -j ACCEPT
+# Collect nameservers up-front; assemble rules into a heredoc; pipe to
+# iptables-restore -n (no-flush of *other* tables) with a single commit.
+{
+  echo "*filter"
+  # Set policies inside the table block so they apply together with the
+  # rule additions in one transaction.
+  echo ":INPUT ACCEPT [0:0]"
+  echo ":FORWARD ACCEPT [0:0]"
+  echo ":OUTPUT DROP [0:0]"
+
+  echo "-F OUTPUT"
+
+  echo "-A OUTPUT -o lo -j ACCEPT"
+  echo "-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT"
+
+  # DNS — restrict to configured resolvers only (prevents DNS tunneling)
+  for ns in $(grep -oP 'nameserver \K[\d.]+' /etc/resolv.conf); do
+    echo "-A OUTPUT -d $ns -p udp --dport 53 -j ACCEPT"
+    echo "-A OUTPUT -d $ns -p tcp --dport 53 -j ACCEPT"
   done
-fi
 
-# Drop everything else
-iptables -A OUTPUT -j DROP
+  # Block cloud metadata endpoint BEFORE allowlist ACCEPTs — defense in depth
+  # in case 169.254.169.254 ever ends up in allowed_ips by mistake.
+  echo "-A OUTPUT -d 169.254.169.254 -j DROP"
+
+  echo "-A OUTPUT -m set --match-set allowed_ips dst -p tcp --dport 443 -j ACCEPT"
+  echo "-A OUTPUT -m set --match-set allowed_ips dst -p tcp --dport 80 -j ACCEPT"
+
+  # Docker gateway — port-scoped (HTTP/HTTPS + MCP only). A wide-open
+  # gateway rule was effectively a hole in NAT mode because the gateway is
+  # the path to all host services.
+  if [ -n "$GATEWAY" ]; then
+    echo "-A OUTPUT -d $GATEWAY -p tcp --dport 80 -j ACCEPT"
+    echo "-A OUTPUT -d $GATEWAY -p tcp --dport 443 -j ACCEPT"
+    echo "-A OUTPUT -d $GATEWAY -p tcp --dport $MCP_PORT -j ACCEPT"
+  fi
+
+  # Obsidian MCP host — host.docker.internal can resolve to the gateway or
+  # to a separately mapped adapter (WSL2 mirrored). Always emit the MCP
+  # rule independently.
+  if [ -n "$OAS_HOST" ]; then
+    echo "-A OUTPUT -d $OAS_HOST -p tcp --dport $MCP_PORT -j ACCEPT"
+  fi
+
+  # Configurable private hosts. IPv4 / IPv4-CIDR only; hostnames rejected
+  # (we can't safely resolve them inside the firewall apply path).
+  if [ -n "${ALLOWED_PRIVATE_HOSTS:-}" ]; then
+    IFS=',' read -ra HOSTS <<< "$ALLOWED_PRIVATE_HOSTS"
+    for host in "${HOSTS[@]}"; do
+      host="$(_trim "$host")"
+      [ -z "$host" ] && continue
+      if ! _is_ipv4_or_cidr "$host"; then
+        echo "ERROR: ALLOWED_PRIVATE_HOSTS entry '$host' is not a valid IPv4 address or CIDR — hostnames are not accepted here. Skipping." >&2
+        continue
+      fi
+      echo "-A OUTPUT -d $host -p tcp --dport 80 -j ACCEPT"
+      echo "-A OUTPUT -d $host -p tcp --dport 443 -j ACCEPT"
+      echo "-A OUTPUT -d $host -p tcp --dport $MCP_PORT -j ACCEPT"
+    done
+  fi
+
+  # Explicit terminal DROP (defense in depth — policy is also DROP).
+  echo "-A OUTPUT -j DROP"
+
+  echo "COMMIT"
+} | iptables-restore -n
 
 echo "Firewall active. $(ipset list allowed_ips | grep -c '^[0-9]') IP entries allowlisted."
 echo "To disable: /usr/local/bin/init-firewall.sh --disable"

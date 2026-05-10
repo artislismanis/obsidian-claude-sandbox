@@ -148,6 +148,11 @@ export function buildLocalWindowsCommand(
 	const escapedPath = composePath.replace(/"/g, '""');
 
 	const envParts = Object.entries(envVars).map(([key, value]) => {
+		// Symmetric with buildInnerCommand (bash path): a CR/LF inside a
+		// sensitive value would terminate the `set "KEY=..."` statement and
+		// let the rest of the value be interpreted as a fresh cmd.exe command
+		// after the `&&`. Reject before quoting.
+		if (SENSITIVE_ENV_KEYS.has(key)) assertNoCrlf(key, value);
 		const escapedValue = value.replace(/"/g, '""');
 		return `set "${key}=${escapedValue}"`;
 	});

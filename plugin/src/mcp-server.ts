@@ -515,12 +515,18 @@ export class ObsidianMcpServer {
 		const auth = req.headers.authorization;
 		if (!auth) return false;
 		const expected = `Bearer ${this.config.token}`;
-		// timingSafeEqual requires equal-length buffers. The length gate leaks
-		// only the *header* length, which is a known constant: "Bearer " (7) +
-		// 32 hex chars from generateToken() = 39 bytes. No bits of the token
-		// secret leak through the length compare.
-		if (auth.length !== expected.length) return false;
-		return timingSafeEqual(Buffer.from(auth), Buffer.from(expected));
+		// timingSafeEqual requires equal-length BYTE buffers and throws RangeError
+		// otherwise. Comparing string code-unit length is unsafe: a header with
+		// non-ASCII multi-byte runes can match `expected.length` (39 code units)
+		// while encoding to a different byte count, and timingSafeEqual then
+		// throws synchronously into the request handler.
+		// The length gate only leaks the *header* byte length, which is a known
+		// constant (`Bearer ` + 32 hex chars = 39 bytes); no bits of the token
+		// secret leak through it.
+		const authBuf = Buffer.from(auth, "utf8");
+		const expectedBuf = Buffer.from(expected, "utf8");
+		if (authBuf.length !== expectedBuf.length) return false;
+		return timingSafeEqual(authBuf, expectedBuf);
 	}
 
 	private async readBody(req: IncomingMessage): Promise<unknown> {

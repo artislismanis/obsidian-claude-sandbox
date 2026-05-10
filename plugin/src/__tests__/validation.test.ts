@@ -8,6 +8,7 @@ import {
 	isValidMemoryFileName,
 	isValidPathPrefixList,
 	isPathAllowed,
+	isPathWithinDir,
 } from "../validation";
 import { DockerManager } from "../docker";
 
@@ -130,6 +131,23 @@ describe("DockerManager.isBusy()", () => {
 			wslDistro: "Ubuntu",
 		}));
 		expect(docker.isBusy()).toBe(false);
+	});
+});
+
+describe("isPathWithinDir", () => {
+	it("returns false for empty dir (fail-closed)", () => {
+		expect(isPathWithinDir("anything", "")).toBe(false);
+		expect(isPathWithinDir("foo/bar.md", "  ")).toBe(false);
+	});
+	it("matches path under dir", () => {
+		expect(isPathWithinDir("notes/x.md", "notes")).toBe(true);
+		expect(isPathWithinDir("notes/sub/x.md", "notes")).toBe(true);
+	});
+	it("rejects sibling-prefix attack", () => {
+		expect(isPathWithinDir("notes-evil/x.md", "notes")).toBe(false);
+	});
+	it("matches the dir itself", () => {
+		expect(isPathWithinDir("notes", "notes")).toBe(true);
 	});
 });
 

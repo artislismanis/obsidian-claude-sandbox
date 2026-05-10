@@ -263,11 +263,12 @@ EXPOSE 7681
 # Healthcheck baked into the image so `docker run` (without compose) reports
 # accurate liveness. docker-compose.yml's healthcheck overrides this for the
 # managed-by-plugin case, where TTYD_PORT may differ from the default.
-# Requires curl, which Phase 1 already installs.
-# CMD-SHELL form is required for ${TTYD_PORT:-7681} to expand at runtime.
-# The exec-array form ("CMD", "curl", ...) does not run a shell, so the
-# ${VAR} syntax would be passed literally to curl and fail.
+# Requires curl, which Phase 1 already installs. Shell-form CMD (no array
+# brackets) is implicitly run via /bin/sh -c, so ${TTYD_PORT:-7681} expands
+# at runtime. CMD-SHELL is a docker-compose healthcheck.test keyword, not a
+# Dockerfile keyword — using it here makes Docker treat "CMD-SHELL" as the
+# binary name and the healthcheck fails permanently.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD-SHELL curl -fsS "http://localhost:${TTYD_PORT:-7681}/" >/dev/null || exit 1
+    CMD curl -fsS "http://localhost:${TTYD_PORT:-7681}/" >/dev/null || exit 1
 
 CMD ["/usr/local/bin/entrypoint.sh"]
