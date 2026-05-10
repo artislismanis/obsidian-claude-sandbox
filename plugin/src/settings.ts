@@ -78,7 +78,11 @@ export const GATED_TIERS: readonly TierDef<keyof AgentSandboxSettings>[] =
 export function enabledTiersFromSettings(settings: AgentSandboxSettings): Set<PermissionTier> {
 	const tiers = new Set<PermissionTier>(ALWAYS_ON_TIERS);
 	for (const def of GATED_TIERS) {
-		if (settings[def.settingKey]) tiers.add(def.tier);
+		// Strict boolean check. A hand-edited `data.json` could put a string
+		// (e.g. `"false"`) in the slot — that's truthy, so a plain `if (...)`
+		// would incorrectly enable the tier. Treat anything other than the
+		// literal `true` as off.
+		if (settings[def.settingKey] === true) tiers.add(def.tier);
 	}
 	for (const tier of vaultWriteTiers(settings.mcpVaultWrites)) tiers.add(tier);
 	return tiers;

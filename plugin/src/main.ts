@@ -539,7 +539,16 @@ export default class AgentSandboxPlugin extends Plugin {
 				await this.docker.enableFirewall();
 				this.firewallBar.setState("enabled");
 			} catch (error: unknown) {
-				this.firewallBar.setState("disabled");
+				// Don't collapse the failure to "disabled" — we don't actually
+				// know whether the firewall is off, half-applied, or fully
+				// applied but the docker exec returned non-zero on a side
+				// concern. Probe the real state instead, falling back to
+				// "hidden" (renders as "n/a") if even the probe fails.
+				try {
+					await this.refreshFirewallStatus();
+				} catch {
+					this.firewallBar.setState("hidden");
+				}
 				new Notice(
 					`Auto-enable firewall failed: ${errMsg(error)}. You can enable it manually from the status bar.`,
 				);

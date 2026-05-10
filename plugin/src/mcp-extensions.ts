@@ -59,8 +59,29 @@ function parseJsonLabelled<T = unknown>(
 
 // ── Canvas ──────────────────────────────────────────
 
-const CanvasNodeSchema = z.record(z.string(), z.unknown());
-const CanvasEdgeSchema = z.record(z.string(), z.unknown());
+// Canvas nodes / edges keep extra keys passthrough (Obsidian's canvas
+// renderer carries plugin-private fields), but the *required* fields for
+// a renderable node/edge are checked here. Without them the renderer
+// either silently drops the node or shows a corrupt canvas. An empty
+// object would have passed the previous `z.record(...)` schema; that's
+// the case this guard closes.
+const CanvasNodeSchema = z
+	.object({
+		id: z.string().min(1),
+		type: z.string().min(1),
+		x: z.number().optional(),
+		y: z.number().optional(),
+		width: z.number().optional(),
+		height: z.number().optional(),
+	})
+	.catchall(z.unknown());
+const CanvasEdgeSchema = z
+	.object({
+		id: z.string().min(1),
+		fromNode: z.string().min(1),
+		toNode: z.string().min(1),
+	})
+	.catchall(z.unknown());
 const CanvasChangesSchema = z.object({
 	addNodes: z.array(CanvasNodeSchema).optional(),
 	removeNodeIds: z.array(z.string()).optional(),

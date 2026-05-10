@@ -1,7 +1,12 @@
 import type { App, TFile, CachedMetadata } from "obsidian";
 import { prepareSimpleSearch, prepareFuzzySearch } from "obsidian";
 import { z } from "zod/v4";
-import { isPathWithinDir, isPathAllowed, isRealPathWithinBase } from "./validation";
+import {
+	isPathWithinDir,
+	isPathAllowed,
+	isRealPathWithinBase,
+	pathHasParentSegment,
+} from "./validation";
 import type { WriteOperation } from "./diff-review-modal";
 import { registerExtensionTools } from "./mcp-extensions";
 import {
@@ -160,12 +165,7 @@ function resolveFile(
  * `notes/v1..2.md` or `..safe/foo.md`. We split on both `/` and `\` so callers
  * don't need to worry about backslashes appearing on Windows-shaped inputs.
  */
-function pathHasParentSegment(p: string): boolean {
-	for (const segment of p.split(/[/\\]/)) {
-		if (segment === "..") return true;
-	}
-	return false;
-}
+// pathHasParentSegment is imported from validation.ts (single shared implementation).
 
 /** True when `vaultPath` resolves to a real filesystem path inside the vault base. */
 function isVaultPathSafe(app: App, vaultPath: string): boolean {
@@ -783,27 +783,42 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 				if (sourcePath === targetPath) return text(sourcePath);
 
 				const graph = buildLinkGraph();
-				const queue: string[][] = [[sourcePath]];
+				// Reconstruct paths from a parent map instead of carrying full
+				// path arrays in the queue. Two wins: (1) avoid the O(n²) cost
+				// of `Array.shift()` by walking the queue with an index pointer
+				// (Array.shift moves all subsequent elements on each call); (2)
+				// memory bounded by visited size, not visited × average path
+				// length.
+				const queue: string[] = [sourcePath];
+				let head = 0;
+				const parent = new Map<string, string>();
 				const visited = new Set<string>([sourcePath]);
 				const MAX_VISITED = 5000;
 
-				while (queue.length > 0) {
-					const path = queue.shift()!;
-					const current = path[path.length - 1];
+				const reconstruct = (end: string): string => {
+					const trail: string[] = [end];
+					let cur: string | undefined = end;
+					while ((cur = parent.get(cur))) trail.push(cur);
+					trail.reverse();
+					return trail.join(" → ");
+				};
+
+				while (head < queue.length) {
+					const current = queue[head++];
 					for (const neighbor of graph.forward.get(current) ?? []) {
-						if (neighbor === targetPath) return text([...path, neighbor].join(" → "));
-						if (!visited.has(neighbor)) {
-							visited.add(neighbor);
-							if (visited.size > MAX_VISITED) {
-								// Budget exhaustion is an expected outcome on large
-								// graphs, not a tool error — return as text so the
-								// audit log doesn't record this as a failure.
-								return text(
-									`Search exhausted at ${MAX_VISITED} nodes — graph too large for exhaustive BFS.`,
-								);
-							}
-							queue.push([...path, neighbor]);
+						if (visited.has(neighbor)) continue;
+						visited.add(neighbor);
+						parent.set(neighbor, current);
+						if (neighbor === targetPath) return text(reconstruct(neighbor));
+						if (visited.size > MAX_VISITED) {
+							// Budget exhaustion is an expected outcome on large
+							// graphs, not a tool error — return as text so the
+							// audit log doesn't record this as a failure.
+							return text(
+								`Search exhausted at ${MAX_VISITED} nodes — graph too large for exhaustive BFS.`,
+							);
 						}
+						queue.push(neighbor);
 					}
 				}
 				return text("No path found.");
@@ -1635,12 +1650,14 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 						"'name' must be a non-empty, non-hidden bare filename (no slashes, no leading dot, no '..').",
 					);
 				// Treat as already-extensioned only when the trailing suffix matches
-				// the file's current extension exactly. Names like `v1.2`, `Mr.Smith`,
-				// or `notes.tech` keep `.${f.extension}` appended; explicit
-				// `name: "foo.md"` round-trips unchanged.
-				const hasTrailingExt =
-					f.extension !== "" &&
-					trimmed.toLowerCase().endsWith(`.${f.extension.toLowerCase()}`);
+				// the file's current extension EXACTLY (case-sensitive). Names like
+				// `v1.2`, `Mr.Smith`, or `notes.tech` keep `.${f.extension}`
+				// appended; explicit `name: "foo.md"` round-trips unchanged. The
+				// case-sensitive comparison is load-bearing on Linux: `foo.MD` and
+				// `foo.md` are different files, so case-folding the suffix would
+				// either silently change the casing during rename or treat a user's
+				// intentional `.MD` as already-extensioned and skip our `.md` append.
+				const hasTrailingExt = f.extension !== "" && trimmed.endsWith(`.${f.extension}`);
 				const ext = hasTrailingExt ? "" : f.extension ? `.${f.extension}` : "";
 				const dir = f.parent?.path ?? "";
 				const newPath = dir ? `${dir}/${trimmed}${ext}` : `${trimmed}${ext}`;

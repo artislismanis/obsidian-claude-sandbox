@@ -12,9 +12,16 @@ export function splitCsv(value: string): string[] {
 		.filter(Boolean);
 }
 
+/** True when any `/`- or `\`-separated path segment is exactly `..` (i.e. an
+ *  actual parent traversal). Plain substring `..` rejection is too broad —
+ *  it blocks legitimate names like `foo..bar`. */
+export function pathHasParentSegment(p: string): boolean {
+	return p.split(/[/\\]/).some((seg) => seg === "..");
+}
+
 export function isValidWriteDir(dir: string): boolean {
 	if (!dir.trim()) return false;
-	return !dir.includes("..") && !dir.startsWith("/") && dir !== ".";
+	return !pathHasParentSegment(dir) && !dir.startsWith("/") && dir !== ".";
 }
 
 /**
@@ -39,7 +46,7 @@ export function isValidPathPrefixList(value: string): boolean {
 	return splitCsv(value).every(
 		(entry) =>
 			entry.length > 0 &&
-			!entry.includes("..") &&
+			!pathHasParentSegment(entry) &&
 			!entry.includes("\\") &&
 			!entry.startsWith("/"),
 	);
