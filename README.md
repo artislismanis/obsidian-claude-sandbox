@@ -91,10 +91,33 @@ git push && git push --tags
 
 The `release.yml` workflow fires on the tag, builds, and uploads `main.js` / `manifest.json` / `styles.css` to a pre-release GitHub Release. BRAT users pick up updates on Obsidian start.
 
+## Development
+
+Working on the plugin or the container itself:
+
+```bash
+cd plugin
+npm install
+npm run check        # lint + format + tsc + unit tests (run before committing)
+npm run dev          # esbuild watch mode while iterating
+npm run test:integration   # requires Docker + a built oas-sandbox:latest
+npm run test:e2e:headless  # requires xvfb on Linux, otherwise test:e2e
+```
+
+The pre-commit hook runs `lint-staged` on staged files. CI runs `check` on every PR touching `plugin/`. See `docs/testing.md` for the three test layers and `plugin/CLAUDE.md` for module-level architecture notes.
+
+### Trust model
+
+The `claude` user inside the container has narrow sudo for `apt-get` / `apt` only, gated by a password set at container start from `SUDO_PASSWORD` (sourced from the plugin's "Sudo password" setting or `container/.env`). `entrypoint.sh` unsets the variable before dropping privileges, so the password is never visible inside session shells. The narrow sudo is a *human-intent gate* — it forces deliberate, password-typed installs in interactive sessions while preventing the agent from making unattended system changes. If a tool proves useful, promote it to `container/Dockerfile` in a reviewable PR rather than re-installing on every restart.
+
+`container/` is **not mounted into the container** — Dockerfile, compose config, scripts, and `firewall-extras.txt` are invisible from inside, so an agent session cannot mutate the build contract. The single exception is `verify.sh`, which is COPY'd into the image so Claude can introspect runtime state.
+
+Branch protection: never push infra changes (`container/`, `.github/workflows/`) directly to `main`. Open a PR.
+
 ## Status
 
 Under active development, pre-1.0. Tagged releases are published via CI; community plugin submission follows beta stabilisation. See [roadmap](docs/roadmap.md).
 
 ## License
 
-See `LICENSE`.
+[MIT](LICENSE)

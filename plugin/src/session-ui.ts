@@ -8,6 +8,7 @@ import type { App } from "obsidian";
 import { Modal, Notice } from "obsidian";
 import type { TerminalView } from "./terminal-view";
 import { VIEW_TYPE_TERMINAL } from "./view-types";
+import { logger } from "./logger";
 
 /** Opens a modal listing currently-open sandbox terminal tabs with a filter. */
 export function showSessionPicker(app: App): void {
@@ -107,9 +108,9 @@ export async function showSessionCleanup(
 					if (r.status === "fulfilled") {
 						killed++;
 					} else {
-						// eslint-disable-next-line no-console
-						console.warn(
-							`[Agent Sandbox] failed to kill tmux session '${toKill[i]}':`,
+						logger.warn(
+							"sessions",
+							`failed to kill tmux session '${toKill[i]}':`,
 							r.reason,
 						);
 					}

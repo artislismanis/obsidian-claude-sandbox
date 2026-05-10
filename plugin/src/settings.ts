@@ -114,13 +114,17 @@ export const DEFAULT_SETTINGS: AgentSandboxSettings = {
 	containerMemory: "8G",
 	containerCpus: "4",
 	autoEnableFirewall: false,
-	sudoPassword: "sandbox",
+	// Empty default — sudo is disabled until the user explicitly sets a password.
+	// Matches container/.env.example, which also ships no default to avoid
+	// encouraging a known weak credential to leak into committed .env files.
+	sudoPassword: "",
 	mcpEnabled: true,
 	mcpPort: 28080,
-	// Default 0.0.0.0 because the container reaches the host MCP server via
-	// `host.docker.internal`, which resolves to a non-loopback host IP. Users
-	// who only invoke MCP from host-side tools can lock this down to 127.0.0.1.
-	mcpBindAddress: "0.0.0.0",
+	// Default 127.0.0.1 — host-only. The container reaches the host MCP server
+	// via host.docker.internal, which resolves to a non-loopback IP, so
+	// container access requires an explicit opt-in (set 0.0.0.0 or the docker
+	// bridge gateway). This default keeps the vault tool surface off the LAN.
+	mcpBindAddress: "127.0.0.1",
 	mcpToken: "",
 	mcpVaultWrites: "none",
 	mcpTierNavigate: false,
@@ -564,8 +568,8 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 
 		const mcpBindDesc =
 			this.plugin.settings.mcpBindAddress === "0.0.0.0"
-				? "Warning: 0.0.0.0 (default) exposes MCP to your network. Bearer-token auth is the only line of defense. This default is required so the sandbox container can reach the host via host.docker.internal — narrow to 127.0.0.1 if you only use MCP from host-side tools."
-				: "IP the MCP HTTP server binds to. 127.0.0.1 hides MCP from the network and from the container. Use the container's docker-bridge gateway IP if you want container access without exposing to LAN. Requires MCP restart.";
+				? "Warning: 0.0.0.0 exposes MCP to your network. Bearer-token auth is the only line of defense. Use this only if you need container access and cannot bind to the docker bridge gateway."
+				: "IP the MCP HTTP server binds to. Default 127.0.0.1 hides MCP from the network and from the container. To let the container reach MCP via host.docker.internal, set this to the docker bridge gateway IP (e.g. 172.17.0.1 on Linux native Docker) or 0.0.0.0. Requires MCP restart.";
 
 		this.addValidatedTextSetting(el, {
 			name: "MCP bind address",

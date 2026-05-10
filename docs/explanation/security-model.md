@@ -1,6 +1,6 @@
 # Security model
 
-The sandbox balances "let Claude actually do useful things" against "don't let Claude damage the user's vault or escape to the host". Four layers work together.
+The sandbox balances "let Claude actually do useful things" against "don't let Claude damage the user's vault or escape to the host". Five layers work together.
 
 ## Layer 1 — Filesystem isolation
 

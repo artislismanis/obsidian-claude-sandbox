@@ -141,6 +141,13 @@ if [ -f "$EXTRAS_FILE" ]; then
   done < "$EXTRAS_FILE"
 fi
 
+# Fail closed: set OUTPUT policy to DROP *before* DNS resolution. Without
+# this, a baseline DNS failure aborts via `exit 1` while OUTPUT is still
+# default-ACCEPT (first-run case), silently leaving the container wide open.
+# The brief window between this and the rule-rebuild below is acceptable —
+# the lock prevents concurrent invocations from racing the policy flip.
+iptables -P OUTPUT DROP
+
 # Build a temporary ipset, then atomically swap to avoid races
 ipset create allowed_ips hash:net -exist
 ipset create allowed_ips_new hash:net -exist
@@ -257,11 +264,12 @@ GATEWAY=$(ip route | awk '/default/ {print $3}')
 [ -n "$GATEWAY" ] && iptables -A OUTPUT -d "$GATEWAY" -j ACCEPT
 
 # Obsidian MCP host — resolve host.docker.internal and allow the MCP port.
-# When OAS_HOST_IP is set, entrypoint.sh rewrites /etc/hosts so
-# host.docker.internal points to the Windows host rather than the Docker
-# bridge gateway. That IP is not covered by the gateway rule above.
+# Always append the MCP-port rule even when host.docker.internal == gateway:
+# the gateway rule above currently allows all gateway traffic, but if a future
+# change ever narrows that rule, MCP would silently break unless this rule
+# stands on its own.
 OAS_HOST=$(getent hosts host.docker.internal 2>/dev/null | awk '{print $1; exit}')
-if [ -n "$OAS_HOST" ] && [ "$OAS_HOST" != "$GATEWAY" ]; then
+if [ -n "$OAS_HOST" ]; then
     iptables -A OUTPUT -d "$OAS_HOST" -p tcp --dport "${OAS_MCP_PORT:-28080}" -j ACCEPT
 fi
 

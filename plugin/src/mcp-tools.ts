@@ -1540,18 +1540,29 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 			handler: async ({ file, path, name: newName }) => {
 				const f = resolveFile(app, { file, path }, pathFilter);
 				if (!f) return error("File not found.");
-				if (newName.includes("/") || newName.includes("\\") || newName.includes(".."))
-					return error("'name' must be a bare filename (no slashes or '..').");
+				const trimmed = newName.trim();
+				if (
+					trimmed.length === 0 ||
+					trimmed === "." ||
+					trimmed === ".." ||
+					trimmed.startsWith(".") ||
+					trimmed.includes("/") ||
+					trimmed.includes("\\") ||
+					trimmed.includes("..")
+				)
+					return error(
+						"'name' must be a non-empty, non-hidden bare filename (no slashes, no leading dot, no '..').",
+					);
 				// Treat as already-extensioned only when the trailing suffix matches
 				// the file's current extension exactly. Names like `v1.2`, `Mr.Smith`,
 				// or `notes.tech` keep `.${f.extension}` appended; explicit
 				// `name: "foo.md"` round-trips unchanged.
 				const hasTrailingExt =
 					f.extension !== "" &&
-					newName.toLowerCase().endsWith(`.${f.extension.toLowerCase()}`);
+					trimmed.toLowerCase().endsWith(`.${f.extension.toLowerCase()}`);
 				const ext = hasTrailingExt ? "" : f.extension ? `.${f.extension}` : "";
 				const dir = f.parent?.path ?? "";
-				const newPath = dir ? `${dir}/${newName}${ext}` : `${newName}${ext}`;
+				const newPath = dir ? `${dir}/${trimmed}${ext}` : `${trimmed}${ext}`;
 				if (!isVaultPathSafe(app, newPath))
 					return error("Destination resolves outside the vault.");
 				return runWrite({

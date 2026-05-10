@@ -38,8 +38,9 @@ export interface McpServerHooks {
 
 export interface McpServerConfig {
 	port: number;
-	/** IP to bind the HTTP server to. Defaults to "0.0.0.0" so the sandbox
-	 *  container can reach the host via host.docker.internal. */
+	/** IP to bind the HTTP server to. Defaults to "127.0.0.1" — host-only.
+	 *  Set to the docker bridge gateway (or 0.0.0.0) to let the sandbox
+	 *  container reach the host via host.docker.internal. */
 	bindAddress?: string;
 	token: string;
 	enabledTiers: Set<PermissionTier>;
@@ -53,6 +54,7 @@ export interface McpServerConfig {
 const SESSION_TIMEOUT_MS = 10 * 60_000;
 const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_RESPONSE_BYTES = 512_000;
+const MAX_RESPONSE_TOTAL_BYTES = 1024 * 1024;
 const RATE_WINDOW_MS = 60_000;
 const RATE_LIMIT_READ = 60;
 const RATE_LIMIT_WRITE = 20;
@@ -241,10 +243,10 @@ export class ObsidianMcpServer {
 			logger.warn("MCP", "Client error", err.message);
 		});
 
-		// Default 0.0.0.0 to preserve container-from-host-docker-internal access.
-		// Tests bind to 127.0.0.1 implicitly because they connect to 127.0.0.1
-		// regardless. Production uses the user-configured value via plugin settings.
-		const bind = this.config.bindAddress || "0.0.0.0";
+		// Default 127.0.0.1 — host-only. Production uses the user-configured
+		// value via plugin settings; users who need container-side access must
+		// explicitly bind to the docker bridge gateway (or 0.0.0.0).
+		const bind = this.config.bindAddress || "127.0.0.1";
 		await new Promise<void>((resolve, reject) => {
 			this.httpServer!.listen(this.config.port, bind, () => resolve());
 			this.httpServer!.on("error", reject);
@@ -548,16 +550,29 @@ export class ObsidianMcpServer {
 		const result = await Promise.race([tool.handler(args), timeout]).finally(() => {
 			if (timer) clearTimeout(timer);
 		});
-		// Truncate every text entry independently in the byte domain. String
-		// .slice() works in UTF-16 code units, so a naive slice past a
+		// Truncate every text entry independently in the byte domain, then cap
+		// the cumulative response at MAX_RESPONSE_TOTAL_BYTES so a tool that
+		// returns many sub-cap entries can't still produce a multi-MB payload.
+		// String .slice() works in UTF-16 code units, so a naive slice past a
 		// multi-byte boundary still over-budgets after re-encoding; we slice
 		// the encoded buffer and decode with Replacement-character fallback.
 		if (Array.isArray(result.content)) {
+			let cumulative = 0;
 			for (const entry of result.content) {
 				if (typeof entry?.text !== "string") continue;
-				if (Buffer.byteLength(entry.text) <= MAX_RESPONSE_BYTES) continue;
-				const buf = Buffer.from(entry.text, "utf8").subarray(0, MAX_RESPONSE_BYTES);
-				entry.text = buf.toString("utf8") + "\n\n[truncated]";
+				if (Buffer.byteLength(entry.text) > MAX_RESPONSE_BYTES) {
+					const buf = Buffer.from(entry.text, "utf8").subarray(0, MAX_RESPONSE_BYTES);
+					entry.text = buf.toString("utf8") + "\n\n[truncated]";
+				}
+				const entryBytes = Buffer.byteLength(entry.text);
+				const remaining = MAX_RESPONSE_TOTAL_BYTES - cumulative;
+				if (remaining <= 0) {
+					entry.text = "[truncated]";
+				} else if (entryBytes > remaining) {
+					const buf = Buffer.from(entry.text, "utf8").subarray(0, remaining);
+					entry.text = buf.toString("utf8") + "\n\n[truncated]";
+				}
+				cumulative += Buffer.byteLength(entry.text);
 			}
 		}
 		return { result, success: !result.isError };
