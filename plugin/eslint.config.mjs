@@ -13,12 +13,28 @@ export default tseslint.config(
 			"@typescript-eslint/no-explicit-any": "warn",
 			"@typescript-eslint/consistent-type-imports": "error",
 			"no-console": "warn",
-			// Disabled: errMsg() captures the message; the wrapped Error is a
-			// user-facing string conversion, not a chained system error.
+			// errMsg() captures the message; the wrapped Error is a user-facing
+			// string conversion, not a chained system error.
 			"preserve-caught-error": "off",
 		},
 	},
 	{
-		ignores: ["main.js", "node_modules/", "*.mjs"],
+		ignores: ["main.js", "node_modules/", "dist/"],
+	},
+	{
+		// Build/release scripts at the package root: keep eslint:recommended on
+		// (catches typos in things like process.exit) but drop typescript-eslint
+		// rules that need type info.
+		files: ["*.mjs"],
+		rules: {
+			"@typescript-eslint/no-require-imports": "off",
+			"@typescript-eslint/no-explicit-any": "off",
+			"@typescript-eslint/consistent-type-imports": "off",
+			// Build/release scripts are CLIs — console output is the point.
+			"no-console": "off",
+		},
+		languageOptions: {
+			globals: { console: "readonly", process: "readonly", Buffer: "readonly" },
+		},
 	},
 );

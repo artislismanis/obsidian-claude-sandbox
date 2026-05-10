@@ -10,6 +10,8 @@ This folder contains the Docker image definition and supporting scripts for the 
 | `docker-compose.yml` | Service, mounts, resource limits, OAS naming |
 | `.env.example` | Environment template (copy to `.env` for standalone CLI use) |
 | `.dockerignore` | Excludes from the build context |
+| `firewall-extras.txt` | Host-managed firewall allowlist extras (mounted read-only at `/etc/oas/firewall-extras.txt`; invisible to the agent) |
+| `configs/` | Files copied into the image: `tmux.conf`, `session-helpers.sh` |
 | `scripts/entrypoint.sh` | Container entrypoint — sets sudo password, drops to `claude`, runs ttyd |
 | `scripts/session.sh` | Per-ttyd-connection session launcher |
 | `scripts/init-firewall.sh` | Allowlist-based outbound firewall (run as root) |
@@ -42,6 +44,8 @@ The one exception: `scripts/verify.sh` is `COPY`d into the image at `/usr/local/
 ## Firewall allowlist
 
 `scripts/init-firewall.sh` restricts outbound traffic to a hardcoded allowlist. Editing the allowlist is a sensitive change — widening it relaxes the sandbox. Keep additions narrow and document why (comment above the entry).
+
+For domains/CIDRs that should not live in source control (private endpoints, personal integrations), append them to `firewall-extras.txt` instead. That file is mounted read-only into the container, invisible to the agent, and applied automatically by `init-firewall.sh`. The plugin's "Additional firewall domains" setting is the user-friendly equivalent for shareable additions.
 
 Currently allowed categories:
 - Anthropic (API, statsig, sentry)

@@ -587,7 +587,8 @@ export function registerPeriodicNotesTools(app: App, push: ToolPusher, gate: Wri
 				// Parse via moment in strict mode so weekly/quarterly tokens that depend on
 				// the input date don't shift across local-TZ DST boundaries (which
 				// `new Date(dateArg + "T00:00:00")` does in non-UTC locales).
-				const m = dateArg ? moment(dateArg, "YYYY-MM-DD", true) : moment();
+				// Trim the input — moment strict mode treats " 2024-01-01" as invalid.
+				const m = dateArg ? moment(dateArg.trim(), "YYYY-MM-DD", true) : moment();
 				if (!m.isValid()) return error(`Invalid date: ${dateArg}`);
 
 				const filename = m.format(periodicSettings.format || defaultFormat(periodicity));

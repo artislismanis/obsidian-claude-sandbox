@@ -38,6 +38,9 @@ export interface McpServerHooks {
 
 export interface McpServerConfig {
 	port: number;
+	/** IP to bind the HTTP server to. Defaults to "0.0.0.0" so the sandbox
+	 *  container can reach the host via host.docker.internal. */
+	bindAddress?: string;
 	token: string;
 	enabledTiers: Set<PermissionTier>;
 	getWriteDir: () => string;
@@ -230,12 +233,19 @@ export class ObsidianMcpServer {
 			logger.warn("MCP", "Client error", err.message);
 		});
 
+		// Default 0.0.0.0 to preserve container-from-host-docker-internal access.
+		// Tests bind to 127.0.0.1 implicitly because they connect to 127.0.0.1
+		// regardless. Production uses the user-configured value via plugin settings.
+		const bind = this.config.bindAddress || "0.0.0.0";
 		await new Promise<void>((resolve, reject) => {
-			this.httpServer!.listen(this.config.port, "0.0.0.0", () => resolve());
+			this.httpServer!.listen(this.config.port, bind, () => resolve());
 			this.httpServer!.on("error", reject);
 		});
 
-		logger.info("MCP", `Started on port ${this.config.port} with ${this.tools.length} tools`);
+		logger.info(
+			"MCP",
+			`Started on ${bind}:${this.config.port} with ${this.tools.length} tools`,
+		);
 	}
 
 	async stop(): Promise<void> {
@@ -245,19 +255,30 @@ export class ObsidianMcpServer {
 
 		// Snapshot before iterating: transport.close() fires onclose → cleanupSession,
 		// which mutates this.transports while we're walking it.
-		for (const [sid, transport] of Array.from(this.transports.entries())) {
+		const closes = Array.from(this.transports.entries()).map(async ([sid, transport]) => {
 			try {
 				await transport.close?.();
 			} catch (err) {
 				logger.warn("MCP", `Error closing transport ${sid.slice(0, 8)}…`, err);
 			}
-		}
+		});
+		await Promise.all(closes);
 		this.transports.clear();
 
 		if (this.httpServer) {
-			await new Promise<void>((resolve) => {
-				this.httpServer!.close(() => resolve());
-			});
+			const server = this.httpServer;
+			let closeTimer: ReturnType<typeof setTimeout> | undefined;
+			await Promise.race([
+				new Promise<void>((resolve) =>
+					server.close(() => {
+						if (closeTimer) clearTimeout(closeTimer);
+						resolve();
+					}),
+				),
+				new Promise<void>((resolve) => {
+					closeTimer = setTimeout(resolve, 2000);
+				}),
+			]);
 			this.httpServer = null;
 		}
 
@@ -413,18 +434,27 @@ export class ObsidianMcpServer {
 		const auth = req.headers.authorization;
 		if (!auth) return false;
 		const expected = `Bearer ${this.config.token}`;
+		// timingSafeEqual requires equal-length buffers. The length gate leaks
+		// only the *header* length, which is a known constant: "Bearer " (7) +
+		// 32 hex chars from generateToken() = 39 bytes. No bits of the token
+		// secret leak through the length compare.
 		if (auth.length !== expected.length) return false;
 		return timingSafeEqual(Buffer.from(auth), Buffer.from(expected));
 	}
 
 	private async readBody(req: IncomingMessage): Promise<unknown> {
 		return new Promise((resolve, reject) => {
-			const chunks: Buffer[] = [];
+			let chunks: Buffer[] = [];
 			let size = 0;
 			req.on("data", (chunk: Buffer) => {
 				size += chunk.length;
 				if (size > MAX_BODY_BYTES) {
 					req.destroy();
+					// Free the buffered prefix immediately — req.destroy() doesn't
+					// drop chunks already buffered, and the Promise stays pending
+					// for the GC's sake until end/error fires.
+					chunks = [];
+					size = 0;
 					reject(new Error("Request body too large"));
 				} else {
 					chunks.push(chunk);
@@ -510,9 +540,17 @@ export class ObsidianMcpServer {
 		const result = await Promise.race([tool.handler(args), timeout]).finally(() => {
 			if (timer) clearTimeout(timer);
 		});
-		const responseText = result.content?.[0]?.text;
-		if (responseText && Buffer.byteLength(responseText) > MAX_RESPONSE_BYTES) {
-			result.content[0].text = responseText.slice(0, MAX_RESPONSE_BYTES) + "\n\n[truncated]";
+		// Truncate every text entry independently in the byte domain. String
+		// .slice() works in UTF-16 code units, so a naive slice past a
+		// multi-byte boundary still over-budgets after re-encoding; we slice
+		// the encoded buffer and decode with Replacement-character fallback.
+		if (Array.isArray(result.content)) {
+			for (const entry of result.content) {
+				if (typeof entry?.text !== "string") continue;
+				if (Buffer.byteLength(entry.text) <= MAX_RESPONSE_BYTES) continue;
+				const buf = Buffer.from(entry.text, "utf8").subarray(0, MAX_RESPONSE_BYTES);
+				entry.text = buf.toString("utf8") + "\n\n[truncated]";
+			}
 		}
 		return { result, success: !result.isError };
 	}
@@ -624,6 +662,9 @@ export class ObsidianMcpServer {
 			res.end(JSON.stringify({ error: "Invalid or missing session ID" }));
 			return;
 		}
+		// Treat any traffic on the session (POST/GET-SSE/DELETE) as activity so
+		// long-running SSE consumers aren't reaped under the 10-minute idle timer.
+		this.resetSessionTimeout(sessionId!);
 		await transport.handleRequest(req, res);
 	}
 }

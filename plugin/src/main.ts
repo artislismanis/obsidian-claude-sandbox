@@ -18,6 +18,7 @@ import {
 	VIEW_TYPE_TERMINAL,
 	formatConnectionLog,
 	getTerminalConnectionLog,
+	resetTerminalConnectionLog,
 } from "./terminal-view";
 import { isValidWriteDir, splitCsv } from "./validation";
 import { setLogLevel, logger, errMsg } from "./logger";
@@ -35,6 +36,11 @@ const FIREWALL_EVENT_THROTTLE = 10_000;
 
 export default class AgentSandboxPlugin extends Plugin {
 	settings: AgentSandboxSettings = { ...DEFAULT_SETTINGS };
+	// `!` definite-assignment is honest here: onload assigns each field early
+	// and synchronously before any await, so any code path that runs later
+	// (including onunload) sees them initialized. The `?.` in onunload below
+	// is defensive only — protects against a future refactor that hoists an
+	// `await` between field declaration and assignment.
 	private docker!: DockerManager;
 	private statusBar!: StatusBarManager;
 	private firewallBar!: FirewallStatusBar;
@@ -56,6 +62,11 @@ export default class AgentSandboxPlugin extends Plugin {
 	);
 
 	async onload() {
+		// Module-level state in terminal-view.ts (the ring buffer + instance
+		// counter) survives plugin disable/enable since Obsidian caches the
+		// module. Reset on each load so postmortems don't include events from
+		// a previous lifecycle.
+		resetTerminalConnectionLog();
 		await this.loadSettings();
 		this.addSettingTab(new AgentSandboxSettingTab(this.app, this));
 
@@ -136,7 +147,9 @@ export default class AgentSandboxPlugin extends Plugin {
 			void this.backgroundStartup();
 		});
 
-		this.addRibbonIcon("box", "Open Sandbox Terminal", () => {
+		// Match the icon TerminalView.getIcon() returns so the ribbon, tab
+		// header, and command-palette entries all show the same glyph.
+		this.addRibbonIcon("terminal", "Open Sandbox Terminal", () => {
 			void this.openTerminalOrPromptStart();
 		});
 
@@ -253,7 +266,6 @@ export default class AgentSandboxPlugin extends Plugin {
 		// File context menu → "Analyze in Sandbox" submenu
 		this.registerEvent(
 			this.app.workspace.on("file-menu", (menu, file) => {
-				if (!this.settings.mcpEnabled) return;
 				if (!("extension" in file)) return;
 				this.analyze.attachFileMenu(menu, file as TFile);
 			}),
@@ -280,7 +292,8 @@ export default class AgentSandboxPlugin extends Plugin {
 			callback: () => showSessionPicker(this.app),
 		});
 
-		// Stop container on app quit (onunload only fires on plugin disable, not app exit)
+		// onunload fires on plugin disable but not on app exit, so register a quit
+		// handler to stop the container when Obsidian is closing.
 		this.registerEvent(
 			this.app.workspace.on("quit", (tasks) => {
 				if (this.settings.autoStopContainer) {
@@ -299,18 +312,27 @@ export default class AgentSandboxPlugin extends Plugin {
 		);
 	}
 
-	onunload() {
+	async onunload(): Promise<void> {
 		this.stopHealthPoll();
 		this.agentOutput?.dispose();
-		void this.mcpServer?.stop();
+		// ActivityUi holds a setInterval for the stale-rolling tick — clear()
+		// drops it. Safe to call before mcpServer.stop() since clearing is idempotent.
+		this.activityUi?.clear();
 		// Cancel any pending debounced save so the explicit one below isn't
-		// overwritten by a stale trailing call.
+		// overwritten by a stale trailing call. Await the explicit save before
+		// returning so a fast disable+quit doesn't lose recent settings changes.
 		this.debouncedSaveSettings.cancel?.();
-		void this.saveData(this.settings);
+		await this.saveData(this.settings).catch(() => {});
+		// Await mcpServer.stop() so the HTTP server's `close()` fully completes
+		// (sockets closed, port released) before Obsidian considers us unloaded.
+		// The 2s race inside stop() bounds worst-case wait.
+		await this.mcpServer?.stop().catch(() => {});
 		this.app.workspace.detachLeavesOfType(VIEW_TYPE_TERMINAL);
-		this.firewallBar.destroy();
+		this.firewallBar?.destroy();
 
-		this.docker.stopDetached();
+		if (this.settings.autoStopContainer) {
+			this.docker?.stopDetached();
+		}
 	}
 
 	async loadSettings() {
@@ -561,6 +583,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			const blocklist = splitCsv(this.settings.mcpPathBlocklist);
 			this.mcpServer = new ObsidianMcpServer(this.app, {
 				port: this.settings.mcpPort,
+				bindAddress: this.settings.mcpBindAddress,
 				token: this.settings.mcpToken,
 				enabledTiers: enabledTiersFromSettings(this.settings),
 				getWriteDir: () => this.settings.vaultWriteDir,

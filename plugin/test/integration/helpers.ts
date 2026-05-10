@@ -48,8 +48,10 @@ export function isImageBuilt(): boolean {
 
 // The test container's Claude auth lives in this external volume.
 // It persists across `compose down -v` because it is declared external in
-// docker-compose.test.yml. Seed it once via `docker exec -it oas-test-sandbox claude`.
+// docker-compose.test.yml. seedClaudeAuth() copies the host user's live
+// auth volume in so tests don't require an interactive sign-in.
 const TEST_CLAUDE_VOLUME = "oas-test-claude-config";
+const LIVE_CLAUDE_VOLUME = "oas_oas-claude-config";
 
 /**
  * Ensure the external claude-config volume exists. Called by globalSetup before
@@ -79,6 +81,42 @@ export function hasTestClaudeAuth(): boolean {
 		return out.toString().trim().length > 0;
 	} catch {
 		return false;
+	}
+}
+
+/**
+ * If the developer has authenticated the live `oas_oas-claude-config` volume
+ * (i.e. they've signed Claude in via the regular plugin-managed sandbox), copy
+ * its contents into `oas-test-claude-config` so the integration tests have a
+ * valid auth without an interactive sign-in. Idempotent: only copies when the
+ * test volume is empty.
+ *
+ * No-op when the live volume is missing or the test volume is already seeded.
+ * Best-effort — failures are silenced because tests skip on missing auth.
+ */
+export function seedClaudeAuth(): void {
+	if (hasTestClaudeAuth()) return;
+	try {
+		const liveExists = execSync(
+			`docker volume inspect ${LIVE_CLAUDE_VOLUME} --format '{{.Name}}'`,
+			{ stdio: "pipe", timeout: 5000 },
+		)
+			.toString()
+			.trim();
+		if (!liveExists) return;
+	} catch {
+		return;
+	}
+	try {
+		execSync(
+			`docker run --rm ` +
+				`-v ${LIVE_CLAUDE_VOLUME}:/src:ro ` +
+				`-v ${TEST_CLAUDE_VOLUME}:/dst ` +
+				`alpine sh -c "cp -a /src/. /dst/"`,
+			{ stdio: "pipe", timeout: 30000 },
+		);
+	} catch {
+		// best-effort — hasTestClaudeAuth() will report unseeded and tests skip
 	}
 }
 

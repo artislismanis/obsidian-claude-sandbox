@@ -4,7 +4,11 @@ import { z } from "zod/v4";
 import { isPathWithinDir, isPathAllowed, isRealPathWithinBase } from "./validation";
 import type { WriteOperation } from "./diff-review-modal";
 import { registerExtensionTools } from "./mcp-extensions";
-import { applyTemplaterFolderTemplate, withTemplaterHookSuppressed } from "./templater-adapter";
+import {
+	applyTemplaterFolderTemplate,
+	previewTemplaterFolderTemplate,
+	withTemplaterHookSuppressed,
+} from "./templater-adapter";
 import { errMsg } from "./logger";
 import { getVaultBasePath, getVaultFullPath } from "./obsidian-internals";
 
@@ -370,7 +374,13 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 						return results.length >= limit;
 					},
 					undefined,
-					Math.max(4, Math.min(limit, 20)),
+					// Chunk size = limit (capped 1..8). forEachMarkdownChunked
+					// awaits the whole chunk before checking `stop`, so a chunk
+					// of 20 reads 19 extra files when limit=1. Keep chunks tight
+					// for low limits and just pay extra round-trips on small
+					// vaults — full-batch concurrency only helps when limit is
+					// also high.
+					Math.max(1, Math.min(limit, 8)),
 				);
 				return text(results.join("\n") || "No matches found.");
 			},
@@ -743,6 +753,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 				const graph = buildLinkGraph();
 				const queue: string[][] = [[sourcePath]];
 				const visited = new Set<string>([sourcePath]);
+				const MAX_VISITED = 5000;
 
 				while (queue.length > 0) {
 					const path = queue.shift()!;
@@ -751,6 +762,14 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 						if (neighbor === targetPath) return text([...path, neighbor].join(" → "));
 						if (!visited.has(neighbor)) {
 							visited.add(neighbor);
+							if (visited.size > MAX_VISITED) {
+								// Budget exhaustion is an expected outcome on large
+								// graphs, not a tool error — return as text so the
+								// audit log doesn't record this as a failure.
+								return text(
+									`Search exhausted at ${MAX_VISITED} nodes — graph too large for exhaustive BFS.`,
+								);
+							}
 							queue.push([...path, neighbor]);
 						}
 					}
@@ -1006,6 +1025,12 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 				},
 
 				handler: async ({ path, content: contentArg }) => {
+					// Defense in depth: reject obvious traversal up-front so we never
+					// rely solely on isVaultPathSafe (which only blocks via realpath
+					// of an existing ancestor — for an entirely new tree the
+					// not-yet-existing portion isn't checked).
+					if (path.includes("..") || path.startsWith("/") || path.startsWith("\\"))
+						return error("Path may not contain '..' or start with '/' or '\\'.");
 					const guard = guardPath(path);
 					if (guard) return guard;
 					if (!isVaultPathSafe(app, path))
@@ -1016,10 +1041,19 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 					// Only auto-apply the folder template when the caller didn't supply
 					// content; otherwise we'd silently clobber the agent's intended payload.
 					const tryTemplate = content === "" && path.endsWith(".md");
+					// Render the template body for the review modal so what's shown ==
+					// what's written. We show the raw template (placeholders intact)
+					// because rendering them requires the file to exist; the review
+					// gate must happen before file creation.
+					let previewContent = content;
+					if (review && tryTemplate) {
+						const tmplBody = await previewTemplaterFolderTemplate(app, path);
+						if (tmplBody !== null) previewContent = tmplBody;
+					}
 					return runWrite({
 						operation: "create",
 						filePath: path,
-						newContent: content,
+						newContent: previewContent,
 						description: `Create new file: ${path}`,
 						review,
 						apply: () =>
@@ -1204,6 +1238,16 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 
 					let pattern: RegExp;
 					if (useRegex) {
+						// Reject patterns with nested quantifiers — classic ReDoS
+						// shape (e.g. `(a+)+`, `(a*)*`). String.replace runs
+						// synchronously and blocks the event loop past the MCP
+						// tool timeout (which only fires after replace returns),
+						// freezing Obsidian's UI thread.
+						if (/(\([^)]*[+*][^)]*\))[+*]/.test(search)) {
+							return error(
+								"Refusing regex with nested quantifiers (ReDoS risk). Rewrite without `(…+)+` or `(…*)*`.",
+							);
+						}
 						try {
 							pattern = new RegExp(search, caseSensitive ? "g" : "gi");
 						} catch (e) {
@@ -1407,7 +1451,6 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 		return f ? { ok: true, file: f } : { ok: false, error: error("File not found.") };
 	};
 
-	const writeDirForNote = getWriteDir();
 	const guardWithinWriteDir = (path: string): McpToolResult | null => {
 		const writeDir = getWriteDir();
 		return isPathWithinDir(path, writeDir)
@@ -1418,7 +1461,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 		tier: "writeScoped",
 		suffix: "",
 		scopeLabel: " (within write directory)",
-		scopeNote: `Restricted to the write directory '${writeDirForNote}/' — paths outside will be rejected synchronously. To edit elsewhere ask the user to enable the Write (reviewed) or Write (vault-wide) tier.`,
+		scopeNote: `Restricted to the configured write directory — paths outside will be rejected synchronously. To edit elsewhere ask the user to enable the Write (reviewed) or Write (vault-wide) tier. Call mcp_capabilities to see the current write directory and enabled tiers.`,
 		guardPath: guardWithinWriteDir,
 		resolveForWrite: (args) => {
 			const path = args.path as string | undefined;
@@ -1434,7 +1477,8 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 			tier: "writeReviewed",
 			suffix: "_reviewed",
 			scopeLabel: " (reviewed)",
-			scopeNote: "Each write prompts the user for approval via a diff modal before applying.",
+			scopeNote:
+				"Each write prompts the user for approval via a diff modal before applying. Call mcp_capabilities to see the current write directory and enabled tiers.",
 			guardPath: () => null,
 			resolveForWrite: resolveAnywhere,
 			review: reviewFn,
@@ -1445,7 +1489,8 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 		tier: "writeVault",
 		suffix: "_anywhere",
 		scopeLabel: " (vault-wide)",
-		scopeNote: "Unrestricted — writes anywhere in the vault without review.",
+		scopeNote:
+			"Unrestricted — writes anywhere in the vault without review. Call mcp_capabilities to see the current write directory and enabled tiers.",
 		guardPath: () => null,
 		resolveForWrite: resolveAnywhere,
 	});
@@ -1648,6 +1693,22 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 					return text(
 						`Dry run — would ${label} on ${matched.length} file(s):\n${matched.map((f) => f.path).join("\n")}`,
 					);
+				}
+
+				// Gate writes outside the configured write directory the same way
+				// vault_modify does: writeVault → apply directly; writeReviewed →
+				// hand to the batch-review modal; otherwise, if any target sits
+				// outside the write dir, reject. Without this gate, `manage` users
+				// with `mcpVaultWrites: "none"` could mutate frontmatter anywhere
+				// in the vault via search query.
+				const writeDir = getWriteDir();
+				const outOfScope = matched.filter((f) => !isPathWithinDir(f.path, writeDir));
+				if (outOfScope.length > 0) {
+					if (!enabledTiers.has("writeVault") && !enabledTiers.has("writeReviewed")) {
+						return error(
+							`Refusing batch: ${outOfScope.length} of ${matched.length} matches are outside the write directory '${writeDir}'. Enable Vault-wide writes (or Reviewed writes) to operate here.`,
+						);
+					}
 				}
 
 				const value = rawValue !== undefined ? parseJsonOrString(rawValue) : undefined;

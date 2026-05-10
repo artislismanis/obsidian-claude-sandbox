@@ -38,7 +38,7 @@ describe("Plugin loads", function () {
 			return Object.keys(commands).filter((id) => id.startsWith(`${pluginId}:`));
 		}, PLUGIN_ID);
 
-		// Spot-check key commands — the plugin registers 9 total (see main.ts onload)
+		// Spot-check key commands — see main.ts onload for the full list.
 		expect(commandIds).toContain(`${PLUGIN_ID}:open-claude-terminal`);
 		expect(commandIds).toContain(`${PLUGIN_ID}:sandbox-start-container`);
 		expect(commandIds).toContain(`${PLUGIN_ID}:sandbox-stop-container`);
@@ -71,9 +71,16 @@ describe("Settings UI", function () {
 		await $(".vertical-tab-nav-item*=Agent Sandbox").click();
 		await $(".sandbox-settings-tab=MCP").click();
 
-		// Each tier is rendered as a Setting with the tier name
-		for (const tier of ["Read", "Write (scoped)", "Write (vault-wide)", "Navigate", "Manage"]) {
-			await expect($(`.setting-item-name=${tier}`)).toBeDisplayed();
+		// Always-on tiers (Read, Write scoped) are rendered as bullet items in
+		// the "Always enabled" info box. Escalations have proper Setting rows.
+		const alwaysOnList = $(".sandbox-settings-info-list");
+		await expect(alwaysOnList).toBeDisplayed();
+		await expect(alwaysOnList).toHaveText(expect.stringContaining("Read"));
+		await expect(alwaysOnList).toHaveText(expect.stringContaining("Write (scoped)"));
+
+		// Escalation Settings — match the labels rendered by settings.ts.
+		for (const name of ["Vault-wide writes", "Navigate", "Manage", "Extensions"]) {
+			await expect($(`.setting-item-name=${name}`)).toBeDisplayed();
 		}
 	});
 

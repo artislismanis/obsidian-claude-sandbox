@@ -11,6 +11,7 @@ import {
 	containerUp,
 	containerDown,
 	ensureTestClaudeVolume,
+	seedClaudeAuth,
 	hasTestClaudeAuth,
 	waitForHealth,
 	TTYD_PORT,
@@ -28,6 +29,10 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
 
 	// Ensure the external claude-config volume exists before compose up references it.
 	ensureTestClaudeVolume();
+	// Best-effort: copy auth from the live `oas_oas-claude-config` volume so
+	// the claude-code subsuite has a valid sign-in without manual setup.
+	// No-op when already seeded or when the live volume isn't present.
+	seedClaudeAuth();
 
 	process.stderr.write("[integration] starting test container...\n");
 	containerUp();

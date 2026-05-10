@@ -33,12 +33,21 @@ export interface ActivityUpdate {
 	detail?: string;
 }
 
+// How often to re-evaluate stale-rolling: getActivity() rolls "working" → "idle"
+// after 10 min of no updates, but the UI only refreshes on incoming routes. A
+// silent session needs this tick to clear its prefix and badge.
+const STALE_TICK_MS = 60_000;
+
 export class ActivityUi {
+	private staleTickId: ReturnType<typeof setInterval> | null = null;
+
 	constructor(
 		private app: App,
 		private statusBar: StatusBarManager,
 		private getActivity: () => ReadonlyMap<string, ActivityEntry> | undefined,
-	) {}
+	) {
+		this.staleTickId = setInterval(() => this.tickStale(), STALE_TICK_MS);
+	}
 
 	route(update: ActivityUpdate): void {
 		const prefix = STATUS_TO_PREFIX[update.status];
@@ -54,7 +63,28 @@ export class ActivityUi {
 		this.refreshAttentionBadge();
 	}
 
+	/**
+	 * Re-route prefixes for all known sessions based on the current (rolled)
+	 * activity map. Catches "working" → "idle" transitions caused by staleness
+	 * rather than an explicit status update.
+	 */
+	private tickStale(): void {
+		const activity = this.getActivity();
+		if (!activity) return;
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
+			const view = leaf.view as TerminalView;
+			const key = view.getSessionName() ?? DEFAULT_SESSION_KEY;
+			const entry = activity.get(key);
+			view.setActivityPrefix(entry ? STATUS_TO_PREFIX[entry.status] : null);
+		}
+		this.refreshAttentionBadge();
+	}
+
 	clear(): void {
+		if (this.staleTickId != null) {
+			clearInterval(this.staleTickId);
+			this.staleTickId = null;
+		}
 		this.statusBar.setAttention(0);
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
 			(leaf.view as TerminalView).setActivityPrefix(null);
