@@ -1,0 +1,31 @@
+# Hadolint configuration — suppresses warnings that conflict with the
+# project's intentional design choices. Document each ignore so a future
+# maintainer can re-evaluate.
+ignored:
+  # DL3008: "Pin versions in apt-get install" — we deliberately track the
+  # latest patch versions of the apt packages we install. Pinning would
+  # mean manually bumping every CVE patch from upstream Ubuntu.
+  - DL3008
+  # DL3009: "Delete apt-get lists after install" — we already do this in
+  # the same RUN; hadolint's heuristic doesn't see across `&&` chains
+  # cleanly in some cases.
+  - DL3009
+  # DL3015: "Avoid additional packages by --no-install-recommends" — we
+  # already use --no-install-recommends; hadolint occasionally
+  # false-positives on multi-line apt commands.
+  - DL3015
+  # DL4006: "Set SHELL -o pipefail" — adding pipefail to every RUN with a
+  # pipe is noise; we use explicit `set -e` in scripts where it matters,
+  # and the pipes that exist (curl | sha256sum -c) hard-fail on mismatch.
+  - DL4006
+  # DL3002: "Last USER should not be root" — load-bearing inversion: the
+  # entrypoint runs as root to chpasswd / fix bind-mount ownership, then
+  # drops to claude via gosu. Documented in entrypoint.sh.
+  - DL3002
+  # SC1091: "Not following: file not included in mock" — shellcheck
+  # complaint about `source` of files outside the build context. Expected
+  # for atuin/nvm install scripts.
+  - SC1091
+  # SC2016: "Expressions don't expand in single quotes" — we deliberately
+  # use single quotes to defer expansion in printf'd .bashrc lines.
+  - SC2016

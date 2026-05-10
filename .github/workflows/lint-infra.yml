@@ -48,8 +48,9 @@ jobs:
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: container/Dockerfile
-          # Don't fail on info-level: tag-pinning + apt-get version pinning
-          # warnings are intentional trade-offs documented in the file.
+          config: container/.hadolint.yaml
+          # Project-specific ignores live in container/.hadolint.yaml with
+          # justifications. Fail on warning so genuine new issues surface.
           failure-threshold: warning
 
   actionlint:
