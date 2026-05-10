@@ -13,8 +13,9 @@ updates:
 
   - package-ecosystem: npm
     directory: "/plugin"
+    # Weekly batches with grouping — daily-per-dep churn was unreviewable.
     schedule:
-      interval: daily
+      interval: weekly
     labels:
       - dependencies
       - npm
@@ -22,3 +23,48 @@ updates:
       prefix: "deps"
       include: scope
     open-pull-requests-limit: 10
+    # Group related ecosystems into single PRs so reviewers see one
+    # coherent bump set instead of N separate PRs that all touch the
+    # lockfile. Patterns are evaluated in order; first match wins.
+    groups:
+      typescript:
+        patterns:
+          - "typescript"
+          - "@typescript-eslint/*"
+          - "tslib"
+      eslint:
+        patterns:
+          - "eslint"
+          - "eslint-*"
+          - "@eslint/*"
+          - "prettier"
+      vitest:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+          - "@vitest-*"
+      wdio:
+        patterns:
+          - "@wdio/*"
+          - "webdriverio"
+          - "wdio-*"
+      mcp:
+        patterns:
+          - "@modelcontextprotocol/*"
+      obsidian:
+        patterns:
+          - "obsidian"
+          - "@codemirror/*"
+          - "@lezer/*"
+
+  # Watch the Dockerfile base image and any FROM pins for upstream tag bumps.
+  - package-ecosystem: docker
+    directory: "/container"
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - docker
+    commit-message:
+      prefix: "container"
+      include: scope

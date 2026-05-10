@@ -38,8 +38,9 @@ The one exception: `scripts/verify.sh` is `COPY`d into the image at `/usr/local/
 2. If the tool needs network access at runtime, add the relevant domains to the allowlist in `scripts/init-firewall.sh`.
 3. Rebuild: `cd container && docker compose build`
 4. Restart the container (via plugin or `docker compose down && up -d`).
-5. Verify: `docker compose exec sandbox verify.sh` — the tool should appear under "Tool versions" or "Node globals".
-6. Commit on a feature branch and open a PR. Never push infra changes directly to `main`.
+5. Update `scripts/verify.sh` so the new tool is reported alongside the others (the script has a hardcoded list — adding to the Dockerfile alone won't surface it).
+6. Verify: `docker compose exec sandbox verify.sh` — the tool should appear in its category.
+7. Commit on a feature branch and open a PR. Never push infra changes directly to `main`.
 
 ## Firewall allowlist
 

@@ -6,7 +6,7 @@ An Obsidian plugin and containerized sandbox for working with your vault through
 
 - **Embedded terminals.** xterm.js tabs inside Obsidian, each connected to a long-lived container shell or tmux session.
 - **Sandboxed agent.** The vault is mounted read-only except for one write directory. Outbound traffic is firewalled to a curated allowlist. The agent can't escape its cage.
-- **MCP integration.** A local HTTP MCP server exposes ~40 tools for searching, reading, writing, and navigating the vault with Obsidian-metadata awareness (tags, backlinks, frontmatter, the graph).
+- **MCP integration.** A local HTTP MCP server exposes 30+ tools for searching, reading, writing, and navigating the vault with Obsidian-metadata awareness (tags, backlinks, frontmatter, the graph).
 - **Human-in-the-loop writes.** The **Vault-wide writes** dropdown (None / Reviewed / Full) controls writes outside the workspace dir; pick **Reviewed** and every such write pops an Obsidian modal with a diff, approve or reject per operation.
 - **Plugin API bridge.** Tools for Dataview, Tasks, Templater, Periodic Notes, and Canvas — delegated to the target plugin's own API when it's installed.
 - **Activity feedback.** Claude Code reports working/idle/awaiting-input state via MCP; the terminal tab prefix and status bar show which session needs your attention.

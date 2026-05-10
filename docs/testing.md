@@ -309,7 +309,7 @@ These span process boundaries (full Obsidian close, not `browser.reloadObsidian`
 **Setup:** Plugin installed, container not yet running.
 
 **Actions:**
-1. Set a custom sudo password in Settings → Agent Sandbox → General (Advanced)
+1. Set a custom sudo password in Settings → Agent Sandbox → Advanced → Sudo password
 2. Click Restart (forces container recreate)
 3. Open a terminal, run `sudo echo test` with the new password
 

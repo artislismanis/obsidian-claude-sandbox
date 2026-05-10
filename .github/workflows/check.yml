@@ -37,6 +37,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Cache wdio's downloaded Obsidian + chromedriver tree. The cache key
+      # is invalidated by changes to wdio.conf.mts (where the version
+      # selection lives) or package-lock.json (which pins wdio itself).
+      # Fine-grained per-Obsidian-version invalidation isn't worth the
+      # complexity — a stale cache just means one extra download.
+      - name: Cache Obsidian + chromedriver downloads
+        uses: actions/cache@v4
+        with:
+          path: plugin/.obsidian-cache
+          key: ${{ runner.os }}-obsidian-${{ hashFiles('plugin/wdio.conf.mts', 'plugin/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-obsidian-
+
       - name: Lint + format + type-check + unit tests
         run: npm run check
 

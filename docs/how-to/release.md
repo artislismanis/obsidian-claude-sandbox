@@ -81,7 +81,7 @@ The tag push triggers `.github/workflows/release.yml`:
 - Checks out at the tag.
 - Verifies `GITHUB_REF_NAME` matches `manifest.json.version` (refuses if out of sync).
 - `npm ci && npm run build`.
-- Creates a **pre-release** GitHub Release named `0.2.0` with `dist/main.js`, `dist/manifest.json`, `dist/styles.css` attached.
+- Creates a GitHub Release named `0.2.0` with `dist/main.js`, `dist/manifest.json`, `dist/styles.css` attached. Marked "Pre-release" by default — see step 5 for how to flip.
 - Auto-generates release notes from commits since the previous tag.
 
 Watch the workflow: `gh run watch` or visit the Actions tab in the repo.
@@ -91,7 +91,7 @@ Watch the workflow: `gh run watch` or visit the Actions tab in the repo.
 Once the workflow is green:
 
 1. **Assets present** — GitHub → Releases → `0.2.0` → confirm `main.js`, `manifest.json`, `styles.css` download.
-2. **Pre-release flag** — the Release is marked "Pre-release" (controlled by `prerelease: true` in the workflow). Flip it off in the UI when you're ready to ship a stable.
+2. **Pre-release flag** — the Release is marked "Pre-release" by default. The flag is driven by the `RELEASE_PRERELEASE` repo variable: any value other than the literal string `false` (including unset) makes the Release a pre-release. Flip it off either in the GitHub UI for that single Release, or set `RELEASE_PRERELEASE=false` under repo Settings → Secrets and variables → Actions → Variables to make all future releases stable.
 3. **BRAT install** — in a clean Obsidian profile:
     - Command palette → **BRAT: Add a beta plugin for testing**.
     - Paste the repo URL (e.g. `https://github.com/artislismanis/obsidian-agent-sandbox`).
@@ -102,7 +102,7 @@ Once the workflow is green:
 If the release is stable (not pre-release):
 
 1. Uncheck "Pre-release" on the GitHub Release.
-2. Remove `prerelease: true` from `.github/workflows/release.yml` once the plugin is submitted to the Obsidian community plugin registry.
+2. Set the `RELEASE_PRERELEASE=false` repo variable (or remove the `prerelease:` line from `.github/workflows/release.yml` entirely) once the plugin is submitted to the Obsidian community plugin registry.
 
 If critical bug found immediately:
 

@@ -179,7 +179,14 @@ export class AgentOutputNotifier {
 	}
 
 	private pathInsideWriteDir(path: string): boolean {
-		return isPathWithinDir(path, this.getWriteDir() || "agent-workspace");
+		// If the user cleared `vaultWriteDir`, the writeScoped MCP gate
+		// fail-closes (no writes allowed). Mirror that here: with no write
+		// dir configured, no path counts as "inside the write directory" —
+		// notifications stay silent rather than firing for an arbitrary
+		// fallback like `agent-workspace/`. Previously this used the
+		// fallback string, so notifications could surface for paths that
+		// the actual write tier wouldn't permit.
+		return isPathWithinDir(path, this.getWriteDir());
 	}
 
 	private enqueue(entry: BufferedEntry): void {

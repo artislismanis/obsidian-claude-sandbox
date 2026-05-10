@@ -362,7 +362,10 @@ describe("Templater integration", () => {
 		).getAbstractFileByPath = vi.fn((p: string) =>
 			p === "Templates/daily.md" ? templateFile : null,
 		);
-		const create = vi.fn(async () => ({ path: "notes/new.md" }) as TFile);
+		// Templater's normal behaviour: write to the path the gate predicted.
+		// Returning a different path simulates `tp.file.move` and is now
+		// rejected by the post-validate check (covered by its own test below).
+		const create = vi.fn(async () => ({ path: "Notes/2026-04-19.md" }) as TFile);
 		(app as unknown as { plugins: unknown }).plugins = {
 			getPlugin: (id: string) =>
 				id === "templater-obsidian"
@@ -532,7 +535,14 @@ describe("Write gate — extensions tier boundary enforcement", () => {
 			basename: "daily",
 			extension: "md",
 		}) as unknown as TFile;
-		const create = vi.fn(async () => ({ path: "Out/note.md" }) as TFile);
+		// Mock writes to the predicted destination so the post-create
+		// path-equality check is satisfied. tp.file.move-style escape is
+		// covered by a dedicated test that returns a divergent path.
+		const create = vi.fn(async (_tmpl: TFile, folder: string, filename: string) => {
+			const dir = (folder ?? "").replace(/^\/+|\/+$/g, "");
+			const path = dir ? `${dir}/${filename}.md` : `${filename}.md`;
+			return { path } as TFile;
+		});
 		const app = appWithTemplater(create);
 		(
 			app.vault as unknown as { getAbstractFileByPath: (p: string) => unknown }
@@ -631,6 +641,43 @@ describe("Write gate — extensions tier boundary enforcement", () => {
 		expect(r.isError ?? false).toBe(false);
 		expect(review).not.toHaveBeenCalled();
 		expect(create).toHaveBeenCalledTimes(1);
+	});
+
+	it("rejects templates that relocate the file via tp.file.move", async () => {
+		const { TFile: TFileClass } = await import("obsidian");
+		const templateFile = Object.assign(new (TFileClass as new () => object)(), {
+			path: "Templates/daily.md",
+			name: "daily.md",
+			basename: "daily",
+			extension: "md",
+		}) as unknown as TFile;
+		// Templater returns a path that differs from the gated destPath —
+		// simulating `tp.file.move("/elsewhere/x")` inside the template.
+		const create = vi.fn(async () => ({ path: "Elsewhere/escaped.md" }) as TFile);
+		const trash = vi.fn(async () => undefined);
+		const app = appWithTemplater(create);
+		(app.vault as unknown as { trash: typeof trash }).trash = trash;
+		(
+			app.vault as unknown as { getAbstractFileByPath: (p: string) => unknown }
+		).getAbstractFileByPath = vi.fn((p: string) =>
+			p === "Templates/daily.md" ? templateFile : null,
+		);
+		const tools = buildTools({
+			app: app as never,
+			getWriteDir: () => "agent-workspace",
+			review: undefined,
+			enabledTiers: new Set(["read", "writeScoped", "writeVault", "extensions"]),
+		});
+		const r = await getTool(tools, "vault_templater_create").handler({
+			template: "Templates/daily.md",
+			folder: "agent-workspace",
+			filename: "x",
+		});
+		expect(r.isError).toBe(true);
+		expect((r.content[0] as { text: string }).text).toContain("relocated");
+		// The escaped file should have been trashed so it doesn't linger
+		// outside the gated path.
+		expect(trash).toHaveBeenCalledTimes(1);
 	});
 
 	it("scoped-only mode rejects canvas writes outside the write directory", async () => {

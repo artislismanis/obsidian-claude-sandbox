@@ -117,9 +117,11 @@ This prints tool versions, mount points (with rw/ro flags), environment variable
 
 | Tool type | How | Persists across container rebuild? |
 |-----------|-----|----|
-| Node global package | `npm install -g <pkg>` | Yes — global prefix is in the `oas-claude-config` named volume |
-| Python package | `uv pip install <pkg>` or `pipx install <pkg>` | Depends on target; uv's default env is user-space |
+| Node global package | `npm install -g <pkg>` | **No** — global prefix lives under `~/.nvm/default/lib/node_modules`, which is NOT on a named volume. Survives container restart but not rebuild. For permanent installs, ask the human to add to the Dockerfile. |
+| Python package | `uv pip install <pkg>` or `pipx install <pkg>` | No — uv's user env lives under `~/.local`, also not on a named volume. Same story: rebuild wipes it. |
 | System package (apt) | **Ask the human.** See below. | No — Dockerfile changes required |
+
+`oas-claude-config` (named volume on `/home/claude/.claude`) holds Claude Code auth, project settings, and chat history — not language package globals.
 
 ### Why you cannot install system packages yourself
 

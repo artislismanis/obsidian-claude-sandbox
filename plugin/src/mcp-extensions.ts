@@ -59,8 +59,29 @@ function parseJsonLabelled<T = unknown>(
 
 // ── Canvas ──────────────────────────────────────────
 
-const CanvasNodeSchema = z.record(z.string(), z.unknown());
-const CanvasEdgeSchema = z.record(z.string(), z.unknown());
+// Canvas nodes / edges keep extra keys passthrough (Obsidian's canvas
+// renderer carries plugin-private fields), but the *required* fields for
+// a renderable node/edge are checked here. Without them the renderer
+// either silently drops the node or shows a corrupt canvas. An empty
+// object would have passed the previous `z.record(...)` schema; that's
+// the case this guard closes.
+const CanvasNodeSchema = z
+	.object({
+		id: z.string().min(1),
+		type: z.string().min(1),
+		x: z.number().optional(),
+		y: z.number().optional(),
+		width: z.number().optional(),
+		height: z.number().optional(),
+	})
+	.catchall(z.unknown());
+const CanvasEdgeSchema = z
+	.object({
+		id: z.string().min(1),
+		fromNode: z.string().min(1),
+		toNode: z.string().min(1),
+	})
+	.catchall(z.unknown());
 const CanvasChangesSchema = z.object({
 	addNodes: z.array(CanvasNodeSchema).optional(),
 	removeNodeIds: z.array(z.string()).optional(),
@@ -526,6 +547,25 @@ export function registerTemplaterTools(app: App, push: ToolPusher, gate: WriteGa
 							false,
 						);
 						if (!created) throw new Error("Templater returned no file.");
+						// Templater templates can call `tp.file.move(...)` from inside
+						// the script section to relocate the file AFTER creation,
+						// which would silently escape the destPath we gated on above.
+						// Post-validate the actual path: if Templater moved the file
+						// somewhere we wouldn't have allowed, delete the file and
+						// fail. This trades a small UX cost (templates that
+						// legitimately use tp.file.move stop working through this
+						// tool) for the guarantee that no template can write outside
+						// the gated scope.
+						if (created.path !== destPath) {
+							try {
+								await app.vault.trash(created, true);
+							} catch {
+								/* fall through and surface the error anyway */
+							}
+							throw new Error(
+								`Template relocated the file from '${destPath}' to '${created.path}' (likely via tp.file.move). Refusing to escape the gated path.`,
+							);
+						}
 					},
 					successMsg: `Created ${destPath}`,
 				});

@@ -94,6 +94,19 @@ ensure_ownership /home/claude/.shell-history
 ensure_ownership "/workspace/vault/${PKM_WRITE_DIR:-agent-workspace}"
 ensure_ownership /workspace/vault/.oas
 
+# IPv4-only stance: docker-compose sets net.ipv6.conf.all.disable_ipv6=1, but
+# some host kernels reject the sysctl (e.g. when ipv6 is built as a module
+# that hasn't loaded). Hard-fail rather than silently allow IPv6 traffic — the
+# firewall has no IPv6 rules so an enabled stack would be unfirewalled.
+if [[ -r /proc/sys/net/ipv6/conf/all/disable_ipv6 ]]; then
+    if [[ "$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6)" != "1" ]]; then
+        echo "ERROR: IPv6 is not disabled (expected disable_ipv6=1)." >&2
+        echo "       The firewall has only IPv4 rules; enabled IPv6 would be unfirewalled." >&2
+        echo "       Verify the host kernel honours net.ipv6.conf.all.disable_ipv6 sysctl." >&2
+        exit 1
+    fi
+fi
+
 # Ensure memory file exists (MCP memory server expects it).
 memory_file="/workspace/vault/.oas/${MEMORY_FILE_NAME:-memory.json}"
 if [[ ! -f "$memory_file" ]]; then

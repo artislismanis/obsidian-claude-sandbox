@@ -1,0 +1,67 @@
+name: lint infra
+
+# Static checks for the parts that the plugin's eslint/tsc don't cover:
+# shell scripts in container/, the Dockerfile itself, and the GitHub
+# Actions workflows. Bugs in these files are security-relevant (firewall
+# rules, entrypoint privilege drop, release flow) and the plugin's CI
+# would never catch them.
+
+on:
+  pull_request:
+    paths:
+      - "container/**"
+      - ".github/workflows/**"
+  push:
+    branches: [main]
+    paths:
+      - "container/**"
+      - ".github/workflows/**"
+
+concurrency:
+  group: lint-infra-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: shellcheck
+        run: |
+          # ubuntu-latest ships shellcheck. Run on every shell file we
+          # control; fail on errors only (warnings are advisory).
+          find container/scripts container/configs workspace/.claude/hooks workspace/.claude/scripts \
+            -type f \( -name '*.sh' -o -name '*.bash' \) -print0 | \
+            xargs -0 -r shellcheck -S error
+
+  hadolint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: container/Dockerfile
+          config: container/.hadolint.yaml
+          # Project-specific ignores live in container/.hadolint.yaml with
+          # justifications. Fail on warning so genuine new issues surface.
+          failure-threshold: warning
+
+  actionlint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: actionlint
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash \
+            | bash
+          ./actionlint -color

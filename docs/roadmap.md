@@ -13,7 +13,7 @@ What's left to do. Implemented work has been removed; the git log is the source 
 
 Pre-condition: BRAT release stabilised and beta feedback addressed.
 
-- [ ] Drop the `--prerelease` flag from `release.yml`.
+- [ ] Set `RELEASE_PRERELEASE=false` repo variable (or remove the `prerelease:` line from `release.yml`).
 - [ ] Confirm `manifest.json` meets the obsidianmd/obsidian-releases review checklist.
 - [ ] Final pass over user-facing docs.
 - [ ] Open the submission PR against `obsidianmd/obsidian-releases`.

@@ -335,6 +335,7 @@ export class TerminalView extends ItemView {
 						`Connecting to terminal… (attempt ${attempt + 2}/${MAX_RETRIES}, retry in ${Math.round(waitMs / 100) / 10}s)`,
 					);
 				},
+				settings.ttydBindAddress,
 			);
 
 			if (gen !== this.generation) return;
@@ -531,7 +532,7 @@ export class TerminalView extends ItemView {
 		}
 
 		const settings = this.getSettings();
-		const wsUrl = buildWsUrl(settings.ttydPort);
+		const wsUrl = buildWsUrl(settings.ttydPort, settings.ttydBindAddress);
 		const ws = new WebSocket(wsUrl, ["tty"]);
 		ws.binaryType = "arraybuffer";
 		this.ws = ws;

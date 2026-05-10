@@ -1,7 +1,12 @@
 import type { App, TFile, CachedMetadata } from "obsidian";
 import { prepareSimpleSearch, prepareFuzzySearch } from "obsidian";
 import { z } from "zod/v4";
-import { isPathWithinDir, isPathAllowed, isRealPathWithinBase } from "./validation";
+import {
+	isPathWithinDir,
+	isPathAllowed,
+	isRealPathWithinBase,
+	pathHasParentSegment,
+} from "./validation";
 import type { WriteOperation } from "./diff-review-modal";
 import { registerExtensionTools } from "./mcp-extensions";
 import {
@@ -160,12 +165,7 @@ function resolveFile(
  * `notes/v1..2.md` or `..safe/foo.md`. We split on both `/` and `\` so callers
  * don't need to worry about backslashes appearing on Windows-shaped inputs.
  */
-function pathHasParentSegment(p: string): boolean {
-	for (const segment of p.split(/[/\\]/)) {
-		if (segment === "..") return true;
-	}
-	return false;
-}
+// pathHasParentSegment is imported from validation.ts (single shared implementation).
 
 /** True when `vaultPath` resolves to a real filesystem path inside the vault base. */
 function isVaultPathSafe(app: App, vaultPath: string): boolean {
@@ -184,7 +184,15 @@ export async function forEachMarkdownChunked(
 ): Promise<void> {
 	for (let i = 0; i < files.length; i += chunkSize) {
 		const chunk = files.slice(i, i + chunkSize);
-		const contents = await Promise.all(chunk.map((f) => app.vault.cachedRead(f)));
+		// Tolerate per-file read errors. A single unreadable file (permission
+		// glitch, transient FS error) used to abort the entire scan via
+		// Promise.all rejection — meaning vault_search / vault_orphans /
+		// vault_suggest_links / vault_tasks_query would fail wholesale because
+		// of one bad file. Skip the bad file with empty content so the scan
+		// completes and surfaces partial results.
+		const contents = await Promise.all(
+			chunk.map((f) => app.vault.cachedRead(f).catch(() => "")),
+		);
 		for (let j = 0; j < chunk.length; j++) {
 			const stop = await handler(chunk[j], contents[j]);
 			if (stop) return;
@@ -222,10 +230,22 @@ export async function gateVaultWrite(args: {
 	newContent?: string;
 	affectedLinks?: string[];
 }): Promise<McpToolResult> {
+	// Errors thrown by apply() (e.g. the Templater post-validate guard
+	// rejecting a path-relocating template) need to surface as clean tool
+	// errors. Without this, gateVaultWrite would propagate the throw and the
+	// MCP tool runner would either turn it into a generic 500 or return it
+	// untyped. Wrap apply() so callers always get a well-formed McpToolResult.
+	const runApply = async (): Promise<McpToolResult> => {
+		try {
+			await args.apply();
+			return text(args.successMsg);
+		} catch (e) {
+			return error(errMsg(e));
+		}
+	};
 	const within = isPathWithinDir(args.destPath, args.writeDir);
 	if (within || args.enabledTiers.has("writeVault")) {
-		await args.apply();
-		return text(args.successMsg);
+		return runApply();
 	}
 	if (args.enabledTiers.has("writeReviewed") && args.review) {
 		const result = await args.review({
@@ -237,8 +257,7 @@ export async function gateVaultWrite(args: {
 			affectedLinks: args.affectedLinks,
 		});
 		if (!result.approved) return error("Change rejected by user.");
-		await args.apply();
-		return text(args.successMsg);
+		return runApply();
 	}
 	return error(
 		`Path '${args.destPath}' is outside the write directory '${args.writeDir}'. Enable vault-wide or reviewed writes to operate here.`,
@@ -764,27 +783,42 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 				if (sourcePath === targetPath) return text(sourcePath);
 
 				const graph = buildLinkGraph();
-				const queue: string[][] = [[sourcePath]];
+				// Reconstruct paths from a parent map instead of carrying full
+				// path arrays in the queue. Two wins: (1) avoid the O(n²) cost
+				// of `Array.shift()` by walking the queue with an index pointer
+				// (Array.shift moves all subsequent elements on each call); (2)
+				// memory bounded by visited size, not visited × average path
+				// length.
+				const queue: string[] = [sourcePath];
+				let head = 0;
+				const parent = new Map<string, string>();
 				const visited = new Set<string>([sourcePath]);
 				const MAX_VISITED = 5000;
 
-				while (queue.length > 0) {
-					const path = queue.shift()!;
-					const current = path[path.length - 1];
+				const reconstruct = (end: string): string => {
+					const trail: string[] = [end];
+					let cur: string | undefined = end;
+					while ((cur = parent.get(cur))) trail.push(cur);
+					trail.reverse();
+					return trail.join(" → ");
+				};
+
+				while (head < queue.length) {
+					const current = queue[head++];
 					for (const neighbor of graph.forward.get(current) ?? []) {
-						if (neighbor === targetPath) return text([...path, neighbor].join(" → "));
-						if (!visited.has(neighbor)) {
-							visited.add(neighbor);
-							if (visited.size > MAX_VISITED) {
-								// Budget exhaustion is an expected outcome on large
-								// graphs, not a tool error — return as text so the
-								// audit log doesn't record this as a failure.
-								return text(
-									`Search exhausted at ${MAX_VISITED} nodes — graph too large for exhaustive BFS.`,
-								);
-							}
-							queue.push([...path, neighbor]);
+						if (visited.has(neighbor)) continue;
+						visited.add(neighbor);
+						parent.set(neighbor, current);
+						if (neighbor === targetPath) return text(reconstruct(neighbor));
+						if (visited.size > MAX_VISITED) {
+							// Budget exhaustion is an expected outcome on large
+							// graphs, not a tool error — return as text so the
+							// audit log doesn't record this as a failure.
+							return text(
+								`Search exhausted at ${MAX_VISITED} nodes — graph too large for exhaustive BFS.`,
+							);
 						}
+						queue.push(neighbor);
 					}
 				}
 				return text("No path found.");
@@ -986,6 +1020,12 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 		/** `{result}` is replaced by the apply()'s returned string when present. */
 		successMsg: string;
 		affectedLinks?: string[];
+		/** When set together with `oldContent` and a review, after approval the
+		 *  file is re-read and the write is aborted if the contents changed
+		 *  out from under the modal. Compare-and-swap against editor edits that
+		 *  raced the review. Without this, the user could approve a stale diff
+		 *  and the apply would clobber the change. */
+		recheckFile?: TFile;
 	}): Promise<McpToolResult> {
 		if (op.review) {
 			const result = await op.review({
@@ -997,6 +1037,14 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 				affectedLinks: op.affectedLinks,
 			});
 			if (!result.approved) return error("Change rejected by user.");
+			if (op.recheckFile && op.oldContent !== undefined) {
+				const current = await app.vault.read(op.recheckFile);
+				if (current !== op.oldContent) {
+					return error(
+						`File '${op.filePath}' changed during review — aborting to avoid clobbering an external edit. Re-run the tool to see the current contents.`,
+					);
+				}
+			}
 		}
 		const applyResult = await op.apply();
 		const msg = op.successMsg.replace("{result}", applyResult ?? "");
@@ -1121,6 +1169,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 						review,
 						apply: () => app.vault.modify(f, content),
 						successMsg: `Modified ${f.path}`,
+						recheckFile: f,
 					});
 				},
 			}),
@@ -1153,6 +1202,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 						review,
 						apply: () => app.vault.append(f, "\n" + addition),
 						successMsg: `Appended to ${f.path}`,
+						recheckFile: f,
 					});
 				},
 			}),
@@ -1324,6 +1374,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 						review,
 						apply: () => app.vault.modify(f, updated),
 						successMsg: `Replaced ${count} occurrence(s) in ${f.path}`,
+						recheckFile: f,
 					});
 				},
 			}),
@@ -1372,6 +1423,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 						review,
 						apply: () => app.vault.modify(f, updated),
 						successMsg: `Prepended to ${f.path}`,
+						recheckFile: f,
 					});
 				},
 			}),
@@ -1452,6 +1504,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 								review,
 								apply: () => app.vault.modify(f, updated),
 								successMsg: `Patched ${f.path} after heading '${headingArg}'`,
+								recheckFile: f,
 							});
 						}
 					} else {
@@ -1480,6 +1533,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 						review,
 						apply: () => app.vault.modify(f, updated),
 						successMsg: `Patched ${f.path} at line ${targetLine + 1}`,
+						recheckFile: f,
 					});
 				},
 			}),
@@ -1596,17 +1650,21 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 						"'name' must be a non-empty, non-hidden bare filename (no slashes, no leading dot, no '..').",
 					);
 				// Treat as already-extensioned only when the trailing suffix matches
-				// the file's current extension exactly. Names like `v1.2`, `Mr.Smith`,
-				// or `notes.tech` keep `.${f.extension}` appended; explicit
-				// `name: "foo.md"` round-trips unchanged.
-				const hasTrailingExt =
-					f.extension !== "" &&
-					trimmed.toLowerCase().endsWith(`.${f.extension.toLowerCase()}`);
+				// the file's current extension EXACTLY (case-sensitive). Names like
+				// `v1.2`, `Mr.Smith`, or `notes.tech` keep `.${f.extension}`
+				// appended; explicit `name: "foo.md"` round-trips unchanged. The
+				// case-sensitive comparison is load-bearing on Linux: `foo.MD` and
+				// `foo.md` are different files, so case-folding the suffix would
+				// either silently change the casing during rename or treat a user's
+				// intentional `.MD` as already-extensioned and skip our `.md` append.
+				const hasTrailingExt = f.extension !== "" && trimmed.endsWith(`.${f.extension}`);
 				const ext = hasTrailingExt ? "" : f.extension ? `.${f.extension}` : "";
 				const dir = f.parent?.path ?? "";
 				const newPath = dir ? `${dir}/${trimmed}${ext}` : `${trimmed}${ext}`;
 				if (!isVaultPathSafe(app, newPath))
 					return error("Destination resolves outside the vault.");
+				if (newPath !== f.path && app.vault.getFileByPath(newPath))
+					return error(`Destination already exists: ${newPath}`);
 				return runWrite({
 					operation: "rename",
 					filePath: f.path,
@@ -1646,6 +1704,12 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 					!isPathAllowed(newPath, pathFilter.allowlist, pathFilter.blocklist)
 				)
 					return error("Destination path is blocked by allow/block list.");
+				// Pre-check destination collision so the failure surfaces as a
+				// clean MCP error instead of the renameFile rejection bubbling
+				// up as a generic 500 from the tool runner. No-op when the
+				// destination is the same path as the source (no actual move).
+				if (newPath !== f.path && app.vault.getFileByPath(newPath))
+					return error(`Destination already exists: ${newPath}`);
 				return runWrite({
 					operation: "move",
 					filePath: f.path,

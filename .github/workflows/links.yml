@@ -1,0 +1,47 @@
+name: link check
+
+# Verify intra-repo and external links in the docs don't rot. This catches
+# the doc-drift class of bugs ("docs link to a renamed file") that prior
+# audit rounds repeatedly turned up.
+
+on:
+  pull_request:
+    paths:
+      - "**.md"
+      - ".github/workflows/links.yml"
+  push:
+    branches: [main]
+    paths:
+      - "**.md"
+      - ".github/workflows/links.yml"
+  schedule:
+    # Weekly external-link sweep — catches upstream URL changes between
+    # commits.
+    - cron: "0 6 * * 1"
+
+concurrency:
+  group: links-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lychee:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: lychee
+        uses: lycheeverse/lychee-action@v2
+        with:
+          # Skip the noisy categories: rate-limited public APIs and
+          # GitHub's own anchor-only links (lychee handles those poorly).
+          args: >-
+            --no-progress
+            --max-concurrency 8
+            --exclude '^https?://(api\.)?github\.com/'
+            --exclude '^https?://anthropic\.com/'
+            --exclude 'https?://claude\.ai/'
+            --accept 200,206,429
+            **/*.md
+          fail: true

@@ -3,7 +3,7 @@
 	"name": "Agent Sandbox",
 	"version": "0.1.1",
 	"minAppVersion": "1.5.0",
-	"description": "Manage a Docker-based agent sandbox from within Obsidian. Provides container lifecycle management and an embedded terminal view via ttyd.",
+	"description": "Run AI coding agents (Claude Code) against your vault inside a Docker sandbox. Embedded terminals, MCP-based vault tools, human-in-the-loop reviewed writes, and a firewalled outbound allowlist.",
 	"author": "artislismanis",
 	"isDesktopOnly": true
 }

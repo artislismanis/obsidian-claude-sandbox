@@ -51,7 +51,7 @@ Observe the `⚙ Session: work` / idle prefix on your terminal tab as Claude tra
 
 Claude uses `vault_create(path="agent-workspace/consensus-summary.md", content=...)`. The path is inside `$PKM_WRITE_DIR`, so it succeeds without any review modal — that's the `writeScoped` tier doing its job.
 
-Check the file appeared. Also check that Obsidian shows a Notice "Agent created agent-workspace/consensus-summary.md" (the agent-output sync feature).
+Check the file appeared. Obsidian also shows a debounced, rate-limited Notice summarising recent agent output (e.g. `Agent output: 1 created`). The notification rolls multiple writes inside the rate-limit window into one Notice rather than firing per-file — see the "Notify on agent output" setting to tune.
 
 ## Task 3: enable reviewed writes
 
@@ -65,7 +65,7 @@ Now in Claude:
 
 Claude calls `vault_modify_reviewed(path="notes/raft.md", content=...)`. A modal pops up in Obsidian with the unified diff. **Approve** → the file is modified. **Reject** → nothing changes, Claude receives an error result.
 
-The review modal is the human-in-the-loop gate. Every reviewed-tier write (modify, append, prepend, patch, search_replace, frontmatter_set, frontmatter_delete, create, rename, move, delete) flows through it.
+The review modal is the human-in-the-loop gate. Every reviewed-tier write — `create`, `modify`, `append`, `prepend`, `patch`, `search_replace`, `frontmatter_set`, `frontmatter_delete`, `rename`, `move`, `delete`, plus `create_folder` and the batch path (`vault_batch_frontmatter`, which uses its own per-item modal) — flows through it.
 
 ## Task 4: analyze from context menu
 

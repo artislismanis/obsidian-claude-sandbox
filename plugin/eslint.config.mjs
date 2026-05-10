@@ -20,13 +20,23 @@ export default tseslint.config(
 			// than "error" for the initial rollout — flips to "error" once any
 			// remaining unmarked sites are either awaited or explicitly voided.
 			"@typescript-eslint/no-floating-promises": "warn",
+			// Catches the related class of bug where an async fn is passed
+			// where a sync callback is expected (e.g. setTimeout(asyncFn))
+			// and the returned promise floats. `checksVoidReturn: false`
+			// keeps it permissive for DOM event handlers (which return void)
+			// — we only want the genuine async-misuse cases flagged.
+			"@typescript-eslint/no-misused-promises": ["warn", { checksVoidReturn: false }],
 		},
 	},
 	{
 		rules: {
 			"@typescript-eslint/no-unused-vars": [
 				"error",
-				{ argsIgnorePattern: "^_", varsIgnorePattern: "^_", destructuredArrayIgnorePattern: "^_" },
+				{
+					argsIgnorePattern: "^_",
+					varsIgnorePattern: "^_",
+					destructuredArrayIgnorePattern: "^_",
+				},
 			],
 			"@typescript-eslint/no-explicit-any": "warn",
 			"@typescript-eslint/consistent-type-imports": "error",

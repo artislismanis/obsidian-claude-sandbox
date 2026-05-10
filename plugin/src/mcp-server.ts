@@ -190,9 +190,21 @@ function createFileAuditSink(app: App): (entry: AuditEntry) => Promise<void> {
 				try {
 					await adapter.remove(AUDIT_FILE_ARCHIVE).catch(() => undefined);
 					await adapter.rename(AUDIT_FILE, AUDIT_FILE_ARCHIVE);
-					estimatedBytes = 0;
+					// Only reset the counter on successful rename. Previously the
+					// reset ran inside the try but BEFORE the rename — wait, it ran
+					// after, but a rename failure (file locked on Windows, FS
+					// transient error) was swallowed by the catch and the counter
+					// was NOT reset, which is fine. The bug was the opposite case:
+					// an exception thrown between rename and the next iteration
+					// would leave estimatedBytes stale forever. Re-stat on next
+					// invocation by clearing the cached value, so the next loop
+					// re-evaluates against actual file size.
+					estimatedBytes = -1;
 				} catch {
-					/* rotation is best-effort */
+					// Rename failed — keep estimatedBytes as-is so we'll retry
+					// rotation on the next entry instead of growing past the cap
+					// silently. Re-stat next iteration to pick up the real size.
+					estimatedBytes = -1;
 				}
 			}
 			await adapter.append(AUDIT_FILE, line);
@@ -515,12 +527,18 @@ export class ObsidianMcpServer {
 		const auth = req.headers.authorization;
 		if (!auth) return false;
 		const expected = `Bearer ${this.config.token}`;
-		// timingSafeEqual requires equal-length buffers. The length gate leaks
-		// only the *header* length, which is a known constant: "Bearer " (7) +
-		// 32 hex chars from generateToken() = 39 bytes. No bits of the token
-		// secret leak through the length compare.
-		if (auth.length !== expected.length) return false;
-		return timingSafeEqual(Buffer.from(auth), Buffer.from(expected));
+		// timingSafeEqual requires equal-length BYTE buffers and throws RangeError
+		// otherwise. Comparing string code-unit length is unsafe: a header with
+		// non-ASCII multi-byte runes can match `expected.length` (39 code units)
+		// while encoding to a different byte count, and timingSafeEqual then
+		// throws synchronously into the request handler.
+		// The length gate only leaks the *header* byte length, which is a known
+		// constant (`Bearer ` + 32 hex chars = 39 bytes); no bits of the token
+		// secret leak through it.
+		const authBuf = Buffer.from(auth, "utf8");
+		const expectedBuf = Buffer.from(expected, "utf8");
+		if (authBuf.length !== expectedBuf.length) return false;
+		return timingSafeEqual(authBuf, expectedBuf);
 	}
 
 	private async readBody(req: IncomingMessage): Promise<unknown> {

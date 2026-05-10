@@ -8,9 +8,16 @@
 // MCP server so other stdio servers such as memory are unaffected.
 //
 // Connectivity is re-probed before every request, with a 30-second positive
-// cache. This means the proxy recovers automatically when Obsidian starts
-// after the container, or when MCP is toggled on in the plugin settings —
-// no container restart needed.
+// cache. The proxy recovers automatically once Obsidian becomes reachable
+// for *new* `tools/list` queries — but Claude Code caches an empty tools list
+// from the first response, so an existing Claude session that started with
+// Obsidian unreachable will not see the tools appear without a `/mcp restart
+// obsidian` (or full restart). Start Obsidian before `claude` if you want
+// vault tools available for the whole session.
+//
+// Concurrency: requests are dispatched as they arrive on stdin — one slow
+// tool call no longer blocks subsequent calls. Writes back to stdout are
+// serialised through a single queue so JSON-RPC frames never interleave.
 
 const http = require("http");
 const net = require("net");
@@ -47,6 +54,11 @@ function probePort() {
 }
 
 async function isAvailable() {
+	// No bearer token configured → server would reject every request with a
+	// 401 anyway. Surface as "unavailable" so callers fall through to the
+	// empty-server stub path instead of seeing confusing auth errors. This
+	// is the normal state when MCP is disabled in the plugin settings.
+	if (!TOKEN) return false;
 	const now = Date.now();
 	// Skip re-probe if last result was positive and within TTL
 	if (lastProbeResult && now - lastProbeTime < PROBE_TTL_MS) {
@@ -55,6 +67,33 @@ async function isAvailable() {
 	lastProbeResult = await probePort();
 	lastProbeTime = now;
 	return lastProbeResult;
+}
+
+// Serialise stdout writes so JSON-RPC frames from concurrent in-flight
+// requests don't interleave. process.stdout.write returning false (kernel
+// pipe buffer full) is rare for small JSON frames but handled defensively.
+const writeQueue = [];
+let writing = false;
+function writeFrame(obj) {
+	writeQueue.push(JSON.stringify(obj) + "\n");
+	drainWrite();
+}
+function drainWrite() {
+	if (writing) return;
+	const next = writeQueue.shift();
+	if (next === undefined) return;
+	writing = true;
+	const ok = process.stdout.write(next, () => {
+		writing = false;
+		drainWrite();
+	});
+	if (!ok) {
+		// Backpressure: wait for drain before flushing the next frame.
+		process.stdout.once("drain", () => {
+			writing = false;
+			drainWrite();
+		});
+	}
 }
 
 function httpPost(message) {
@@ -155,61 +194,71 @@ function unavailableResult(id, method) {
 	return { jsonrpc: "2.0", id, result };
 }
 
-async function main() {
-	const rl = readline.createInterface({ input: process.stdin, terminal: false });
+async function handleMessage(msg) {
+	const available = await isAvailable();
 
-	for await (const line of rl) {
-		const trimmed = line.trim();
-		if (!trimmed) continue;
+	// Notifications have no id and need no response. The MCP spec requires
+	// `notifications/initialized` after `initialize`, so we still forward
+	// them upstream (fire-and-forget) when the server is reachable —
+	// dropping them would prevent the upstream session from leaving init.
+	if (msg.id === undefined) {
+		if (available) httpPost(msg).catch(() => undefined);
+		return;
+	}
 
-		let msg;
-		try { msg = JSON.parse(trimmed); } catch { continue; }
+	if (!available) {
+		writeFrame(unavailableResult(msg.id, msg.method));
+		return;
+	}
 
-		const available = await isAvailable();
-
-		// Notifications have no id and need no response. The MCP spec requires
-		// `notifications/initialized` after `initialize`, so we still forward
-		// them upstream (fire-and-forget) when the server is reachable —
-		// dropping them would prevent the upstream session from leaving init.
-		if (msg.id === undefined) {
-			if (available) httpPost(msg).catch(() => undefined);
-			continue;
-		}
-
-		if (!available) {
-			process.stdout.write(JSON.stringify(unavailableResult(msg.id, msg.method)) + "\n");
-			continue;
-		}
-
-		const t0 = Date.now();
-		try {
-			const responses = await httpPost(msg);
-			if (DEBUG) {
-				const label =
-					msg.method === "tools/call" ? `tools/call ${msg.params?.name ?? "?"}` : msg.method;
-				process.stderr.write(
-					`obsidian-mcp-proxy: id=${msg.id} ${label} ${Date.now() - t0}ms\n`,
-				);
-			}
-			for (const r of responses) {
-				process.stdout.write(JSON.stringify(r) + "\n");
-			}
-		} catch (err) {
+	const t0 = Date.now();
+	try {
+		const responses = await httpPost(msg);
+		if (DEBUG) {
+			const label =
+				msg.method === "tools/call" ? `tools/call ${msg.params?.name ?? "?"}` : msg.method;
 			process.stderr.write(
-				`obsidian-mcp-proxy: id=${msg.id} ${msg.method} failed after ${Date.now() - t0}ms: ${err.message}\n`,
-			);
-			process.stdout.write(
-				JSON.stringify({
-					jsonrpc: "2.0",
-					id: msg.id,
-					error: { code: -32603, message: err.message || "Obsidian MCP server unavailable" },
-				}) + "\n",
+				`obsidian-mcp-proxy: id=${msg.id} ${label} ${Date.now() - t0}ms\n`,
 			);
 		}
+		for (const r of responses) writeFrame(r);
+	} catch (err) {
+		process.stderr.write(
+			`obsidian-mcp-proxy: id=${msg.id} ${msg.method} failed after ${Date.now() - t0}ms: ${err.message}\n`,
+		);
+		writeFrame({
+			jsonrpc: "2.0",
+			id: msg.id,
+			error: { code: -32603, message: err.message || "Obsidian MCP server unavailable" },
+		});
 	}
 }
 
-main().catch((err) => {
+function main() {
+	const rl = readline.createInterface({ input: process.stdin, terminal: false });
+
+	// Dispatch messages without awaiting — a slow tool call no longer blocks
+	// other in-flight requests. handleMessage drives writes through the
+	// serialised writeFrame queue so JSON-RPC frames never interleave.
+	rl.on("line", (line) => {
+		const trimmed = line.trim();
+		if (!trimmed) return;
+		let msg;
+		try { msg = JSON.parse(trimmed); } catch { return; }
+		handleMessage(msg).catch((err) => {
+			process.stderr.write(`obsidian-mcp-proxy: handler error: ${err.message}\n`);
+		});
+	});
+
+	rl.on("close", () => {
+		// stdin EOF — let in-flight handlers finish, then exit.
+		setTimeout(() => process.exit(0), 100);
+	});
+}
+
+try {
+	main();
+} catch (err) {
 	process.stderr.write(`obsidian-mcp-proxy fatal: ${err.message}\n`);
 	process.exit(1);
-});
+}

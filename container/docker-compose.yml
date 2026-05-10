@@ -25,6 +25,16 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_RAW
+    # Defence in depth: prevent setuid/setgid binaries inside the container
+    # from gaining privileges (e.g. via a future image bump that adds one).
+    # Has no effect on the existing sudo+gosu flow since those run via the
+    # entrypoint as uid 0 before priv-drop.
+    security_opt:
+      - no-new-privileges:true
+    # Use Docker's tini-equivalent as PID 1 so orphaned children of long-lived
+    # claude/tmux sessions are reaped instead of accumulating against the
+    # 512-pid cap below.
+    init: true
     # File-descriptor cap. (pids cap lives under deploy.resources.limits.pids
     # below — compose v2 rejects setting both pids_limit and that key.)
     ulimits:

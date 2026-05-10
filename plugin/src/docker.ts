@@ -148,6 +148,11 @@ export function buildLocalWindowsCommand(
 	const escapedPath = composePath.replace(/"/g, '""');
 
 	const envParts = Object.entries(envVars).map(([key, value]) => {
+		// Symmetric with buildInnerCommand (bash path): a CR/LF inside a
+		// sensitive value would terminate the `set "KEY=..."` statement and
+		// let the rest of the value be interpreted as a fresh cmd.exe command
+		// after the `&&`. Reject before quoting.
+		if (SENSITIVE_ENV_KEYS.has(key)) assertNoCrlf(key, value);
 		const escapedValue = value.replace(/"/g, '""');
 		return `set "${key}=${escapedValue}"`;
 	});
@@ -765,8 +770,16 @@ export class DockerManager {
 		}
 		return records.some((r) => {
 			if (typeof r !== "object" || r === null) return false;
-			const state = (r as { State?: unknown }).State;
-			return typeof state === "string" && state.toLowerCase() === "running";
+			const obj = r as { State?: unknown; Status?: unknown };
+			const state = typeof obj.State === "string" ? obj.State.toLowerCase() : "";
+			if (state === "running") return true;
+			// Older compose 2.x versions report `State` as a human string like
+			// "Up 2 hours (healthy)" instead of "running". Fall back to the
+			// `Status` field, which has the same shape across versions, and
+			// accept any "Up …" prefix as running.
+			if (state.startsWith("up ")) return true;
+			const status = typeof obj.Status === "string" ? obj.Status.toLowerCase() : "";
+			return status.startsWith("up ");
 		});
 	}
 }
