@@ -57,11 +57,6 @@ The JSONL file at `vault/.oas/mcp-audit.jsonl` is the long-horizon record. Size-
 
 `pollUntilReady` hits `/` on the ttyd port via `requestUrl` (which bypasses CORS) before opening the WebSocket. A WebSocket open failure is less debuggable than an HTTP 404 — knowing "ttyd isn't up yet" vs "ttyd is up but rejecting" is useful. Exponential backoff (500 ms × 1.5ⁿ, capped at 5s) keeps the initial probe fast without hammering on slow cold starts.
 
-## Why moment-style formatter instead of pulling in moment?
+## Why use Obsidian's bundled moment for Periodic Notes formatting?
 
-Periodic Notes stores its format strings in moment.js syntax. To compute the right filename we need to format a date with that syntax. Options were:
-1. Add a moment/dayjs dependency.
-2. Use Obsidian's bundled moment (possible but tied to Obsidian's internal versioning).
-3. Ship a minimal formatter covering the tokens Periodic Notes actually uses.
-
-Option 3 wins on bundle size and deps. `formatDateByPattern` handles `YYYY`, `gggg`, `MM`, `DD`, `ww`, `Q`, and literal `[...]` blocks — covering the defaults and the vast majority of user-customised formats.
+Periodic Notes stores its format strings in moment.js syntax. We import `moment` from `obsidian` (already bundled and externalised by esbuild) rather than adding a moment/dayjs dependency or shipping our own minimal formatter. Reusing Obsidian's bundle costs nothing in plugin size, and matches the format semantics Periodic Notes itself uses — there's no risk of a subtle divergence between our formatter and the one the rest of Obsidian relies on.

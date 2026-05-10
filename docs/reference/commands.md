@@ -17,6 +17,10 @@ Every command registered by the plugin. Access via Obsidian's command palette (`
 | Sandbox: Switch to Sandbox session… | `sandbox-switch-session` | Modal picker over currently open terminal tabs. |
 | Sandbox: Copy terminal connection log | `sandbox-copy-terminal-connection-log` | Copies the in-memory ring buffer of recent WS open/close/reconnect events to the clipboard. See [Troubleshoot terminal disconnects](../how-to/troubleshoot-terminal-disconnects.md). |
 
+## Ribbon icon
+
+The plugin registers a single ribbon icon (terminal glyph, left sidebar) labelled **Open Sandbox Terminal** that triggers the same action as the `open-claude-terminal` command.
+
 ## URI handlers
 
 | URI | What it does |

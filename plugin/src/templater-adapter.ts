@@ -25,7 +25,58 @@ interface TemplaterPlugin {
 	};
 	templater?: {
 		write_template_to_file: (templateFile: TFile, file: TFile) => Promise<void>;
+		// Templater exposes `parse_template` (renders a template string against a
+		// running config) on the same object. Used to pre-resolve the rendered
+		// body so review modals can show what will actually be written.
+		parse_template?: (
+			config: { target_file: TFile; run_mode: number; active_file?: TFile | null },
+			template_content: string,
+		) => Promise<string>;
 	};
+}
+
+/**
+ * Resolve which folder template would apply to a freshly-created file at
+ * `targetPath`. Returns the template TFile or null. Decoupled from
+ * applyTemplaterFolderTemplate so callers can render a preview without
+ * actually creating the file.
+ */
+export function findTemplaterFolderTemplate(app: App, targetPath: string): TFile | null {
+	const tp = getTemplaterPlugin(app);
+	if (!tp?.settings?.enable_folder_templates) return null;
+	const folderTemplates = tp.settings.folder_templates ?? [];
+	const slash = targetPath.lastIndexOf("/");
+	const dir = slash >= 0 ? targetPath.slice(0, slash) : "";
+	let best: { template: string; len: number } | null = null;
+	for (const ft of folderTemplates) {
+		if (!ft.folder || !ft.template) continue;
+		const folder = ft.folder === "/" ? "" : ft.folder.replace(/\/$/, "");
+		const matches = folder === "" || isPathWithinDir(dir, folder);
+		if (!matches) continue;
+		const len = folder.length;
+		if (!best || len > best.len) best = { template: ft.template, len };
+	}
+	if (!best) return null;
+	return app.vault.getFileByPath(best.template);
+}
+
+/**
+ * Read the raw body of the matching folder template, without rendering. The
+ * review modal shows this verbatim — Templater placeholders like `<% tp.date.now() %>`
+ * remain visible. Rendering before user approval would require creating the
+ * target file, defeating the review gate.
+ */
+export async function previewTemplaterFolderTemplate(
+	app: App,
+	targetPath: string,
+): Promise<string | null> {
+	const tplFile = findTemplaterFolderTemplate(app, targetPath);
+	if (!tplFile) return null;
+	try {
+		return await app.vault.cachedRead(tplFile);
+	} catch {
+		return null;
+	}
 }
 
 function getTemplaterPlugin(app: App): TemplaterPlugin | null {

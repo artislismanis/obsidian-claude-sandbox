@@ -189,12 +189,13 @@ for ns in $(grep -oP 'nameserver \K[\d.]+' /etc/resolv.conf); do
   iptables -A OUTPUT -d "$ns" -p tcp --dport 53 -j ACCEPT
 done
 
+# Block cloud metadata endpoint BEFORE the allowlist ACCEPTs — defense in depth
+# in case 169.254.169.254 ever ends up in allowed_ips by mistake.
+iptables -A OUTPUT -d 169.254.169.254 -j DROP
+
 # Allow traffic to allowlisted IPs
 iptables -A OUTPUT -m set --match-set allowed_ips dst -p tcp --dport 443 -j ACCEPT
 iptables -A OUTPUT -m set --match-set allowed_ips dst -p tcp --dport 80 -j ACCEPT
-
-# Block cloud metadata endpoint
-iptables -A OUTPUT -d 169.254.169.254 -j DROP
 
 # Docker gateway — always allowed (for container networking)
 GATEWAY=$(ip route | awk '/default/ {print $3}')

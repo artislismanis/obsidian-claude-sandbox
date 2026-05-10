@@ -49,6 +49,7 @@ export interface AgentSandboxSettings {
 	sudoPassword: string;
 	mcpEnabled: boolean;
 	mcpPort: number;
+	mcpBindAddress: string;
 	mcpToken: string;
 	mcpVaultWrites: VaultWriteMode;
 	mcpTierNavigate: boolean;
@@ -116,6 +117,10 @@ export const DEFAULT_SETTINGS: AgentSandboxSettings = {
 	sudoPassword: "sandbox",
 	mcpEnabled: true,
 	mcpPort: 28080,
+	// Default 0.0.0.0 because the container reaches the host MCP server via
+	// `host.docker.internal`, which resolves to a non-loopback host IP. Users
+	// who only invoke MCP from host-side tools can lock this down to 127.0.0.1.
+	mcpBindAddress: "0.0.0.0",
 	mcpToken: "",
 	mcpVaultWrites: "none",
 	mcpTierNavigate: false,
@@ -557,6 +562,23 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 			onChange: () => void this.plugin.restartMcpIfRunning(),
 		});
 
+		const mcpBindDesc =
+			this.plugin.settings.mcpBindAddress === "0.0.0.0"
+				? "Warning: 0.0.0.0 (default) exposes MCP to your network. Bearer-token auth is the only line of defense. This default is required so the sandbox container can reach the host via host.docker.internal — narrow to 127.0.0.1 if you only use MCP from host-side tools."
+				: "IP the MCP HTTP server binds to. 127.0.0.1 hides MCP from the network and from the container. Use the container's docker-bridge gateway IP if you want container access without exposing to LAN. Requires MCP restart.";
+
+		this.addValidatedTextSetting(el, {
+			name: "MCP bind address",
+			desc: mcpBindDesc,
+			key: "mcpBindAddress",
+			validator: isValidBindAddress,
+			placeholder: "127.0.0.1",
+			onChange: () => {
+				void this.plugin.restartMcpIfRunning();
+				this.display();
+			},
+		});
+
 		new Setting(el)
 			.setName("Auth token")
 			.setDesc(
@@ -586,13 +608,16 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 		alwaysBox.createEl("p", {
 			text: "These MCP tools are always available when MCP is enabled. They don't grant access beyond what Claude already has via the filesystem (RO vault, RW workspace) — they just offer a more ergonomic interface via Obsidian's metadata.",
 		});
-		const writeDir = this.plugin.settings.vaultWriteDir || "agent-workspace";
+		// Don't burn the writeDir value into the blurb — the MCP server reads it
+		// live (via getWriteDir), but the settings UI only re-renders on full
+		// tab re-render, so a stale snapshot would confuse users. Refer the
+		// reader to the "Vault write directory" setting instead.
 		const list = alwaysBox.createEl("ul", { cls: "sandbox-settings-info-list" });
 		list.createEl("li", {
 			text: "Read — search, read files, query metadata, tags, links, backlinks, frontmatter.",
 		});
 		list.createEl("li", {
-			text: `Write (scoped) — create and modify files within the vault write directory only (${writeDir}/).`,
+			text: "Write (scoped) — create and modify files within the configured vault write directory only (see General settings).",
 		});
 
 		new Setting(el).setName("Escalations").setHeading();

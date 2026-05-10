@@ -12,9 +12,12 @@ export { VIEW_TYPE_TERMINAL };
 
 const MAX_RETRIES = 15;
 
-// Auto-reconnect on abnormal close: a few quick attempts before surfacing an
-// error. Container is almost always still running; the WebSocket just dropped.
-const RECONNECT_BACKOFF_MS = [500, 1000, 2000, 4000, 8000];
+// Auto-reconnect on abnormal close. Container is almost always still running;
+// the WebSocket just dropped (Obsidian sleep, brief network hiccup). Be more
+// patient than the initial connect because reconnects happen during *active*
+// use — a "could not reconnect" error mid-session is much more disruptive
+// than a slow first connect when the user is waiting anyway.
+const RECONNECT_BACKOFF_MS = [500, 1000, 2000, 4000, 8000, 8000, 8000, 8000];
 
 // ttyd wire protocol — single-byte command prefix. Each direction has its own
 // meanings for the same ASCII codes; we only consume OUTPUT inbound.
@@ -72,20 +75,32 @@ function pushConnectionEvent(ev: TerminalConnectionEvent): void {
 
 /**
  * Send a ttyd INPUT frame (`'0' + UTF-8 bytes`) over the socket, returning the
- * number of bytes written or 0 if the socket isn't open. Over-allocates worst-case
- * UTF-8 length (3 bytes/char) for the encode buffer, then trims.
+ * number of bytes written or 0 if the socket isn't open. Encodes the text
+ * exactly once and prefixes the command byte — no over-allocation guesswork.
  */
 function sendInputText(ws: WebSocket | null, text: string): number {
 	if (!ws || ws.readyState !== WebSocket.OPEN) return 0;
-	const payload = new Uint8Array(text.length * 3 + 1);
+	const encoded = textEncoder.encode(text);
+	const payload = new Uint8Array(encoded.length + 1);
 	payload[0] = CLIENT_MSG.INPUT.charCodeAt(0);
-	const { written = 0 } = textEncoder.encodeInto(text, payload.subarray(1));
-	ws.send(payload.subarray(0, written + 1));
-	return written + 1;
+	payload.set(encoded, 1);
+	ws.send(payload);
+	return payload.length;
 }
 
 export function getTerminalConnectionLog(): TerminalConnectionEvent[] {
 	return connectionLog.slice();
+}
+
+/**
+ * Reset the process-wide connection-log ring and instance counter. Call from
+ * plugin onload so events from a previous plugin lifecycle (Obsidian caches
+ * the module across disable+enable) don't bleed into postmortems for the
+ * current session.
+ */
+export function resetTerminalConnectionLog(): void {
+	connectionLog.length = 0;
+	nextInstanceId = 1;
 }
 
 /** Format a connection event ring buffer for the "Copy connection log" command. */
@@ -556,16 +571,28 @@ export class TerminalView extends ItemView {
 
 			// Inject an initial Claude prompt (from "Analyze in Sandbox" / URI handler).
 			// Runs after any session-attach command so it lands inside the tmux session.
+			//
+			// Suppress terminal input during the wait window so a fast user keystroke
+			// can't interleave with `claude '<escaped>'\n` — otherwise the injected
+			// command would run with the user's bytes appended to it.
 			if (this.initialPrompt) {
 				const escaped = this.initialPrompt.replace(/'/g, `'\\''`);
 				const cmd = `claude '${escaped}'\n`;
 				const delay = this.sessionName ? 700 : 300;
+				const wasStdinDisabled = term.options.disableStdin === true;
+				term.options.disableStdin = true;
 				setTimeout(() => {
-					if (gen !== this.generation) return;
-					const sent = sendInputText(ws, cmd);
-					if (sent > 0) {
-						this.wsTxBytes += sent;
-						this.initialPrompt = null;
+					try {
+						if (gen !== this.generation) return;
+						const sent = sendInputText(ws, cmd);
+						if (sent > 0) {
+							this.wsTxBytes += sent;
+							this.initialPrompt = null;
+						}
+					} finally {
+						// Re-enable input only on the still-current term — a fast
+						// view close that swapped this.term should leave it alone.
+						if (this.term === term) term.options.disableStdin = wasStdinDisabled;
 					}
 				}, delay);
 			}

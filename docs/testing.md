@@ -55,7 +55,7 @@ Expected output ends with:
 
 ```
  Test Files  19 passed (19)
-      Tests  391 passed (391)
+      Tests  393 passed (393)
 ```
 
 ### Layer 2 — integration tests
@@ -123,7 +123,7 @@ The Claude Code tests in `test/integration/claude-code.test.ts` need an authenti
 How it works:
 
 1. Your live container's auth lives in the `oas_oas-claude-config` Docker volume (created the first time you run `claude` and complete the login flow inside your real sandbox). The `oas_` prefix is docker-compose's project name.
-2. Before running Claude tests, `seedClaudeAuth()` copies this volume into the test project's `oas-test_oas-test-claude-config` volume via a throwaway alpine container.
+2. Before running Claude tests, `seedClaudeAuth()` copies this volume into the test's external `oas-test-claude-config` volume (declared `external: true` in `docker-compose.test.yml`, so no compose project prefix) via a throwaway alpine container.
 3. `docker compose down -v` at teardown removes only the test volume — your live auth is never touched and never mutated.
 
 If the live volume doesn't exist (you haven't used Claude inside the sandbox yet), these tests **skip gracefully** rather than fail. To enable them:
@@ -142,7 +142,7 @@ After that, `npm run test:integration` will include the four Claude tests (`clau
 
 | Suite | Path | Tests | What's covered |
 |-------|------|-------|----------------|
-| **Unit** | `src/__tests__/*.test.ts` | 391 | Input validation (write dir, private hosts, memory, CPUs, bind address, port, memory file name, path-prefix lists), WSL + Windows shell escaping (incl. `$`/backtick neutralisation), WSL path conversion, env var injection, `parseIsRunning` state machine, ttyd polling / URL construction, status bar state transitions, firewall status bar, timing-safe MCP auth, path traversal protection, every MCP tool handler |
+| **Unit** | `src/__tests__/*.test.ts` | 393 | Input validation (write dir, private hosts, memory, CPUs, bind address, port, memory file name, path-prefix lists), WSL + Windows shell escaping (incl. `$`/backtick neutralisation), WSL path conversion, env var injection, `parseIsRunning` state machine, ttyd polling / URL construction, status bar state transitions, firewall status bar, timing-safe MCP auth, path traversal protection, every MCP tool handler |
 | **Integration** | `test/integration/*.test.ts` | 40 | Container health + `verify.sh`, vault ro/rw mounts + mount isolation, narrow sudo scope + `SUDO_PASSWORD` unset after drop-privileges, MCP env var injection, MCP HTTP auth / routing / CORS, Docker resource naming (`oas-test` prefix), firewall enable / allowlist / disable, tmux session create + list + persist, ttyd port remapping, Claude Code auth + `claude -p` execution + memory MCP tool use + filesystem `Read` tool |
 | **E2E** | `test/e2e/specs/*.e2e.ts` | 18 | Plugin loads and is enabled, ribbon icon present, status bar renders, 12 commands registered, 4 settings tabs render, 5 MCP permission tiers visible with correct defaults, MCP token auto-generates and regenerates, font size + scrollback + MCP port validation adds/removes `sandbox-input-error` class, bind address `0.0.0.0` security warning toggles dynamically, per-setting "Requires restart" labels appear on restart-needing settings only |
 
@@ -778,6 +778,6 @@ The integration harness cleans up its own `oas-test-*` resources automatically v
 
 ```bash
 docker rm -f oas-test-sandbox
-docker volume rm oas-test_oas-test-claude-config oas-test_oas-test-shell-history
+docker volume rm oas-test-claude-config oas-test_oas-test-shell-history
 docker network rm oas-test_default
 ```

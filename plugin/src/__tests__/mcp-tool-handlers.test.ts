@@ -349,6 +349,7 @@ describe("MCP tool handlers", () => {
 				folder_templates: opts.folderTemplates ?? [],
 			};
 			(app as unknown as { plugins: unknown }).plugins = {
+				enabledPlugins: new Set(["templater-obsidian"]),
 				plugins: {
 					"templater-obsidian": {
 						settings,
@@ -1152,9 +1153,12 @@ describe("MCP tool handlers", () => {
 			expect(app.vault.create).toHaveBeenCalled();
 		});
 
-		it("writeScoped tool descriptions name the active write directory", () => {
+		it("writeScoped tool descriptions point at the configured write directory", () => {
+			// Description text deliberately doesn't embed the path (it would go stale if
+			// the user changes vaultWriteDir without restarting the MCP server). Agents
+			// call mcp_capabilities for the live path; the description just signals scope.
 			const createTool = getTool(tools, "vault_create");
-			expect(createTool.config.description).toContain(writeDir);
+			expect(createTool.config.description).toContain("write directory");
 		});
 	});
 

@@ -44,7 +44,13 @@ export function getPluginsHost(app: App): PluginsHost | undefined {
 export function getInstalledPlugin<T = unknown>(app: App, pluginId: string): T | null {
 	const host = getPluginsHost(app);
 	if (!host) return null;
-	if (host.enabledPlugins && !host.enabledPlugins.has(pluginId)) return null;
+	// Require the enabledPlugins set to be present AND contain the id.
+	// Earlier code made the `has` check conditional on the set existing, which
+	// meant a missing set fell through to `host.plugins?.[id]` — but Obsidian
+	// keeps the plugin instance object in `plugins` after disable, so a
+	// disabled Templater/Dataview/Tasks would still register tools that fail
+	// at runtime. Be strict.
+	if (!host.enabledPlugins || !host.enabledPlugins.has(pluginId)) return null;
 	const plugin = host.getPlugin?.(pluginId) ?? host.plugins?.[pluginId] ?? null;
 	return plugin as T | null;
 }

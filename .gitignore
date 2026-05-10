@@ -12,9 +12,8 @@ node_modules/
 .DS_Store
 Thumbs.db
 
-# env
+# env (`.env` matches at any depth — covers container/.env too)
 .env
-container/.env
 
 # Coverage
 coverage/
@@ -30,8 +29,7 @@ plugin/wdio-logs/
 workspace/vault/
 
 # Claude Code local overrides
-.claude/settings.local.json
-workspace/.claude/settings.local.json
+**/.claude/settings.local.json
 tmux-*.log
 
 # test artifacts

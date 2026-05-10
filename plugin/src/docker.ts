@@ -163,7 +163,7 @@ export async function getWslNetworkingMode(wslDistro: string): Promise<string | 
 // the host, or undefined when not on Windows / no suitable adapter is found.
 // In WSL mirrored mode, eth0 inside WSL carries the Windows LAN IP, so the
 // plugin picks the primary LAN adapter. In NAT mode (and when the mode can't
-// be detected), picks the vEthernet(WSL) adapter — the legacy behaviour.
+// be detected), picks the vEthernet(WSL) adapter — the NAT default.
 export function getWslHostIp(mode: string | undefined): string | undefined {
 	if (process.platform !== "win32") return undefined;
 	const nets = networkInterfaces();
@@ -186,15 +186,23 @@ export function getWslHostIp(mode: string | undefined): string | undefined {
 export class DockerManager {
 	private getSettings: () => DockerManagerSettings;
 	private busy = false;
-	// WSL networking mode and host IP only change when the user reconfigures
-	// WSL itself. Probing wsl.exe on every docker call adds a process spawn to
-	// every health poll and menu render. Cache per (wslDistro) and clear on
-	// restart() — a manual restart is the natural reconfiguration boundary.
+	// WSL networking mode and host IP rarely change, but VPN connect, suspend/
+	// resume, or `wsl --shutdown` can shift the host IP under us. Cache per
+	// (wslDistro) but expire after WSL_PROBE_TTL_MS so stale entries don't pin
+	// a wrong IP for hours. Also cleared on restart() and firewall toggles.
 	private wslProbeCache: {
 		distro: string;
 		mode: string | undefined;
 		hostIp: string | undefined;
+		at: number;
 	} | null = null;
+	private static readonly WSL_PROBE_TTL_MS = 5 * 60_000;
+
+	/** Clear the WSL probe cache so the next docker call re-detects host IP / mode.
+	 *  Useful when the network changed under us (VPN, suspend/resume). */
+	invalidateWslProbe(): void {
+		this.wslProbeCache = null;
+	}
 
 	constructor(getSettings: () => DockerManagerSettings) {
 		this.getSettings = getSettings;
@@ -207,12 +215,17 @@ export class DockerManager {
 	private async getWslProbe(
 		wslDistro: string,
 	): Promise<{ mode: string | undefined; hostIp: string | undefined }> {
-		if (this.wslProbeCache && this.wslProbeCache.distro === wslDistro) {
+		const now = Date.now();
+		if (
+			this.wslProbeCache &&
+			this.wslProbeCache.distro === wslDistro &&
+			now - this.wslProbeCache.at < DockerManager.WSL_PROBE_TTL_MS
+		) {
 			return { mode: this.wslProbeCache.mode, hostIp: this.wslProbeCache.hostIp };
 		}
 		const mode = await getWslNetworkingMode(wslDistro);
 		const hostIp = getWslHostIp(mode);
-		this.wslProbeCache = { distro: wslDistro, mode, hostIp };
+		this.wslProbeCache = { distro: wslDistro, mode, hostIp, at: now };
 		return { mode, hostIp };
 	}
 
@@ -407,8 +420,22 @@ export class DockerManager {
 
 	/** Fire-and-forget stop for plugin unload (parent stays alive). */
 	stopDetached(): void {
-		const { dockerMode, composePath, wslDistro } = this.getSettings();
+		const settings = this.getSettings();
+		const { dockerMode, composePath, wslDistro } = settings;
 		if (!composePath) return;
+
+		// docker-compose down doesn't need PKM_VAULT_PATH/PKM_WRITE_DIR to find
+		// the project (the `name: oas` field pins it), but compose still
+		// substitutes ${VAR} in the YAML and warns to stderr when unset. The
+		// detached spawn discards stderr, but providing the values keeps
+		// behaviour symmetric with run() for any compose feature that does
+		// require them at down time.
+		const downEnv: Record<string, string> = {};
+		if (settings.vaultPath) {
+			downEnv.PKM_VAULT_PATH =
+				dockerMode === "wsl" ? windowsToWslPath(settings.vaultPath) : settings.vaultPath;
+		}
+		if (settings.writeDir) downEnv.PKM_WRITE_DIR = settings.writeDir;
 
 		let shell: string;
 		let args: string[];
@@ -416,17 +443,25 @@ export class DockerManager {
 			// On Windows, spawn wsl.exe directly (no bash available on host)
 			const wslPath = windowsToWslPath(composePath);
 			const escapedPath = wslPath.replace(/'/g, "'\\''");
-			const innerCmd = `cd '${escapedPath}' && docker compose down`;
+			const envPrefix = Object.entries(downEnv)
+				.map(([k, v]) => `${k}='${v.replace(/'/g, "'\\''")}'`)
+				.join(" ");
+			const exportPart = envPrefix ? `export ${envPrefix} && ` : "";
+			const innerCmd = `${exportPart}cd '${escapedPath}' && docker compose down`;
 			shell = "wsl";
 			args = ["-d", wslDistro, "--", "bash", "-c", innerCmd];
 		} else if (process.platform === "win32") {
 			// Native Docker on Windows — use cmd.exe (doubles internal quotes).
 			const escapedPath = composePath.replace(/"/g, '""');
+			const envPrefix = Object.entries(downEnv)
+				.map(([k, v]) => `set "${k}=${v.replace(/"/g, '""')}"`)
+				.join(" && ");
+			const setPart = envPrefix ? envPrefix + " && " : "";
 			shell = "cmd.exe";
-			args = ["/c", `cd /d "${escapedPath}" && docker compose down`];
+			args = ["/c", `${setPart}cd /d "${escapedPath}" && docker compose down`];
 		} else {
 			// Linux / Mac
-			const command = buildLocalCommand(composePath, "docker compose down");
+			const command = buildLocalCommand(composePath, "docker compose down", downEnv);
 			shell = "bash";
 			args = ["-c", command];
 		}
@@ -493,8 +528,14 @@ export class DockerManager {
 		return this.withGuard(async () => {
 			try {
 				await this.run("docker compose down");
-			} catch {
-				/* may not be running */
+			} catch (err) {
+				// Restart with no prior container running is the common case for
+				// the "force recreate" flow — debug-level only, not a warning.
+				logger.debug(
+					"Docker",
+					"compose down failed during restart (may not be running)",
+					err,
+				);
 			}
 			return this.run("docker compose up -d");
 		});

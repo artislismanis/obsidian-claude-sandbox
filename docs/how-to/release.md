@@ -37,7 +37,7 @@ npm ci
 npm run check
 ```
 
-All 307+ unit tests green, lint clean, format clean, type-check clean. If anything fails, fix before proceeding.
+All unit tests green, lint clean, format clean, type-check clean. If anything fails, fix before proceeding.
 
 Optional but strongly recommended:
 

@@ -1,13 +1,13 @@
 {
 	"name": "obsidian-agent-sandbox",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Obsidian plugin for managing a Docker-based Claude Code environment",
 	"main": "dist/main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-		"lint": "eslint src/",
-		"lint:fix": "eslint src/ --fix",
+		"lint": "eslint src/ *.mjs",
+		"lint:fix": "eslint src/ *.mjs --fix",
 		"format": "prettier --write src/ styles.css",
 		"format:check": "prettier --check src/ styles.css",
 		"test": "vitest run",
@@ -31,7 +31,6 @@
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
-		"@types/chai": "^5.2.3",
 		"@types/mocha": "^10.0.10",
 		"@types/node": "^20.11.0",
 		"@typescript-eslint/eslint-plugin": "^8.57.2",
@@ -42,7 +41,6 @@
 		"@wdio/mocha-framework": "^9.27.0",
 		"@wdio/spec-reporter": "^9.27.0",
 		"builtin-modules": "^3.3.0",
-		"chai": "^5.3.3",
 		"esbuild": "^0.28.0",
 		"eslint": "^10.1.0",
 		"husky": "^9.1.7",
