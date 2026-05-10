@@ -17,6 +17,7 @@ services:
             - oas-test-shell-history:/home/claude/.shell-history
         environment:
             - TERM=xterm-256color
+            - TTYD_PORT=7681
             - ALLOWED_PRIVATE_HOSTS=${ALLOWED_PRIVATE_HOSTS:-}
             - PKM_WRITE_DIR=${PKM_WRITE_DIR:-agent-workspace}
             - MEMORY_FILE_NAME=${MEMORY_FILE_NAME:-memory.json}

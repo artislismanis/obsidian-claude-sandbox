@@ -485,10 +485,11 @@ export class DockerManager {
 			shell = "cmd.exe";
 			args = ["/c", `${setPart}cd /d "${escapedPath}" && docker compose down`];
 		} else {
-			// Linux / Mac
-			const command = buildLocalCommand(composePath, "docker compose down", downEnv);
+			// Linux / Mac — pass the inner command directly to bash -c. Calling
+			// buildLocalCommand here would yield `bash -c "..."` and we'd then
+			// wrap that in another `bash -c`, double-shelling for no reason.
 			shell = "bash";
-			args = ["-c", command];
+			args = ["-c", buildInnerCommand(composePath, "docker compose down", downEnv)];
 		}
 
 		// On Windows, child processes survive parent exit naturally.
@@ -710,6 +711,35 @@ export class DockerManager {
 	}
 
 	static parseIsRunning(statusOutput: string): boolean {
-		return statusOutput.length > 0 && statusOutput.includes('"running"');
+		// `docker compose ps --format json` emits either a JSON array (newer
+		// compose) or one JSON object per line (older). Parse properly so a
+		// container whose Name/Image happens to contain the literal "running"
+		// doesn't trigger a false positive on a substring match.
+		const trimmed = statusOutput.trim();
+		if (!trimmed) return false;
+		const records: unknown[] = [];
+		if (trimmed.startsWith("[")) {
+			try {
+				const arr = JSON.parse(trimmed);
+				if (Array.isArray(arr)) records.push(...arr);
+			} catch {
+				return false;
+			}
+		} else {
+			for (const line of trimmed.split("\n")) {
+				const l = line.trim();
+				if (!l) continue;
+				try {
+					records.push(JSON.parse(l));
+				} catch {
+					/* skip malformed line */
+				}
+			}
+		}
+		return records.some((r) => {
+			if (typeof r !== "object" || r === null) return false;
+			const state = (r as { State?: unknown }).State;
+			return typeof state === "string" && state.toLowerCase() === "running";
+		});
 	}
 }

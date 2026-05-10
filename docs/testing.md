@@ -21,7 +21,7 @@ Exit code `0` means the suite passed. Any non-zero code = one or more failures. 
 
 ### All layers
 
-- **Node.js 20+** and **npm 10+**
+- **Node.js 24+** and **npm 10+**
 - From `plugin/`: `npm install` (installs vitest, wdio, esbuild, eslint, prettier)
 
 ### Integration tests (Layer 2)
@@ -51,12 +51,7 @@ npm run test:watch        # vitest watch mode
 
 No Docker, no Obsidian, no network. Covers pure logic: validators, shell escaping, ttyd polling, MCP auth + path traversal, tool handlers, status bar state machines. Runs in under 2 seconds and should always pass locally.
 
-Expected output ends with:
-
-```
- Test Files  19 passed (19)
-      Tests  393 passed (393)
-```
+The suite ends with a vitest summary listing all test files as `passed`. Any non-zero exit is a real failure — investigate the stack trace.
 
 ### Layer 2 — integration tests
 
@@ -68,19 +63,7 @@ All four integration spec files share **one** container, brought up once by `tes
 
 Skip behavior: if Docker isn't running or `oas-sandbox:latest` isn't built, all tests are marked `skipped` and the process exits 0. Look for `[integration] Docker unavailable — tests will skip` in the output.
 
-Expected output ends with:
-
-```
- Test Files  4 passed (4)
-      Tests  40 passed (40)
-```
-
-Or, when Docker is unavailable:
-
-```
- Test Files  4 skipped (4)
-      Tests  40 skipped (40)
-```
+The suite finishes with a vitest summary; either every spec passes or every spec is skipped (when Docker is unavailable). Mixed pass/skip is fine — Claude Code subsuite skips when seeded auth is absent.
 
 The test harness uses an isolated Docker Compose project (`oas-test` prefix) so it never touches your real `oas-sandbox` container, volumes, or network.
 
@@ -93,16 +76,7 @@ npm run test:e2e:headless    # CI / SSH (wraps in xvfb-run)
 
 Each spec file launches its own fresh Obsidian instance against an ephemeral copy of `test/e2e/vaults/simple/`. The `wdio-obsidian-service` installs the built `dist/` as a plugin and enables it automatically.
 
-Expected output for a full run:
-
-```
-» test/e2e/specs/smoke.e2e.ts
-  8 passing
-» test/e2e/specs/settings.e2e.ts
-  10 passing
-
-Spec Files:	 2 passed, 2 total (100% completed) in 00:00:25
-```
+A full run prints a per-spec summary followed by the wdio total — every spec file should report `passed` and `100% completed`. Failures are flagged with the offending selector or assertion.
 
 To run a single spec file:
 
@@ -140,11 +114,11 @@ After that, `npm run test:integration` will include the four Claude tests (`clau
 
 ## Coverage by suite
 
-| Suite | Path | Tests | What's covered |
-|-------|------|-------|----------------|
-| **Unit** | `src/__tests__/*.test.ts` | 393 | Input validation (write dir, private hosts, memory, CPUs, bind address, port, memory file name, path-prefix lists), WSL + Windows shell escaping (incl. `$`/backtick neutralisation), WSL path conversion, env var injection, `parseIsRunning` state machine, ttyd polling / URL construction, status bar state transitions, firewall status bar, timing-safe MCP auth, path traversal protection, every MCP tool handler |
-| **Integration** | `test/integration/*.test.ts` | 40 | Container health + `verify.sh`, vault ro/rw mounts + mount isolation, narrow sudo scope + `SUDO_PASSWORD` unset after drop-privileges, MCP env var injection, MCP HTTP auth / routing / CORS, Docker resource naming (`oas-test` prefix), firewall enable / allowlist / disable, tmux session create + list + persist, ttyd port remapping, Claude Code auth + `claude -p` execution + memory MCP tool use + filesystem `Read` tool |
-| **E2E** | `test/e2e/specs/*.e2e.ts` | 18 | Plugin loads and is enabled, ribbon icon present, status bar renders, 12 commands registered, 4 settings tabs render, 5 MCP permission tiers visible with correct defaults, MCP token auto-generates and regenerates, font size + scrollback + MCP port validation adds/removes `sandbox-input-error` class, bind address `0.0.0.0` security warning toggles dynamically, per-setting "Requires restart" labels appear on restart-needing settings only |
+| Suite | Path | What's covered |
+|-------|------|----------------|
+| **Unit** | `src/__tests__/*.test.ts` | Input validation (write dir, private hosts, memory, CPUs, bind address, port, memory file name, path-prefix lists), WSL + Windows shell escaping (incl. `$`/backtick neutralisation), WSL path conversion, env var injection, `parseIsRunning` state machine, ttyd polling / URL construction, status bar state transitions, firewall status bar, timing-safe MCP auth, path traversal protection, every MCP tool handler |
+| **Integration** | `test/integration/*.test.ts` | Container health + `verify.sh`, vault ro/rw mounts + mount isolation, narrow sudo scope + `SUDO_PASSWORD` unset after drop-privileges, MCP env var injection, MCP HTTP auth / routing / CORS, Docker resource naming (`oas-test` prefix), firewall enable / allowlist / disable, tmux session create + list + persist, ttyd port remapping, Claude Code auth + `claude -p` execution + memory MCP tool use + filesystem `Read` tool |
+| **E2E** | `test/e2e/specs/*.e2e.ts` | Plugin loads and is enabled, ribbon icon present, status bar renders, all commands registered, settings tabs render, MCP permission tiers visible with correct defaults, MCP token auto-generates and regenerates, numeric/text setting validation adds/removes `sandbox-input-error` class, bind address security warning toggles dynamically, per-setting "Requires restart" labels appear on restart-needing settings only |
 
 ## What's NOT covered (and why)
 

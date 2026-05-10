@@ -18,6 +18,7 @@ ARG NVM_VERSION=0.40.3
 ARG NVM_INSTALL_SHA256=2d8359a64a3cb07c02389ad88ceecd43f2fa469c06104f92f98df5b6f315275f
 ARG ATUIN_VERSION=18.8.0
 ARG BASH_PREEXEC_VERSION=0.5.0
+ARG MEMORY_SERVER_VERSION=2026.1.26
 
 # ── User ARGs ────────────────────────────────────────────────
 # The claude user's uid/gid. Defaults to 1000 because that's the
@@ -140,7 +141,7 @@ RUN uv python install "${PYTHON_VERSION}" && uv cache clean \
 # download artifacts don't end up baked into the image layer.
 RUN npm install -g \
        "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
-       "@modelcontextprotocol/server-memory" \
+       "@modelcontextprotocol/server-memory@${MEMORY_SERVER_VERSION}" \
     && npm cache clean --force
 
 # atuin shell history — the binary itself is installed in Phase 3. This

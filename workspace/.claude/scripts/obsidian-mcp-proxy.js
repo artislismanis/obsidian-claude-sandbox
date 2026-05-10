@@ -165,10 +165,16 @@ async function main() {
 		let msg;
 		try { msg = JSON.parse(trimmed); } catch { continue; }
 
-		// Notifications have no id — no response required
-		if (msg.id === undefined) continue;
-
 		const available = await isAvailable();
+
+		// Notifications have no id and need no response. The MCP spec requires
+		// `notifications/initialized` after `initialize`, so we still forward
+		// them upstream (fire-and-forget) when the server is reachable —
+		// dropping them would prevent the upstream session from leaving init.
+		if (msg.id === undefined) {
+			if (available) httpPost(msg).catch(() => undefined);
+			continue;
+		}
 
 		if (!available) {
 			process.stdout.write(JSON.stringify(unavailableResult(msg.id, msg.method)) + "\n");

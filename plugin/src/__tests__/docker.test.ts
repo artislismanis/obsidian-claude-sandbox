@@ -68,5 +68,15 @@ describe("DockerManager", () => {
 			].join("\n");
 			expect(DockerManager.parseIsRunning(output)).toBe(true);
 		});
+
+		it("returns true for JSON-array form emitted by newer compose", () => {
+			const output = '[{"Name":"pkm-1","State":"running","Status":"Up"}]';
+			expect(DockerManager.parseIsRunning(output)).toBe(true);
+		});
+
+		it("does not false-positive when 'running' appears only inside another field", () => {
+			const output = '{"Name":"my-running-task","State":"exited","Status":"Exited (0)"}';
+			expect(DockerManager.parseIsRunning(output)).toBe(false);
+		});
 	});
 });

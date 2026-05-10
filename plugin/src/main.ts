@@ -206,7 +206,14 @@ export default class AgentSandboxPlugin extends Plugin {
 			id: "open-browser",
 			name: "Open Sandbox in Browser",
 			callback: () => {
-				window.open(`http://localhost:${this.settings.ttydPort}`);
+				// Use the configured bind address when it's a non-loopback host
+				// (e.g. user pinned ttyd to a LAN IP). Loopback / 0.0.0.0 / empty
+				// fall through to "localhost" for portability across browsers.
+				const bind = this.settings.ttydBindAddress;
+				const isLoopback =
+					!bind || bind === "0.0.0.0" || bind === "127.0.0.1" || bind === "::1";
+				const host = isLoopback ? "localhost" : bind;
+				window.open(`http://${host}:${this.settings.ttydPort}`);
 			},
 		});
 

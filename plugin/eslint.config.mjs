@@ -22,15 +22,17 @@ export default tseslint.config(
 		ignores: ["main.js", "node_modules/", "dist/"],
 	},
 	{
-		// Build/release scripts at the package root: keep eslint:recommended on
-		// (catches typos in things like process.exit) but drop typescript-eslint
-		// rules that need type info.
-		files: ["*.mjs"],
+		// Build/release scripts and test harness configs at the package root,
+		// plus integration tests under test/. Keep eslint:recommended on
+		// (catches typos in things like process.exit) but drop rules that
+		// don't fit ad-hoc tooling code.
+		files: ["*.mjs", "*.ts", "*.mts", "test/**/*.ts", "test/**/*.mts"],
 		rules: {
 			"@typescript-eslint/no-require-imports": "off",
 			"@typescript-eslint/no-explicit-any": "off",
 			"@typescript-eslint/consistent-type-imports": "off",
-			// Build/release scripts are CLIs — console output is the point.
+			// Build/release scripts and test harnesses are CLIs/diagnostics —
+			// console output is the point.
 			"no-console": "off",
 		},
 		languageOptions: {

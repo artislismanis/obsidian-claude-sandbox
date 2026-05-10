@@ -220,7 +220,7 @@ else
   echo "    Set PKM_VAULT_PATH in container/.env and restart the container"
 fi
 
-if curl -sf http://localhost:7681/ > /dev/null 2>&1; then
+if curl -sf "http://localhost:${TTYD_PORT:-7681}/" > /dev/null 2>&1; then
   echo "  ttyd:  listening on port ${TTYD_PORT:-7681}"
 else
   echo "  ttyd:  not yet listening (normal during build or exec)"

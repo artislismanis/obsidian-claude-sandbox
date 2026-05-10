@@ -13,7 +13,6 @@ const versions = await parseObsidianVersions(env.OBSIDIAN_VERSIONS ?? "latest/la
 
 if (env.CI) {
 	// Consumed by GitHub Actions cache key
-	// eslint-disable-next-line no-console
 	console.log("obsidian-cache-key:", JSON.stringify(versions));
 }
 

@@ -121,15 +121,31 @@ export async function applyTemplaterFolderTemplate(app: App, file: TFile): Promi
  * prior value afterwards. Without this, our `vault.create` calls would
  * trigger Templater's "no active editor" notice; we apply templates ourselves
  * via `applyTemplaterFolderTemplate`, so the hook is pure noise.
+ *
+ * Refcounted so concurrent `vault_create` calls compose safely: we capture
+ * the original value on the first entry, force-disable the hook for the whole
+ * critical section, and restore only when the last in-flight call exits. A
+ * naive save/restore pair would let the second concurrent call snapshot the
+ * already-disabled `false` and "restore" that on its way out, permanently
+ * disabling the hook.
  */
+let templaterSuppressDepth = 0;
+let templaterSuppressPrev: boolean | undefined;
 export async function withTemplaterHookSuppressed<T>(app: App, fn: () => Promise<T>): Promise<T> {
 	const tp = getTemplaterPlugin(app);
 	if (!tp?.settings) return fn();
-	const prev = tp.settings.trigger_on_file_creation;
+	if (templaterSuppressDepth === 0) {
+		templaterSuppressPrev = tp.settings.trigger_on_file_creation;
+	}
+	templaterSuppressDepth++;
 	tp.settings.trigger_on_file_creation = false;
 	try {
 		return await fn();
 	} finally {
-		tp.settings.trigger_on_file_creation = prev;
+		templaterSuppressDepth--;
+		if (templaterSuppressDepth === 0) {
+			tp.settings.trigger_on_file_creation = templaterSuppressPrev;
+			templaterSuppressPrev = undefined;
+		}
 	}
 }

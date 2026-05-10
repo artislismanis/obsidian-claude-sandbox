@@ -56,6 +56,6 @@ Three reasons:
 
 ## Git workflow
 
-Claude running inside the container **cannot run git** — no `.git` is visible at or above `/workspace/`. All commits to the monorepo happen on the host. The human edits or asks Claude to edit files, reviews with `git diff workspace/`, and commits on a feature branch. See `README.md` "Development > PR workflow for workspace changes" for the full walkthrough.
+Claude running inside the container **cannot run git** — no `.git` is visible at or above `/workspace/`. All commits to the monorepo happen on the host. The human edits or asks Claude to edit files, reviews with `git diff workspace/`, and commits on a feature branch. See the "Development" section in `README.md` for the trust model and the branch-protection rule for infra changes.
 
 This is intentional: it means "don't commit directly to main" is enforced by construction rather than by hook configuration. Branch protection on the GitHub side is recommended as belt-and-braces.

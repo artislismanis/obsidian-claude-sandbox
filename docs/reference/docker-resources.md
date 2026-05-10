@@ -44,12 +44,14 @@ The read-only vault + rw write-dir is the core security invariant: the agent can
 
 ## Ports
 
-| Purpose | Default host port | Inside container |
+| Purpose | Default host bind | Container connects via |
 |---|---|---|
-| ttyd (terminal) | `7681` (bound to `127.0.0.1`) | `7681` |
-| MCP HTTP | `28080` (bound to `0.0.0.0`) | `28080` |
+| ttyd (terminal) | `127.0.0.1:7681` (host port) | `7681` (in-container listen port) |
+| MCP HTTP | `127.0.0.1:28080` (host-side, runs in the plugin) | `host.docker.internal:28080` |
 
-`ttydBindAddress` can be set to `0.0.0.0` for LAN access (warning surfaced). MCP is bound broadly inside the container but firewalled — see `explanation/security-model.md`.
+`ttydBindAddress` can be set to `0.0.0.0` for LAN access (warning surfaced).
+
+The MCP HTTP server runs **on the host** inside the Obsidian plugin — it is not a port published by the container. The container reaches it via `host.docker.internal`, which is wired to the host gateway by `docker-compose.yml`'s `extra_hosts`. Default `mcpBindAddress=127.0.0.1` keeps MCP host-only; set it to the docker bridge gateway IP (or `0.0.0.0`) to let the container reach it. The container's outbound firewall already pinholes the MCP port to `host.docker.internal`, see `explanation/security-model.md`.
 
 ## Environment variables
 

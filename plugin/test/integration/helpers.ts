@@ -209,7 +209,7 @@ export async function waitForHealth(
 		}
 		await new Promise((r) => setTimeout(r, intervalMs));
 	}
-	let diag = "";
+	let diag: string;
 	try {
 		diag = "\n\n--- container logs ---\n" + containerLogs();
 	} catch {
