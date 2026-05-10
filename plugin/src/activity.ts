@@ -16,6 +16,27 @@ import type { ActivityEntry } from "./mcp-server";
 import type { StatusBarManager } from "./status-bar";
 import type { ActivityPrefix, TerminalView } from "./terminal-view";
 import { VIEW_TYPE_TERMINAL } from "./view-types";
+
+/**
+ * Structural-typed guard that doesn't import the TerminalView class — that
+ * import would pull xterm.js into the (jsdom-free) unit test bundle. We
+ * cross-check the leaf's view-type *and* the methods we need; a placeholder /
+ * deferred view returned by Obsidian during reload won't satisfy both.
+ */
+function isTerminalViewLike(leafView: unknown): leafView is TerminalView {
+	if (!leafView || typeof leafView !== "object") return false;
+	const v = leafView as {
+		getViewType?: () => string;
+		getSessionName?: unknown;
+		setActivityPrefix?: unknown;
+	};
+	return (
+		typeof v.getViewType === "function" &&
+		v.getViewType() === VIEW_TYPE_TERMINAL &&
+		typeof v.getSessionName === "function" &&
+		typeof v.setActivityPrefix === "function"
+	);
+}
 import type { AgentStatus } from "./mcp-tools";
 import { isPathWithinDir } from "./validation";
 
@@ -53,7 +74,8 @@ export class ActivityUi {
 		const prefix = STATUS_TO_PREFIX[update.status];
 
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
-			const view = leaf.view as TerminalView;
+			if (!isTerminalViewLike(leaf.view)) continue;
+			const view = leaf.view;
 			const sessionKey = view.getSessionName() ?? DEFAULT_SESSION_KEY;
 			if (sessionKey === update.sessionName) {
 				view.setActivityPrefix(prefix);
@@ -72,7 +94,11 @@ export class ActivityUi {
 		const activity = this.getActivity();
 		if (!activity) return;
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
-			const view = leaf.view as TerminalView;
+			// Defensive: getLeavesOfType normally only returns matching views,
+			// but Obsidian has been observed to surface deferred / placeholder
+			// views during plugin reload — `view` may not yet be a TerminalView.
+			if (!isTerminalViewLike(leaf.view)) continue;
+			const view = leaf.view;
 			const key = view.getSessionName() ?? DEFAULT_SESSION_KEY;
 			const entry = activity.get(key);
 			view.setActivityPrefix(entry ? STATUS_TO_PREFIX[entry.status] : null);
@@ -87,7 +113,7 @@ export class ActivityUi {
 		}
 		this.statusBar.setAttention(0);
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
-			(leaf.view as TerminalView).setActivityPrefix(null);
+			if (isTerminalViewLike(leaf.view)) leaf.view.setActivityPrefix(null);
 		}
 	}
 

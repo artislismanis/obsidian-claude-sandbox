@@ -621,7 +621,7 @@ Toggle setting to `new_or_modified` → subsequent `vault_modify` calls also fir
 
 **Actions:** Observe the loading status.
 
-**Expected:** Message updates like `Connecting to terminal… (attempt 2/15, retry in 0.8s)`. Intervals grow up to 5s. Starting the container mid-retry → connection establishes and the terminal renders.
+**Expected:** Message updates like `Connecting to terminal… (attempt 2/8, retry in 0.8s)`. Intervals grow up to 8s and cap there for the remaining attempts. Starting the container mid-retry → connection establishes and the terminal renders.
 
 #### Startup progress indicator
 

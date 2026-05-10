@@ -72,17 +72,24 @@ export class AnalyzeManager {
 			} catch {
 				continue;
 			}
-			const out: PromptTemplate[] = [];
-			for (const entry of entries) {
-				if (!entry.endsWith(".md")) continue;
-				try {
-					const content = await fs.readFile(pathJoin(dir, entry), "utf-8");
-					const [label, body] = parsePromptTemplate(content, entry);
-					out.push({ name: entry.replace(/\.md$/, ""), label, body });
-				} catch {
-					/* skip unreadable templates */
-				}
-			}
+			// Parallelise reads — the loop was previously sequential, so a
+			// directory of N templates served N round trips of stat+read
+			// where one Promise.all batch handles them concurrently. Each
+			// per-file try/catch returns null on failure so unreadable
+			// templates are skipped without poisoning the whole batch.
+			const mdEntries = entries.filter((e) => e.endsWith(".md"));
+			const settled = await Promise.all(
+				mdEntries.map(async (entry): Promise<PromptTemplate | null> => {
+					try {
+						const content = await fs.readFile(pathJoin(dir, entry), "utf-8");
+						const [label, body] = parsePromptTemplate(content, entry);
+						return { name: entry.replace(/\.md$/, ""), label, body };
+					} catch {
+						return null;
+					}
+				}),
+			);
+			const out = settled.filter((t): t is PromptTemplate => t !== null);
 			return out.sort((a, b) => a.label.localeCompare(b.label));
 		}
 		return [];

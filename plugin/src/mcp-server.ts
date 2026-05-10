@@ -106,6 +106,12 @@ class AuditLog {
 	private entries: AuditEntry[] = [];
 	private maxEntries: number;
 	private sink: ((entry: AuditEntry) => void | Promise<void>) | null = null;
+	// Serialise sink invocations so file-rotation (stat → remove → rename →
+	// append) can't interleave with concurrent record() calls. Without this,
+	// two simultaneous tool invocations near the rotation threshold would race
+	// inside createFileAuditSink — both reading the pre-rotation byte count,
+	// both deciding to rotate, the second rename clobbering the first archive.
+	private sinkChain: Promise<void> = Promise.resolve();
 
 	constructor(maxEntries: number) {
 		this.maxEntries = maxEntries;
@@ -120,18 +126,25 @@ class AuditLog {
 		if (this.entries.length > this.maxEntries) {
 			this.entries = this.entries.slice(-this.maxEntries);
 		}
-		if (this.sink) {
-			try {
-				const maybe = this.sink(entry);
-				if (maybe instanceof Promise) {
-					maybe.catch(() => {
-						/* sink failures never block tool execution */
-					});
+		const sink = this.sink;
+		if (!sink) return;
+		// Chain via the per-sink promise so writes serialise. Errors are logged
+		// but never propagate — sink failures must never block tool execution.
+		this.sinkChain = this.sinkChain.then(
+			() => {
+				try {
+					const maybe = sink(entry);
+					return maybe instanceof Promise
+						? maybe.catch((e) => logger.debug("MCP", "Audit sink failed", e))
+						: undefined;
+				} catch (e) {
+					logger.debug("MCP", "Audit sink failed", e);
 				}
-			} catch {
-				/* sink failures never block tool execution */
-			}
-		}
+			},
+			() => {
+				/* prior link rejected — already logged */
+			},
+		);
 	}
 
 	getEntries(): readonly AuditEntry[] {
@@ -213,23 +226,23 @@ export class ObsidianMcpServer {
 	async start(): Promise<void> {
 		if (this.httpServer) return;
 
-		this.cache = new VaultCache(this.app.metadataCache);
-		this.auditLog.setSink(createFileAuditSink(this.app));
+		// Build everything locally first; only commit to instance state after
+		// listen() succeeds, otherwise a port-bind failure leaves cache/sink/
+		// tools wired up against a server that never started.
+		const cache = new VaultCache(this.app.metadataCache);
 		const hooks = this.config.hooks ?? {};
-		this.tools = buildTools({
+		const tools = buildTools({
 			app: this.app,
 			getWriteDir: this.config.getWriteDir,
 			pathFilter: this.config.pathFilter,
 			review: hooks.review,
 			reviewBatch: hooks.reviewBatch,
-			cache: this.cache,
+			cache,
 			onActivity: (update) => this.recordActivity(update),
 			enabledTiers: this.config.enabledTiers,
 		}).filter((t) => this.config.enabledTiers.has(t.tier));
 
-		this.startTime = Date.now();
-
-		this.httpServer = createServer((req, res) => {
+		const httpServer = createServer((req, res) => {
 			this.handleRequest(req, res).catch((err) => {
 				logger.error("MCP", "Unhandled error in request handler", err);
 				if (!res.headersSent) {
@@ -239,7 +252,7 @@ export class ObsidianMcpServer {
 			});
 		});
 
-		this.httpServer.on("clientError", (err) => {
+		httpServer.on("clientError", (err) => {
 			logger.warn("MCP", "Client error", err.message);
 		});
 
@@ -247,10 +260,34 @@ export class ObsidianMcpServer {
 		// value via plugin settings; users who need container-side access must
 		// explicitly bind to the docker bridge gateway (or 0.0.0.0).
 		const bind = this.config.bindAddress || "127.0.0.1";
-		await new Promise<void>((resolve, reject) => {
-			this.httpServer!.listen(this.config.port, bind, () => resolve());
-			this.httpServer!.on("error", reject);
-		});
+		try {
+			await new Promise<void>((resolve, reject) => {
+				const onError = (err: Error) => {
+					httpServer.removeListener("error", onError);
+					reject(err);
+				};
+				httpServer.once("error", onError);
+				httpServer.listen(this.config.port, bind, () => {
+					httpServer.removeListener("error", onError);
+					resolve();
+				});
+			});
+		} catch (err) {
+			cache.destroy();
+			try {
+				httpServer.close();
+			} catch {
+				/* ignore */
+			}
+			throw err;
+		}
+
+		// Listen succeeded — commit state.
+		this.cache = cache;
+		this.tools = tools;
+		this.httpServer = httpServer;
+		this.startTime = Date.now();
+		this.auditLog.setSink(createFileAuditSink(this.app));
 
 		logger.info(
 			"MCP",
@@ -364,8 +401,42 @@ export class ObsidianMcpServer {
 		return this.auditLog.getEntries();
 	}
 
+	/**
+	 * Decide whether a given Origin header value is allowed to receive the
+	 * Authorization-bearing CORS response. We only echo ACAO for trusted
+	 * origins so a random page on the user's intranet can't ride the auth
+	 * header to talk to our MCP listener via the browser.
+	 *
+	 * Trusted: missing/null Origin (curl, Obsidian's main process), loopback
+	 * HTTP origins (any port), and Obsidian-internal app:// origins (Obsidian's
+	 * own MCP client uses Origin: app://obsidian.md).
+	 */
+	private isOriginAllowed(origin: string | undefined): boolean {
+		if (!origin || origin === "null") return true;
+		if (origin.startsWith("app://")) return true;
+		try {
+			const u = new URL(origin);
+			if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+			const host = u.hostname;
+			return (
+				host === "127.0.0.1" || host === "localhost" || host === "[::1]" || host === "::1"
+			);
+		} catch {
+			return false;
+		}
+	}
+
 	private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
-		res.setHeader("Access-Control-Allow-Origin", "*");
+		const origin = req.headers.origin;
+		if (this.isOriginAllowed(origin)) {
+			// Only echo ACAO when the request comes from a trusted origin.
+			// Without an Origin header the browser won't enforce same-origin,
+			// so emitting "*" / null is unnecessary — omit entirely.
+			if (origin) {
+				res.setHeader("Access-Control-Allow-Origin", origin);
+				res.setHeader("Vary", "Origin");
+			}
+		}
 		res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
 		res.setHeader(
 			"Access-Control-Allow-Headers",
@@ -456,28 +527,55 @@ export class ObsidianMcpServer {
 		return new Promise((resolve, reject) => {
 			let chunks: Buffer[] = [];
 			let size = 0;
-			req.on("data", (chunk: Buffer) => {
+			let settled = false;
+			const settleResolve = (v: unknown) => {
+				if (settled) return;
+				settled = true;
+				cleanup();
+				resolve(v);
+			};
+			const settleReject = (err: Error) => {
+				if (settled) return;
+				settled = true;
+				cleanup();
+				reject(err);
+			};
+			const onData = (chunk: Buffer) => {
+				if (settled) return;
 				size += chunk.length;
 				if (size > MAX_BODY_BYTES) {
-					req.destroy();
-					// Free the buffered prefix immediately — req.destroy() doesn't
-					// drop chunks already buffered, and the Promise stays pending
-					// for the GC's sake until end/error fires.
+					// Drop buffered prefix immediately and tear the request down;
+					// remove our listeners so end/error after destroy() can't fire
+					// our handlers again or leak references via the closure.
 					chunks = [];
 					size = 0;
-					reject(new Error("Request body too large"));
+					settleReject(new Error("Request body too large"));
+					try {
+						req.destroy();
+					} catch {
+						/* already destroyed */
+					}
 				} else {
 					chunks.push(chunk);
 				}
-			});
-			req.on("end", () => {
+			};
+			const onEnd = () => {
+				if (settled) return;
 				try {
-					resolve(JSON.parse(Buffer.concat(chunks).toString()));
+					settleResolve(JSON.parse(Buffer.concat(chunks).toString()));
 				} catch {
-					reject(new Error("Invalid JSON"));
+					settleReject(new Error("Invalid JSON"));
 				}
-			});
-			req.on("error", reject);
+			};
+			const onError = (err: Error) => settleReject(err);
+			const cleanup = () => {
+				req.removeListener("data", onData);
+				req.removeListener("end", onEnd);
+				req.removeListener("error", onError);
+			};
+			req.on("data", onData);
+			req.on("end", onEnd);
+			req.on("error", onError);
 		});
 	}
 
@@ -534,6 +632,11 @@ export class ObsidianMcpServer {
 	): Promise<{ result: McpToolResult; success: boolean }> {
 		const timeoutMs = this.selectTimeoutMs(tool);
 		let timer: ReturnType<typeof setTimeout> | undefined;
+		// Note: this setTimeout isn't routed through Plugin.registerInterval
+		// because ObsidianMcpServer has no reference to the Plugin instance and
+		// adding one for a per-tool-call timer (always cleared in finally) is
+		// not worth the coupling. The .finally() clearTimeout below guarantees
+		// the timer is released even if the tool throws.
 		const timeout = new Promise<never>((_, reject) => {
 			timer = setTimeout(
 				() =>
@@ -663,6 +766,10 @@ export class ObsidianMcpServer {
 				logger.debug("MCP", `Session ${sid.slice(0, 8)}… closed`);
 				this.cleanupSession(sid);
 			}
+			// No sid means init never completed (no onsessioninitialized). The
+			// transport is still being torn down, but we have nothing to remove
+			// from this.transports — the entry was never added. Nothing else to
+			// do here, but keep the branch explicit so future readers see it.
 		};
 
 		try {
@@ -672,7 +779,22 @@ export class ObsidianMcpServer {
 		} catch (err) {
 			logger.error("MCP", "Failed to initialize MCP session", err);
 			const sid = transport.sessionId;
-			if (sid) this.cleanupSession(sid);
+			if (sid) {
+				this.cleanupSession(sid);
+			} else {
+				// Init failed before onsessioninitialized fired, so the transport
+				// isn't tracked in this.transports. Close it directly so we don't
+				// leak the underlying SDK resources / SSE keepalives.
+				try {
+					await transport.close?.();
+				} catch (closeErr) {
+					logger.debug(
+						"MCP",
+						"Error closing untracked transport after init failure",
+						closeErr,
+					);
+				}
+			}
 			throw err;
 		}
 	}

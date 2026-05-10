@@ -78,6 +78,13 @@ export function inputModal(app: App, opts: InputOptions): Promise<string | null>
 		if (opts.placeholder) input.placeholder = opts.placeholder;
 		if (opts.defaultValue) input.value = opts.defaultValue;
 		const submit = () => {
+			// Conservative behaviour: trim whitespace so an empty/whitespace
+			// input becomes a cancel rather than a successful submit. Callers
+			// (session names, prompt names) rely on non-empty validated names
+			// downstream — accepting whitespace would push the validation
+			// failure into a less-friendly error path. If a future caller
+			// genuinely needs to allow whitespace-only input, add a
+			// `preserveWhitespace` flag rather than removing the trim.
 			const body = input.value.trim();
 			settle(body || null);
 			modal.close();

@@ -36,7 +36,7 @@ All plugin settings live in **Obsidian → Settings → Agent Sandbox**. Setting
 | Auto-enable firewall on start | off | Invokes `init-firewall.sh` after `docker compose up -d`. |
 | Allowed private hosts | `""` | Comma-separated IPs/CIDRs allowed through the firewall (e.g. `192.168.1.100, 10.0.0.0/8`). *(requires restart)* |
 | Additional firewall domains | `""` | Comma-separated domain names. Surfaces with `[plugin]` tag in `--list-sources`. *(requires restart)* |
-| Sudo password | `""` | For the narrow apt-get/apt sudoers entry inside the container. Empty (default) = sudo disabled — set explicitly to enable test-installs in interactive sessions. *(requires restart)* |
+| Sudo password | `""` | For the narrow apt-get/apt sudoers entry inside the container. Empty (default) = sudo disabled — set explicitly to enable test-installs in interactive sessions. When set, this plugin setting overrides the `SUDO_PASSWORD` value in `container/.env` (the plugin passes its setting through as `SUDO_PASSWORD` on `docker compose up`). *(requires restart)* |
 
 ## MCP
 
@@ -44,7 +44,7 @@ All plugin settings live in **Obsidian → Settings → Agent Sandbox**. Setting
 |---|---|---|
 | MCP enabled | on | Starts the HTTP server; toggles the always-on `read` / `writeScoped` / `agent` tiers on/off globally. |
 | MCP port | `28080` | Host port for the MCP HTTP endpoint. *(requires restart)* |
-| MCP bind address | `127.0.0.1` | IP the MCP HTTP server binds to. Default is host-only — set to the docker bridge gateway (e.g. `172.17.0.1`) or `0.0.0.0` to let the sandbox container reach MCP via `host.docker.internal`. `0.0.0.0` exposes MCP to your LAN; bearer-token auth is the only line of defense. *(MCP restart)* |
+| MCP bind address | `127.0.0.1` | IP the MCP HTTP server binds to. Default is host-only — set to the docker bridge gateway (e.g. `172.17.0.1`) or `0.0.0.0` to let the sandbox container reach MCP via `host.docker.internal`. `0.0.0.0` exposes MCP to your LAN; bearer-token auth is the only line of defense. *(requires MCP restart)* |
 | Auth token | auto-generated | Regenerable via button. Passed to the container as `OAS_MCP_TOKEN`. *(requires restart)* |
 | Vault-wide writes | `None` | Dropdown — `None` (scoped only), `Reviewed` (writeReviewed tier; diff modal per change), or `Full` (writeVault tier; no review). Mutually exclusive. |
 | Escalation tiers | all off | Toggles for `navigate`, `manage`, `extensions`. See `explanation/security-model.md`. |

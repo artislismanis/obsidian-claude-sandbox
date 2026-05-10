@@ -67,7 +67,7 @@ When editing an existing vault note, copy it to `vault/$PKM_WRITE_DIR/` first, m
 
 ## Memory — MCP knowledge graph
 
-**Override the built-in file-based auto memory system.** Do NOT write to `/home/claude/.claude/projects/-workspace/memory/`. Use the MCP memory server (`mcp__memory__*` tools) for all persistent memory.
+**Override the built-in file-based auto memory system.** Do NOT write memory files under `/home/claude/.claude/projects/-workspace/`. Use the MCP memory server (`mcp__memory__*` tools) for all persistent memory.
 
 Storage is automatically per-vault — the plugin injects `MEMORY_FILE_PATH` pointing to `/workspace/vault/.oas/memory.json`, so each mounted vault gets its own isolated knowledge graph. No manual configuration needed.
 
@@ -98,6 +98,10 @@ Follow the same triggers as the built-in memory types — user info, feedback, p
 ### What NOT to save
 
 Same exclusions as the built-in system: no code patterns derivable from reading files, no git history, no ephemeral task details, no duplicating CLAUDE.md content.
+
+## Experimental flags in `.claude/settings.json`
+
+`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set in `.claude/settings.json` (`env` block) to opt this workspace into Claude Code's experimental "agent teams" feature, which lets a top-level agent coordinate multiple sub-agents in parallel. This flag is **experimental** — name and behaviour can change without notice between Claude Code releases. If you see odd sub-agent orchestration behaviour or want to compare against vanilla Claude Code, remove the flag from `settings.json` and restart `claude`.
 
 ## Discovering the environment
 

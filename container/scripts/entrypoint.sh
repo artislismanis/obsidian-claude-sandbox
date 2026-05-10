@@ -58,8 +58,14 @@ ensure_ownership() {
         current_uid=$(stat -c '%u' "$dir" 2>/dev/null || echo "")
         if [[ -n "$current_uid" && "$current_uid" != "$claude_uid" ]]; then
             echo "entrypoint: fixing ownership on $dir (uid $current_uid → $claude_uid)"
-            # Try chown first (works on native Linux and named volumes)
-            chown -R "${claude_uid}:${claude_gid}" "$dir" 2>/dev/null || true
+            # Try chown first (works on native Linux and named volumes).
+            # Don't abort on failure — many bind-mount backends (drvfs/9p,
+            # rootless Docker idmap) reject chown by design — but DO log
+            # rather than swallow silently, so the operator can see why
+            # the chmod fallback path triggered.
+            if ! chown -R "${claude_uid}:${claude_gid}" "$dir" 2>/dev/null; then
+                echo "entrypoint: chown -R failed on $dir (rc=$?) — likely a non-Linux-native mount" >&2
+            fi
             # Verify it worked — on 9p/drvfs mounts (Windows), chown may
             # succeed silently without effect. Fall back to chmod so the
             # claude user can write regardless of ownership.
@@ -67,7 +73,9 @@ ensure_ownership() {
             new_uid=$(stat -c '%u' "$dir" 2>/dev/null || echo "")
             if [[ "$new_uid" != "$claude_uid" ]]; then
                 echo "entrypoint: chown ineffective on $dir (9p/drvfs mount?), using chmod"
-                chmod -R a+rwX "$dir" 2>/dev/null || true
+                if ! chmod -R a+rwX "$dir" 2>/dev/null; then
+                    echo "entrypoint: chmod -R fallback failed on $dir (rc=$?)" >&2
+                fi
             fi
         fi
         # Final write check — both chown and chmod can silently fail on some

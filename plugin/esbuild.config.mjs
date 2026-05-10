@@ -40,5 +40,12 @@ if (prod) {
 	copyFileSync("styles.css", "dist/styles.css");
 	process.exit(0);
 } else {
+	// Clean SIGINT handling: dispose the esbuild context (closes file watchers,
+	// kills the worker subprocess) before exiting. Without this, Ctrl-C in dev
+	// mode leaves the watcher process orphaned until the parent shell reaps it.
+	process.on("SIGINT", () => {
+		context.dispose();
+		process.exit(0);
+	});
 	await context.watch();
 }

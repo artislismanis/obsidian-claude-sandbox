@@ -69,7 +69,10 @@ Organized per [Diátaxis](https://diataxis.fr/): four quadrants by purpose.
 - [Container lifecycle](docs/explanation/container-lifecycle.md)
 - [Design decisions](docs/explanation/design-decisions.md)
 
-### Project docs
+### Project meta
+
+Outside the four Diátaxis quadrants — these are about the project itself rather than how to use, configure, or understand the sandbox.
+
 - [Roadmap](docs/roadmap.md)
 - [Testing](docs/testing.md) — three automated layers (unit / integration / e2e)
 

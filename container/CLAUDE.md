@@ -59,6 +59,25 @@ Currently allowed categories:
 
 The `claude` user has a narrow sudoers entry for `apt-get` and `apt` only, password-gated. The password is set at container start time from the `SUDO_PASSWORD` environment variable (passed in via docker-compose, typically from `container/.env` or the plugin's "Sudo password" setting). `entrypoint.sh` unsets `SUDO_PASSWORD` before dropping privileges, so the password is not visible inside session shells. See `README.md` "Development" section for the trust model and intended usage.
 
+## Pinned binary downloads
+
+The Dockerfile downloads several binaries directly via `curl` (ttyd,
+bash-preexec, atuin, the nvm install script). Each has a matching
+`*_SHA256*` build ARG that is verified with `sha256sum -c` after the
+download. **When bumping any of `TTYD_VERSION`, `BASH_PREEXEC_VERSION`,
+`ATUIN_VERSION`, or `NVM_VERSION`, you MUST recompute the matching SHA**
+or the build will hard-fail on the verification step:
+
+```
+curl -fsSL <url> | sha256sum
+```
+
+For arch-split downloads (ttyd, atuin) compute both `_AMD64` and
+`_ARM64` SHAs by substituting `x86_64` / `aarch64` in the URL. The base
+images themselves (`ubuntu:24.04`, `ghcr.io/astral-sh/uv`) are still
+tag-pinned — there's a `TODO(image-pin)` comment at the top of the
+Dockerfile to capture digests on the next clean rebuild.
+
 ## Safety constraints for this folder
 
 - Never weaken the firewall allowlist without clear justification

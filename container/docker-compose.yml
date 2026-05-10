@@ -14,9 +14,31 @@ services:
         CLAUDE_UID: "${CLAUDE_UID:-1000}"
         CLAUDE_GID: "${CLAUDE_GID:-1000}"
     container_name: oas-sandbox
+    # Drop the full default cap set, then re-add only what we need:
+    # NET_ADMIN — iptables/ipset rules in init-firewall.sh
+    # NET_RAW   — required by iptables to open raw sockets when loading
+    #             the OUTPUT/filter chains; without it `iptables -A OUTPUT`
+    #             fails with "Permission denied (you must be root)" even
+    #             though uid 0 is in effect.
+    cap_drop:
+      - ALL
     cap_add:
-      # Required for iptables/ipset firewall management (init-firewall.sh)
       - NET_ADMIN
+      - NET_RAW
+    # File-descriptor cap. (pids cap lives under deploy.resources.limits.pids
+    # below — compose v2 rejects setting both pids_limit and that key.)
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 4096
+    # Cap the JSON log driver so a chatty session can't fill the host disk
+    # with `docker logs`. Three 10MB rotated files = 30MB ceiling per
+    # container.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
       - "${TTYD_BIND:-127.0.0.1}:${TTYD_PORT:-7681}:7681"
     volumes:
@@ -74,6 +96,10 @@ services:
         limits:
           memory: ${CONTAINER_MEMORY:-8G}
           cpus: "${CONTAINER_CPUS:-4}"
+          # 512 is well above what a Claude session + ttyd + tmux + a
+          # few MCP servers needs in practice, while still bounding
+          # fork-bomb-style runaway loops.
+          pids: 512
 
 networks:
   default:

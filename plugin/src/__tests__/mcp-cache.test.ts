@@ -3,13 +3,23 @@ import { VaultCache } from "../mcp-cache";
 
 function createMockMetadataCache() {
 	const listeners = new Map<string, Set<() => void>>();
+	const refMap = new Map<object, { event: string; fn: () => void }>();
 	return {
 		on(event: string, fn: () => void) {
 			if (!listeners.has(event)) listeners.set(event, new Set());
 			listeners.get(event)!.add(fn);
+			const ref = {};
+			refMap.set(ref, { event, fn });
+			return ref;
 		},
 		off(event: string, fn: () => void) {
 			listeners.get(event)?.delete(fn);
+		},
+		offref(ref: object) {
+			const entry = refMap.get(ref);
+			if (!entry) return;
+			listeners.get(entry.event)?.delete(entry.fn);
+			refMap.delete(ref);
 		},
 		emit(event: string) {
 			for (const fn of listeners.get(event) ?? []) fn();

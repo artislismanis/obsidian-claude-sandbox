@@ -29,6 +29,22 @@ describe("parsePromptTemplate", () => {
 		);
 		expect(body).toBe("Para one.\n\nPara two with @{{file}}.");
 	});
+
+	it("does not split on `---` HR inside the body when no leading separator exists", () => {
+		// Regression test for the previous `^---\s*$/m` parser, which would
+		// treat a markdown horizontal rule mid-body as the label/body divider.
+		// With the tightened parser, this template has no separator (the
+		// label-block runs through line one only, then a blank line breaks
+		// the label scan), so the whole content is the body and the first
+		// non-empty line is the label.
+		const [label, body] = parsePromptTemplate(
+			"Title\n\nIntro paragraph.\n\n---\n\n## Section\nMore body.",
+			"fallback",
+		);
+		expect(label).toBe("Title");
+		expect(body).toContain("---");
+		expect(body).toContain("## Section");
+	});
 });
 
 describe("substituteFilePlaceholder", () => {

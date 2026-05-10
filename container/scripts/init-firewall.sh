@@ -99,9 +99,41 @@ declare -a ALLOWED_DOMAINS=()
 
 _trim() {
   local s="$1"
+  # Strip CR (handles CRLF line endings from Windows-edited files like
+  # firewall-extras.txt) before whitespace trimming.
+  s="${s//$'\r'/}"
   s="${s#"${s%%[![:space:]]*}"}"
   s="${s%"${s##*[![:space:]]}"}"
   printf '%s' "$s"
+}
+
+# Validate an IPv4 octet (0-255).
+_is_valid_octet() {
+  local n="$1"
+  [[ "$n" =~ ^[0-9]+$ ]] || return 1
+  (( n >= 0 && n <= 255 ))
+}
+
+# Returns 0 if "$1" is a valid IPv4 address or IPv4 CIDR. Hostnames rejected.
+_is_ipv4_or_cidr() {
+  local entry="$1"
+  local addr="$entry"
+  local prefix=""
+  if [[ "$entry" == */* ]]; then
+    addr="${entry%/*}"
+    prefix="${entry#*/}"
+    [[ "$prefix" =~ ^[0-9]+$ ]] || return 1
+    (( prefix >= 0 && prefix <= 32 )) || return 1
+  fi
+  local IFS=.
+  # shellcheck disable=SC2206
+  local parts=( $addr )
+  [ "${#parts[@]}" -eq 4 ] || return 1
+  local p
+  for p in "${parts[@]}"; do
+    _is_valid_octet "$p" || return 1
+  done
+  return 0
 }
 
 add_entry() {
@@ -166,14 +198,22 @@ PID_DOMAIN=()
 PID_TIER=()
 for entry in "${ALLOWED_DOMAINS[@]}"; do
   # CIDR (e.g. 10.0.0.0/16) or bare IPv4 — add directly, no DNS needed.
-  if [[ "$entry" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}(/[0-9]{1,2})?$ ]]; then
-    cidr="$entry"
-    [[ "$cidr" != */* ]] && cidr="${cidr}/32"
-    ipset add allowed_ips_new "$cidr" -exist
+  # Octet bounds and prefix length are validated by _is_ipv4_or_cidr;
+  # the simple shape regex below is just to route CIDR-shaped entries
+  # away from DNS resolution.
+  if [[ "$entry" =~ ^[0-9]+(\.[0-9]+){3}(/[0-9]+)?$ ]]; then
+    if _is_ipv4_or_cidr "$entry"; then
+      cidr="$entry"
+      [[ "$cidr" != */* ]] && cidr="${cidr}/32"
+      ipset add allowed_ips_new "$cidr" -exist
+    else
+      echo "WARNING: skipping invalid IPv4/CIDR entry: $entry" >&2
+    fi
     continue
   fi
   (
-    ips=$(dig +short A "$entry" 2>/dev/null | grep -E '^[0-9]+\.' || true)
+    set -e
+    ips=$(dig +time=2 +tries=1 +short A "$entry" 2>/dev/null | grep -E '^[0-9]+\.' || true)
     if [ -z "$ips" ]; then
       exit 1
     fi
@@ -259,26 +299,46 @@ iptables -A OUTPUT -d 169.254.169.254 -j DROP
 iptables -A OUTPUT -m set --match-set allowed_ips dst -p tcp --dport 443 -j ACCEPT
 iptables -A OUTPUT -m set --match-set allowed_ips dst -p tcp --dport 80 -j ACCEPT
 
-# Docker gateway — always allowed (for container networking)
+# Docker gateway — restricted to HTTP/HTTPS and the MCP port. Previously
+# this rule allowed *all* ports to the gateway; that was effectively a
+# wide-open hole because in NAT mode the gateway is also the path to
+# the host's MCP listener and any other host service. Narrow it to the
+# same ports the rest of the allowlist uses.
+MCP_PORT="${OAS_MCP_PORT:-28080}"
 GATEWAY=$(ip route | awk '/default/ {print $3}')
-[ -n "$GATEWAY" ] && iptables -A OUTPUT -d "$GATEWAY" -j ACCEPT
+if [ -n "$GATEWAY" ]; then
+  iptables -A OUTPUT -d "$GATEWAY" -p tcp --dport 80 -j ACCEPT
+  iptables -A OUTPUT -d "$GATEWAY" -p tcp --dport 443 -j ACCEPT
+  iptables -A OUTPUT -d "$GATEWAY" -p tcp --dport "$MCP_PORT" -j ACCEPT
+fi
 
 # Obsidian MCP host — resolve host.docker.internal and allow the MCP port.
 # Always append the MCP-port rule even when host.docker.internal == gateway:
-# the gateway rule above currently allows all gateway traffic, but if a future
-# change ever narrows that rule, MCP would silently break unless this rule
-# stands on its own.
+# the gateway rule above is now port-scoped, so this rule keeps MCP working
+# regardless of whether host.docker.internal resolves to the gateway IP or
+# to a separately mapped host adapter (WSL2 mirrored mode).
 OAS_HOST=$(getent hosts host.docker.internal 2>/dev/null | awk '{print $1; exit}')
 if [ -n "$OAS_HOST" ]; then
-    iptables -A OUTPUT -d "$OAS_HOST" -p tcp --dport "${OAS_MCP_PORT:-28080}" -j ACCEPT
+    iptables -A OUTPUT -d "$OAS_HOST" -p tcp --dport "$MCP_PORT" -j ACCEPT
 fi
 
-# Configurable private hosts (NAS, local services, etc.)
+# Configurable private hosts (NAS, local services, etc.). Accepts IPv4 or
+# IPv4/CIDR ONLY — hostnames are rejected because we cannot safely resolve
+# them here (the firewall is what restricts DNS in the first place) and
+# silently ignoring them would surprise the operator. Restricted to the
+# same ports as the domain allowlist + the MCP port.
 if [ -n "${ALLOWED_PRIVATE_HOSTS:-}" ]; then
   IFS=',' read -ra HOSTS <<< "$ALLOWED_PRIVATE_HOSTS"
   for host in "${HOSTS[@]}"; do
     host="$(_trim "$host")"
-    [ -n "$host" ] && iptables -A OUTPUT -d "$host" -j ACCEPT
+    [ -z "$host" ] && continue
+    if ! _is_ipv4_or_cidr "$host"; then
+      echo "ERROR: ALLOWED_PRIVATE_HOSTS entry '$host' is not a valid IPv4 address or CIDR — hostnames are not accepted here. Skipping." >&2
+      continue
+    fi
+    iptables -A OUTPUT -d "$host" -p tcp --dport 80 -j ACCEPT
+    iptables -A OUTPUT -d "$host" -p tcp --dport 443 -j ACCEPT
+    iptables -A OUTPUT -d "$host" -p tcp --dport "$MCP_PORT" -j ACCEPT
   done
 fi
 

@@ -1,4 +1,9 @@
 #!/bin/bash
+# Strict mode: fail fast on unset vars and pipe failures. -e is intentionally
+# omitted — `bash -l` below exits with the user's last-command exit code,
+# and we want the EXIT trap to log that code rather than have set -e abort
+# the script before cleanup() runs.
+set -uo pipefail
 # Per-ttyd-connection session launcher. ttyd execs this for every WebSocket
 # client. The start/end markers go to ttyd's stderr → docker logs, so a
 # `docker logs oas-sandbox` correlates plugin-side WS events with the

@@ -5,6 +5,24 @@ export default tseslint.config(
 	eslint.configs.recommended,
 	...tseslint.configs.recommended,
 	{
+		// Type-aware rules need parser project info. Scope to src/ via a
+		// nested override below — running type-aware lint on test/ + *.mjs
+		// would require those to be in the same TS project.
+		files: ["src/**/*.ts"],
+		languageOptions: {
+			parserOptions: {
+				project: ["./tsconfig.json"],
+				tsconfigRootDir: import.meta.dirname,
+			},
+		},
+		rules: {
+			// Floating promises silently swallow errors. Set to "warn" rather
+			// than "error" for the initial rollout — flips to "error" once any
+			// remaining unmarked sites are either awaited or explicitly voided.
+			"@typescript-eslint/no-floating-promises": "warn",
+		},
+	},
+	{
 		rules: {
 			"@typescript-eslint/no-unused-vars": [
 				"error",

@@ -44,7 +44,7 @@ export function showSessionPicker(app: App): void {
 					return;
 				}
 				app.workspace.setActiveLeaf(leaf, { focus: true });
-				app.workspace.revealLeaf(leaf);
+				void app.workspace.revealLeaf(leaf);
 			});
 		}
 	};

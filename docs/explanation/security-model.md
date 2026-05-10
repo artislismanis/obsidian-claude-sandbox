@@ -29,7 +29,7 @@ The MCP server's tools are split into two kinds of tier:
 **Always-on (capabilities)** — enabled whenever MCP is on:
 - `read` — search, read, metadata, tags, links, backlinks, frontmatter.
 - `writeScoped` — create/modify within `$PKM_WRITE_DIR`.
-- `agent` — `agent_status_set` activity signal (not file access; UI only).
+- The always-on `agent_status_set` tool — activity signal (not file access; UI only). It is a single tool, not a tier of its own.
 
 **Gated (escalations)** — off by default; each opt-in grants access beyond filesystem:
 - **Vault-wide writes** (dropdown — `None` / `Reviewed` / `Full`). Mutually exclusive so the agent never has to choose between review-and-no-review paths:

@@ -54,11 +54,11 @@ Two ways:
 1. **Plugin UI** — Advanced tab → Security section → "Effective allowlist" → Refresh. Shows each entry tagged with its source.
 2. **Container shell**:
    ```bash
-   docker compose exec sandbox /usr/local/bin/init-firewall.sh --list-sources
+   cd container && docker compose exec sandbox /usr/local/bin/init-firewall.sh --list-sources
    ```
    or for a broader runtime check:
    ```bash
-   docker compose exec sandbox verify.sh
+   cd container && docker compose exec sandbox verify.sh
    ```
    Both print entries grouped by `[baseline]` / `[plugin]` / `[file]`.
 

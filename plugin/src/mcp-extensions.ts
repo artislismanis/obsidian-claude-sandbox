@@ -15,7 +15,21 @@ import type { McpToolDef, PermissionTier, ReviewFn } from "./mcp-tools";
 import { defineTool, text, error, gateVaultWrite, forEachMarkdownChunked } from "./mcp-tools";
 import { logger, errMsg } from "./logger";
 import { getInstalledPlugin } from "./obsidian-internals";
-import { isPathWithinDir } from "./validation";
+import { isPathWithinDir, isRealPathWithinBase } from "./validation";
+import { getVaultBasePath, getVaultFullPath } from "./obsidian-internals";
+
+/**
+ * True when `vaultPath` is contained inside the vault directory. Mirrors the
+ * mcp-tools.ts isVaultPathSafe helper (which is not exported). Used to block
+ * traversal in user-controlled `format` strings that the moment formatter
+ * could otherwise use to construct `../escape/foo.md`.
+ */
+function isVaultPathSafe(app: App, vaultPath: string): boolean {
+	const base = getVaultBasePath(app);
+	const full = getVaultFullPath(app, vaultPath);
+	if (base === null || full === null) return true;
+	return isRealPathWithinBase(base, full);
+}
 
 type ToolPusher = (tool: McpToolDef) => void;
 
@@ -594,6 +608,16 @@ export function registerPeriodicNotesTools(app: App, push: ToolPusher, gate: Wri
 				const filename = m.format(periodicSettings.format || defaultFormat(periodicity));
 				const folder = (periodicSettings.folder || "").replace(/^\/+|\/+$/g, "");
 				const path = folder ? `${folder}/${filename}.md` : `${filename}.md`;
+
+				// The format string is plugin-controlled but moment passes
+				// through any non-token characters verbatim — including `/` and
+				// `..`. Reject paths whose realpath escapes the vault before we
+				// touch the filesystem.
+				if (!isVaultPathSafe(app, path)) {
+					return error(
+						`Periodic note path '${path}' resolves outside the vault. Check the Periodic Notes format setting for path-traversal characters.`,
+					);
+				}
 
 				const existing = app.vault.getFileByPath(path);
 				if (existing) return text(`Exists: ${path}`);

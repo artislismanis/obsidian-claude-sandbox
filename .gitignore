@@ -18,6 +18,19 @@ Thumbs.db
 # Coverage
 coverage/
 
+# Editor swap / backup files
+*.swp
+*.swo
+*~
+
+# Package manager debug logs
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Local cache directories
+.cache/
+
 # wdio-obsidian-service downloaded Obsidian binaries and test run logs
 plugin/.obsidian-cache/
 plugin/wdio-logs/
