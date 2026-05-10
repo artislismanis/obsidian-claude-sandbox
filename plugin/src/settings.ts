@@ -87,6 +87,7 @@ export function enabledTiersFromSettings(settings: AgentSandboxSettings): Set<Pe
 export type TerminalSettings = Pick<
 	AgentSandboxSettings,
 	| "ttydPort"
+	| "ttydBindAddress"
 	| "terminalTheme"
 	| "terminalFont"
 	| "terminalFontSize"

@@ -770,8 +770,16 @@ export class DockerManager {
 		}
 		return records.some((r) => {
 			if (typeof r !== "object" || r === null) return false;
-			const state = (r as { State?: unknown }).State;
-			return typeof state === "string" && state.toLowerCase() === "running";
+			const obj = r as { State?: unknown; Status?: unknown };
+			const state = typeof obj.State === "string" ? obj.State.toLowerCase() : "";
+			if (state === "running") return true;
+			// Older compose 2.x versions report `State` as a human string like
+			// "Up 2 hours (healthy)" instead of "running". Fall back to the
+			// `Status` field, which has the same shape across versions, and
+			// accept any "Up …" prefix as running.
+			if (state.startsWith("up ")) return true;
+			const status = typeof obj.Status === "string" ? obj.Status.toLowerCase() : "";
+			return status.startsWith("up ");
 		});
 	}
 }

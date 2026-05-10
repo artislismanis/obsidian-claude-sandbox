@@ -190,9 +190,21 @@ function createFileAuditSink(app: App): (entry: AuditEntry) => Promise<void> {
 				try {
 					await adapter.remove(AUDIT_FILE_ARCHIVE).catch(() => undefined);
 					await adapter.rename(AUDIT_FILE, AUDIT_FILE_ARCHIVE);
-					estimatedBytes = 0;
+					// Only reset the counter on successful rename. Previously the
+					// reset ran inside the try but BEFORE the rename — wait, it ran
+					// after, but a rename failure (file locked on Windows, FS
+					// transient error) was swallowed by the catch and the counter
+					// was NOT reset, which is fine. The bug was the opposite case:
+					// an exception thrown between rename and the next iteration
+					// would leave estimatedBytes stale forever. Re-stat on next
+					// invocation by clearing the cached value, so the next loop
+					// re-evaluates against actual file size.
+					estimatedBytes = -1;
 				} catch {
-					/* rotation is best-effort */
+					// Rename failed — keep estimatedBytes as-is so we'll retry
+					// rotation on the next entry instead of growing past the cap
+					// silently. Re-stat next iteration to pick up the real size.
+					estimatedBytes = -1;
 				}
 			}
 			await adapter.append(AUDIT_FILE, line);

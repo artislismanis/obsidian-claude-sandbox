@@ -184,7 +184,15 @@ export async function forEachMarkdownChunked(
 ): Promise<void> {
 	for (let i = 0; i < files.length; i += chunkSize) {
 		const chunk = files.slice(i, i + chunkSize);
-		const contents = await Promise.all(chunk.map((f) => app.vault.cachedRead(f)));
+		// Tolerate per-file read errors. A single unreadable file (permission
+		// glitch, transient FS error) used to abort the entire scan via
+		// Promise.all rejection — meaning vault_search / vault_orphans /
+		// vault_suggest_links / vault_tasks_query would fail wholesale because
+		// of one bad file. Skip the bad file with empty content so the scan
+		// completes and surfaces partial results.
+		const contents = await Promise.all(
+			chunk.map((f) => app.vault.cachedRead(f).catch(() => "")),
+		);
 		for (let j = 0; j < chunk.length; j++) {
 			const stop = await handler(chunk[j], contents[j]);
 			if (stop) return;
@@ -222,10 +230,22 @@ export async function gateVaultWrite(args: {
 	newContent?: string;
 	affectedLinks?: string[];
 }): Promise<McpToolResult> {
+	// Errors thrown by apply() (e.g. the Templater post-validate guard
+	// rejecting a path-relocating template) need to surface as clean tool
+	// errors. Without this, gateVaultWrite would propagate the throw and the
+	// MCP tool runner would either turn it into a generic 500 or return it
+	// untyped. Wrap apply() so callers always get a well-formed McpToolResult.
+	const runApply = async (): Promise<McpToolResult> => {
+		try {
+			await args.apply();
+			return text(args.successMsg);
+		} catch (e) {
+			return error(errMsg(e));
+		}
+	};
 	const within = isPathWithinDir(args.destPath, args.writeDir);
 	if (within || args.enabledTiers.has("writeVault")) {
-		await args.apply();
-		return text(args.successMsg);
+		return runApply();
 	}
 	if (args.enabledTiers.has("writeReviewed") && args.review) {
 		const result = await args.review({
@@ -237,8 +257,7 @@ export async function gateVaultWrite(args: {
 			affectedLinks: args.affectedLinks,
 		});
 		if (!result.approved) return error("Change rejected by user.");
-		await args.apply();
-		return text(args.successMsg);
+		return runApply();
 	}
 	return error(
 		`Path '${args.destPath}' is outside the write directory '${args.writeDir}'. Enable vault-wide or reviewed writes to operate here.`,
@@ -986,6 +1005,12 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 		/** `{result}` is replaced by the apply()'s returned string when present. */
 		successMsg: string;
 		affectedLinks?: string[];
+		/** When set together with `oldContent` and a review, after approval the
+		 *  file is re-read and the write is aborted if the contents changed
+		 *  out from under the modal. Compare-and-swap against editor edits that
+		 *  raced the review. Without this, the user could approve a stale diff
+		 *  and the apply would clobber the change. */
+		recheckFile?: TFile;
 	}): Promise<McpToolResult> {
 		if (op.review) {
 			const result = await op.review({
@@ -997,6 +1022,14 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 				affectedLinks: op.affectedLinks,
 			});
 			if (!result.approved) return error("Change rejected by user.");
+			if (op.recheckFile && op.oldContent !== undefined) {
+				const current = await app.vault.read(op.recheckFile);
+				if (current !== op.oldContent) {
+					return error(
+						`File '${op.filePath}' changed during review — aborting to avoid clobbering an external edit. Re-run the tool to see the current contents.`,
+					);
+				}
+			}
 		}
 		const applyResult = await op.apply();
 		const msg = op.successMsg.replace("{result}", applyResult ?? "");
@@ -1121,6 +1154,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 						review,
 						apply: () => app.vault.modify(f, content),
 						successMsg: `Modified ${f.path}`,
+						recheckFile: f,
 					});
 				},
 			}),
@@ -1153,6 +1187,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 						review,
 						apply: () => app.vault.append(f, "\n" + addition),
 						successMsg: `Appended to ${f.path}`,
+						recheckFile: f,
 					});
 				},
 			}),
@@ -1324,6 +1359,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 						review,
 						apply: () => app.vault.modify(f, updated),
 						successMsg: `Replaced ${count} occurrence(s) in ${f.path}`,
+						recheckFile: f,
 					});
 				},
 			}),
@@ -1372,6 +1408,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 						review,
 						apply: () => app.vault.modify(f, updated),
 						successMsg: `Prepended to ${f.path}`,
+						recheckFile: f,
 					});
 				},
 			}),
@@ -1452,6 +1489,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 								review,
 								apply: () => app.vault.modify(f, updated),
 								successMsg: `Patched ${f.path} after heading '${headingArg}'`,
+								recheckFile: f,
 							});
 						}
 					} else {
@@ -1480,6 +1518,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 						review,
 						apply: () => app.vault.modify(f, updated),
 						successMsg: `Patched ${f.path} at line ${targetLine + 1}`,
+						recheckFile: f,
 					});
 				},
 			}),
@@ -1607,6 +1646,8 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 				const newPath = dir ? `${dir}/${trimmed}${ext}` : `${trimmed}${ext}`;
 				if (!isVaultPathSafe(app, newPath))
 					return error("Destination resolves outside the vault.");
+				if (newPath !== f.path && app.vault.getFileByPath(newPath))
+					return error(`Destination already exists: ${newPath}`);
 				return runWrite({
 					operation: "rename",
 					filePath: f.path,
@@ -1646,6 +1687,12 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 					!isPathAllowed(newPath, pathFilter.allowlist, pathFilter.blocklist)
 				)
 					return error("Destination path is blocked by allow/block list.");
+				// Pre-check destination collision so the failure surfaces as a
+				// clean MCP error instead of the renameFile rejection bubbling
+				// up as a generic 500 from the tool runner. No-op when the
+				// destination is the same path as the source (no actual move).
+				if (newPath !== f.path && app.vault.getFileByPath(newPath))
+					return error(`Destination already exists: ${newPath}`);
 				return runWrite({
 					operation: "move",
 					filePath: f.path,

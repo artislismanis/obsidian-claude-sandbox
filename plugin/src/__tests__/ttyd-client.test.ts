@@ -60,11 +60,24 @@ describe("pollUntilReady", () => {
 });
 
 describe("buildWsUrl", () => {
-	it("builds URL without credentials", () => {
-		expect(buildWsUrl(7681)).toBe("ws://localhost:7681/ws");
+	it("defaults to 127.0.0.1 when no bind address given", () => {
+		expect(buildWsUrl(7681)).toBe("ws://127.0.0.1:7681/ws");
 	});
 
 	it("uses custom port", () => {
-		expect(buildWsUrl(8080)).toBe("ws://localhost:8080/ws");
+		expect(buildWsUrl(8080)).toBe("ws://127.0.0.1:8080/ws");
+	});
+
+	it("normalises 0.0.0.0 to loopback (Obsidian connects from the host)", () => {
+		expect(buildWsUrl(7681, "0.0.0.0")).toBe("ws://127.0.0.1:7681/ws");
+	});
+
+	it("honours non-loopback bind addresses", () => {
+		expect(buildWsUrl(7681, "192.168.1.5")).toBe("ws://192.168.1.5:7681/ws");
+	});
+
+	it("treats empty/whitespace as loopback", () => {
+		expect(buildWsUrl(7681, "")).toBe("ws://127.0.0.1:7681/ws");
+		expect(buildWsUrl(7681, "  ")).toBe("ws://127.0.0.1:7681/ws");
 	});
 });

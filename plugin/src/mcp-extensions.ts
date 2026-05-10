@@ -526,6 +526,25 @@ export function registerTemplaterTools(app: App, push: ToolPusher, gate: WriteGa
 							false,
 						);
 						if (!created) throw new Error("Templater returned no file.");
+						// Templater templates can call `tp.file.move(...)` from inside
+						// the script section to relocate the file AFTER creation,
+						// which would silently escape the destPath we gated on above.
+						// Post-validate the actual path: if Templater moved the file
+						// somewhere we wouldn't have allowed, delete the file and
+						// fail. This trades a small UX cost (templates that
+						// legitimately use tp.file.move stop working through this
+						// tool) for the guarantee that no template can write outside
+						// the gated scope.
+						if (created.path !== destPath) {
+							try {
+								await app.vault.trash(created, true);
+							} catch {
+								/* fall through and surface the error anyway */
+							}
+							throw new Error(
+								`Template relocated the file from '${destPath}' to '${created.path}' (likely via tp.file.move). Refusing to escape the gated path.`,
+							);
+						}
 					},
 					successMsg: `Created ${destPath}`,
 				});

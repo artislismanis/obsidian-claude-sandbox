@@ -120,6 +120,7 @@ export default class AgentSandboxPlugin extends Plugin {
 		this.registerView(VIEW_TYPE_TERMINAL, (leaf: WorkspaceLeaf) => {
 			const view = new TerminalView(leaf, () => ({
 				ttydPort: this.settings.ttydPort,
+				ttydBindAddress: this.settings.ttydBindAddress,
 				terminalTheme: this.settings.terminalTheme,
 				terminalFont: this.settings.terminalFont,
 				terminalFontSize: this.settings.terminalFontSize,
@@ -346,9 +347,20 @@ export default class AgentSandboxPlugin extends Plugin {
 
 	async onunload(): Promise<void> {
 		this.stopHealthPoll();
+		// Order is load-bearing:
+		// 1. Stop MCP first so no more onActivity events can fire after we
+		//    teardown the UI sinks. Previously the activityUi.clear() ran
+		//    before mcpServer.stop(), which created a window where in-flight
+		//    tool calls could fire activity events into a cleared UI.
+		// 2. Then dispose AgentOutputNotifier and clear ActivityUi.
+		// 3. Persist settings.
+		// 4. Detach terminal leaves last (TerminalView.onClose may want to
+		//    log a final activity event before the MCP server is gone).
+		// The 2s race inside mcpServer.stop() bounds worst-case wait.
+		await this.mcpServer?.stop().catch(() => {});
 		this.agentOutput?.dispose();
 		// ActivityUi holds a setInterval for the stale-rolling tick — clear()
-		// drops it. Safe to call before mcpServer.stop() since clearing is idempotent.
+		// drops it. Idempotent.
 		this.activityUi?.clear();
 		// Cancel any pending debounced save so the explicit one below isn't
 		// overwritten by a stale trailing call. Await the explicit save before
@@ -357,10 +369,6 @@ export default class AgentSandboxPlugin extends Plugin {
 		await this.saveData(this.settings).catch((e) =>
 			logger.error("Plugin", "Save on unload failed", e),
 		);
-		// Await mcpServer.stop() so the HTTP server's `close()` fully completes
-		// (sockets closed, port released) before Obsidian considers us unloaded.
-		// The 2s race inside stop() bounds worst-case wait.
-		await this.mcpServer?.stop().catch(() => {});
 		this.app.workspace.detachLeavesOfType(VIEW_TYPE_TERMINAL);
 		this.firewallBar?.destroy();
 
@@ -639,6 +647,18 @@ export default class AgentSandboxPlugin extends Plugin {
 			});
 			await this.mcpServer.start();
 		} catch (error: unknown) {
+			// Discard the half-constructed instance so the next start attempt
+			// rebuilds with current settings. Without this, mcpServer holds a
+			// reference whose port/token/tiers were captured BEFORE the user
+			// fixed whatever caused the start to fail (e.g. port conflict),
+			// and a retry through `applyMcpEnabled` would hit the early-return
+			// in start() and silently succeed against the stale config.
+			try {
+				await this.mcpServer?.stop();
+			} catch {
+				/* nothing usable started */
+			}
+			this.mcpServer = null;
 			new Notice(`MCP server failed to start: ${errMsg(error)}`);
 		}
 	}
@@ -800,7 +820,15 @@ export default class AgentSandboxPlugin extends Plugin {
 
 			this.startHealthPoll();
 		} catch (error: unknown) {
-			this.app.workspace.detachLeavesOfType(VIEW_TYPE_TERMINAL);
+			// A probe THROW (vs. a clean false) means we couldn't determine the
+			// container state at all — Docker daemon momentarily unavailable,
+			// WSL handshake glitch, etc. Don't destroy persisted terminal
+			// tabs over a transient: the health poll below retries on a 5s
+			// cadence and will detach legitimately when the container is
+			// definitely down. The previous design here detached leaves
+			// immediately, so a Docker-restart blip wiped the user's
+			// terminal layout.
+			this.startHealthPoll();
 			this.reportContainerError({ detailsPrefix: "Docker error", error, notice: true });
 		}
 	}
