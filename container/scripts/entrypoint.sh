@@ -34,10 +34,14 @@ if [[ -n "${OAS_HOST_IP:-}" ]]; then
     # /etc/hosts is a bind-mount inside Docker; sed -i fails because it
     # tries to rename a temp file across mount boundaries. Use cp instead.
     tmp=$(mktemp)
+    # Trap cleanup so an early failure (grep / cp denied) doesn't orphan the
+    # temp file. set -e would otherwise exit before the manual `rm` ran.
+    trap 'rm -f "$tmp"' EXIT
     grep -v 'host\.docker\.internal' /etc/hosts > "$tmp"
     echo "${OAS_HOST_IP}  host.docker.internal" >> "$tmp"
     cp "$tmp" /etc/hosts
     rm -f "$tmp"
+    trap - EXIT
 fi
 
 # Fix directory ownership if it doesn't match claude's current uid.
@@ -65,6 +69,12 @@ ensure_ownership() {
                 echo "entrypoint: chown ineffective on $dir (9p/drvfs mount?), using chmod"
                 chmod -R a+rwX "$dir" 2>/dev/null || true
             fi
+        fi
+        # Final write check — both chown and chmod can silently fail on some
+        # exotic mount setups. Surface that loudly rather than letting Claude
+        # discover it later via mysterious EACCES.
+        if ! sudo -u "#${claude_uid}" test -w "$dir" 2>/dev/null; then
+            echo "WARN: $dir is not writable by uid $claude_uid after ownership fix" >&2
         fi
     fi
 }

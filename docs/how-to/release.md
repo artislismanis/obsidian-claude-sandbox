@@ -102,7 +102,7 @@ Once the workflow is green:
 If the release is stable (not pre-release):
 
 1. Uncheck "Pre-release" on the GitHub Release.
-2. Remove `prerelease: true` from `.github/workflows/release.yml` once Phase 6 (community plugin submission) lands.
+2. Remove `prerelease: true` from `.github/workflows/release.yml` once the plugin is submitted to the Obsidian community plugin registry.
 
 If critical bug found immediately:
 
@@ -144,7 +144,7 @@ Delete the Release + tag from GitHub UI, then re-cut using the recovery steps ab
 
 ## First release checklist
 
-For the very first `0.1.0 → 0.2.0` cut (Phase 2 finalisation):
+For the very first `0.1.0 → 0.2.0` cut:
 
 - [ ] `.github/workflows/check.yml` and `.github/workflows/release.yml` are pushed to `main` (requires a PAT with `workflow` scope if the default auth lacks it).
 - [ ] `plugin/versions.json`, `plugin/version-bump.mjs`, `plugin/.npmrc`, and the `"version"` script in `package.json` are on `main`.

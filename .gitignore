@@ -34,4 +34,3 @@ tmux-*.log
 
 # test artifacts
 plugin/test/fixtures/vault/.oas/memory.json
-container/package-lock.json

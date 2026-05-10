@@ -3,6 +3,7 @@
 import type { App, Menu, TFile } from "obsidian";
 import { Notice } from "obsidian";
 import { inputModal } from "./modals";
+import * as fs from "fs/promises";
 import { join as pathJoin } from "path";
 import { getVaultBasePath, tryOpenSubmenu } from "./obsidian-internals";
 import { parsePromptTemplate, substituteFilePlaceholder } from "./prompt-template";
@@ -57,7 +58,10 @@ export class AnalyzeManager {
 			pathJoin(base, ".claude", "prompts"),
 			pathJoin(base, "..", "workspace", ".claude", "prompts"),
 		];
-		const fs = await import("fs/promises");
+		// fs/promises is statically imported at the top — using a dynamic import
+		// here used to fail at runtime in Obsidian's renderer with
+		// "Failed to resolve module specifier 'fs/promises'", silently breaking
+		// the prewarm path on every plugin load.
 		// Try each candidate; first successful readdir wins. Skip the prior
 		// existsSync gate — readdir's ENOENT path serves the same purpose
 		// without two extra stat calls per attempt.

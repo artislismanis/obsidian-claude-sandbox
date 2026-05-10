@@ -62,7 +62,7 @@ Permission mode, env vars, status line, hooks. Changes apply on the next `claude
 
 ## `.claude/agents/`, `.claude/commands/`
 
-Subagent and slash-command definitions respectively. Not shipped; optional Claude Code features.
+Subagent and slash-command definitions respectively. **Not shipped in this repo** — neither directory exists in `workspace/.claude/` by default. Create them yourself if you want to define your own subagents or slash commands; Claude Code picks them up on next invocation.
 
 ## `.mcp.json` — MCP servers
 

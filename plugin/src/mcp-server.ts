@@ -152,10 +152,18 @@ function createFileAuditSink(app: App): (entry: AuditEntry) => Promise<void> {
 		if (!ensuredDir) {
 			try {
 				await adapter.mkdir(".oas");
-			} catch {
-				/* already exists or unwritable — append below will surface real failures */
+				ensuredDir = true;
+			} catch (err) {
+				// Directory already exists is fine — confirm via stat.
+				const stat = await adapter.stat(".oas").catch(() => null);
+				if (stat?.type === "folder") {
+					ensuredDir = true;
+				} else {
+					// Real failure (permissions, etc.) — leave ensuredDir false so
+					// the next call retries instead of silently dropping appends.
+					throw err;
+				}
 			}
-			ensuredDir = true;
 		}
 		try {
 			const line = JSON.stringify(entry) + "\n";
@@ -657,14 +665,14 @@ export class ObsidianMcpServer {
 	private async forwardToTransport(req: IncomingMessage, res: ServerResponse): Promise<void> {
 		const sessionId = this.getSessionId(req);
 		const transport = sessionId ? this.transports.get(sessionId) : undefined;
-		if (!transport) {
+		if (!transport || !sessionId) {
 			res.writeHead(400, { "Content-Type": "application/json" });
 			res.end(JSON.stringify({ error: "Invalid or missing session ID" }));
 			return;
 		}
 		// Treat any traffic on the session (POST/GET-SSE/DELETE) as activity so
 		// long-running SSE consumers aren't reaped under the 10-minute idle timer.
-		this.resetSessionTimeout(sessionId!);
+		this.resetSessionTimeout(sessionId);
 		await transport.handleRequest(req, res);
 	}
 }

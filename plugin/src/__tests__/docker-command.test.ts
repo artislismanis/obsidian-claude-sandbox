@@ -3,6 +3,7 @@ import type { NetworkInterfaceInfo } from "os";
 import type * as OsModule from "os";
 import type * as ChildProcessModule from "child_process";
 import type * as UtilModule from "util";
+import type * as EventsModule from "events";
 
 // Mutable state for mocked modules. Must be declared before vi.mock factories
 // (vi.mock is hoisted, so factories need access via getters, not closures over
@@ -27,6 +28,7 @@ vi.mock("os", async () => {
 vi.mock("child_process", async () => {
 	const actual = await vi.importActual<typeof ChildProcessModule>("child_process");
 	const { promisify } = await vi.importActual<typeof UtilModule>("util");
+	const { EventEmitter } = await vi.importActual<typeof EventsModule>("events");
 	const execMock = (
 		cmd: string,
 		_opts: unknown,
@@ -52,7 +54,34 @@ vi.mock("child_process", async () => {
 				else resolve({ stdout, stderr });
 			});
 		});
-	return { ...actual, exec: execMock };
+	// spawn() shim — produces an EventEmitter-shaped child whose stdout
+	// emits chunks from execState.impl (or 'error' if it returned an Error).
+	// Lets tests written against execState exercise both exec- and
+	// spawn-based codepaths via a single mock surface.
+	type EE = InstanceType<typeof EventEmitter>;
+	const spawnMock = (file: string, args: readonly string[]) => {
+		const child = new EventEmitter() as EE & {
+			stdout: EE;
+			stderr: EE;
+			kill: () => void;
+		};
+		child.stdout = new EventEmitter();
+		child.stderr = new EventEmitter();
+		child.kill = () => undefined;
+		const cmd = [file, ...args].join(" ");
+		queueMicrotask(() => {
+			const result = execState.impl(cmd);
+			if (result instanceof Error) {
+				child.emit("error", result);
+				child.emit("close", 1);
+			} else {
+				if (result.stdout) child.stdout.emit("data", Buffer.from(result.stdout));
+				child.emit("close", 0);
+			}
+		});
+		return child as unknown as ReturnType<typeof actual.spawn>;
+	};
+	return { ...actual, exec: execMock, spawn: spawnMock };
 });
 
 import {

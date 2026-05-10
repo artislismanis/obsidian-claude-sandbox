@@ -10,6 +10,12 @@ ARG PYTHON_VERSION=3.12
 ARG NODE_MAJOR=24
 ARG TTYD_VERSION=1.7.7
 ARG NVM_VERSION=0.40.3
+# SHA256 of https://raw.githubusercontent.com/nvm-sh/nvm/v${NVM_VERSION}/install.sh
+# Pinning the hash defends against tag-move / upstream compromise of the
+# install script, which would otherwise execute as root during build.
+# When bumping NVM_VERSION, recompute via:
+#   curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v<new>/install.sh | sha256sum
+ARG NVM_INSTALL_SHA256=2d8359a64a3cb07c02389ad88ceecd43f2fa469c06104f92f98df5b6f315275f
 ARG ATUIN_VERSION=18.8.0
 ARG BASH_PREEXEC_VERSION=0.5.0
 
@@ -101,8 +107,15 @@ ENV NVM_DIR=/home/claude/.nvm
 ENV EDITOR=nano
 ENV VISUAL=nano
 
-# nvm + Node — symlink versioned dir to a stable path for non-interactive shells
-RUN curl -o- "https://raw.githubusercontent.com/nvm-sh/nvm/v${NVM_VERSION}/install.sh" | bash \
+# nvm + Node — symlink versioned dir to a stable path for non-interactive shells.
+# The install script is downloaded, hash-verified, then executed. Piping curl
+# straight into bash would mean any upstream compromise of the script gets
+# arbitrary code-exec as the build user during `docker build`.
+RUN curl -fsSL "https://raw.githubusercontent.com/nvm-sh/nvm/v${NVM_VERSION}/install.sh" \
+       -o /tmp/nvm-install.sh \
+    && echo "${NVM_INSTALL_SHA256}  /tmp/nvm-install.sh" | sha256sum -c - \
+    && bash /tmp/nvm-install.sh \
+    && rm /tmp/nvm-install.sh \
     && . "$NVM_DIR/nvm.sh" \
     && nvm install "${NODE_MAJOR}" \
     && nvm alias default "${NODE_MAJOR}" \
@@ -204,4 +217,12 @@ COPY --chown=claude:claude --chmod=644 configs/session-helpers.sh /home/claude/.
 
 WORKDIR /workspace
 EXPOSE 7681
+
+# Healthcheck baked into the image so `docker run` (without compose) reports
+# accurate liveness. docker-compose.yml's healthcheck overrides this for the
+# managed-by-plugin case, where TTYD_PORT may differ from the default.
+# Requires curl, which Phase 1 already installs.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -fsS "http://localhost:${TTYD_PORT:-7681}/" >/dev/null || exit 1
+
 CMD ["/usr/local/bin/entrypoint.sh"]
