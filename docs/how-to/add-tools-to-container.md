@@ -47,7 +47,7 @@ Remember the firewall. By default, only the curated allowlist is reachable (see 
 
 ## If it's a Node / Python global
 
-Use the container's built-in package managers — the image ships Node 22 and Python 3.12:
+Use the container's built-in package managers — the image ships Node 24 and Python 3.12:
 
 ```bash
 npm install -g <package>

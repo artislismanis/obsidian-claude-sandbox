@@ -7,7 +7,7 @@ Maintainer-only guide for cutting a new plugin release. End-users should follow 
 - Push access to the GitHub repo.
 - Local git configured so pushes work without prompts.
 - A **Personal Access Token with `workflow` scope** if you need to push changes to `.github/workflows/*` — the default auth may lack this scope. Classic PAT or fine-grained PAT with "Workflows: Read and write" both work.
-- Node 22+ and `npm ci` clean in `plugin/`.
+- Node 24+ and `npm ci` clean in `plugin/`.
 
 ## What a release consists of
 
