@@ -106,7 +106,9 @@ export default class AgentSandboxPlugin extends Plugin {
 			activateTerminalView: (sessionName, initialPrompt) =>
 				this.activateTerminalView(sessionName, initialPrompt),
 		});
-		void this.analyze.prewarm();
+		void this.analyze
+			.prewarm()
+			.catch((err) => logger.warn("Plugin", `Template prewarm failed: ${errMsg(err)}`));
 
 		const fwBarEl = this.addStatusBarItem();
 		this.firewallBar = new FirewallStatusBar(fwBarEl, () => this.toggleFirewall());
@@ -303,7 +305,12 @@ export default class AgentSandboxPlugin extends Plugin {
 							return;
 						}
 						await Promise.race([
-							this.docker.stop().catch(() => {}),
+							this.docker.stop().catch((err) => {
+								logger.warn(
+									"Plugin",
+									`Docker stop during quit failed: ${errMsg(err)}`,
+								);
+							}),
 							new Promise((r) => setTimeout(r, 5000)),
 						]);
 					});

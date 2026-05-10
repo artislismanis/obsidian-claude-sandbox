@@ -154,6 +154,10 @@ export class TerminalView extends ItemView {
 	private reconnectAttempt = 0;
 	private reconnectTimer: number | null = null;
 	private statusBanner: HTMLDivElement | null = null;
+	// Tracked timers for the post-WS-open input-injection sequence (session
+	// attach + initial prompt). Cleared in dispose() so a rapid view-close
+	// can't fire them after the underlying ws/term refs are gone.
+	private injectionTimers: number[] = [];
 
 	onRenameSession: (() => void) | null = null;
 	private initialPrompt: string | null = null;
@@ -562,11 +566,12 @@ export class TerminalView extends ItemView {
 			// The 300ms delay gives bash time to render the prompt.
 			if (this.sessionName) {
 				const cmd = `session ${this.sessionName}\n`;
-				setTimeout(() => {
+				const id = window.setTimeout(() => {
 					if (gen === this.generation) {
 						this.wsTxBytes += sendInputText(ws, cmd);
 					}
 				}, 300);
+				this.injectionTimers.push(id);
 			}
 
 			// Inject an initial Claude prompt (from "Analyze in Sandbox" / URI handler).
@@ -581,7 +586,7 @@ export class TerminalView extends ItemView {
 				const delay = this.sessionName ? 700 : 300;
 				const wasStdinDisabled = term.options.disableStdin === true;
 				term.options.disableStdin = true;
-				setTimeout(() => {
+				const id = window.setTimeout(() => {
 					try {
 						if (gen !== this.generation) return;
 						const sent = sendInputText(ws, cmd);
@@ -595,6 +600,7 @@ export class TerminalView extends ItemView {
 						if (this.term === term) term.options.disableStdin = wasStdinDisabled;
 					}
 				}, delay);
+				this.injectionTimers.push(id);
 			}
 		};
 
@@ -727,6 +733,8 @@ export class TerminalView extends ItemView {
 			window.clearTimeout(this.reconnectTimer);
 			this.reconnectTimer = null;
 		}
+		for (const id of this.injectionTimers) window.clearTimeout(id);
+		this.injectionTimers = [];
 		this.reconnectAttempt = 0;
 		this.clearStatusBanner();
 		if (this.resizeRafId != null) {

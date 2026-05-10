@@ -148,15 +148,28 @@ export function buildLocalWindowsCommand(
 export async function getWslNetworkingMode(wslDistro: string): Promise<string | undefined> {
 	if (process.platform !== "win32") return undefined;
 	if (!VALID_DISTRO_NAME.test(wslDistro)) return undefined;
-	try {
-		const { stdout } = await exec(`wsl.exe -d ${wslDistro} -- wslinfo --networking-mode`, {
-			timeout: PROBE_TIMEOUT,
+	// spawn rather than exec: passes args as an array so the distro name
+	// (already regex-validated above) cannot be reinterpreted by a shell
+	// even if validation ever regresses. No shell, no quoting surface.
+	return new Promise<string | undefined>((resolve) => {
+		const child = spawn("wsl.exe", ["-d", wslDistro, "--", "wslinfo", "--networking-mode"], {
 			windowsHide: true,
 		});
-		return stdout.trim().toLowerCase();
-	} catch {
-		return undefined;
-	}
+		let stdout = "";
+		const timer = setTimeout(() => {
+			child.kill();
+			resolve(undefined);
+		}, PROBE_TIMEOUT);
+		child.stdout?.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+		child.on("error", () => {
+			clearTimeout(timer);
+			resolve(undefined);
+		});
+		child.on("close", (code) => {
+			clearTimeout(timer);
+			resolve(code === 0 ? stdout.trim().toLowerCase() : undefined);
+		});
+	});
 }
 
 // Returns the Windows host IP the container should use to reach services on
@@ -349,6 +362,18 @@ export class DockerManager {
 			const combined = (err.stderr || "") + (err.message || "");
 
 			if (!quiet) logger.error("Docker", `Command failed: ${detail}`);
+
+			// When the caller passed suppressErrors=true, they want to make their
+			// own decision based on stderr content (e.g. listSessions distinguishing
+			// "no tmux server" from a real Docker failure). Throw a structured error
+			// that preserves stderr; otherwise the wrapped "Unexpected Docker error"
+			// below would hide the original output and break their substring checks.
+			if (quiet) {
+				throw Object.assign(new Error(err.message || detail), {
+					stderr: err.stderr ?? "",
+					combined,
+				});
+			}
 
 			const dockerNotRunningPatterns = [
 				"Cannot connect to the Docker daemon",
@@ -639,13 +664,18 @@ export class DockerManager {
 				.map((s) => s.trim())
 				.filter(Boolean);
 		} catch (err) {
-			const msg = errMsg(err);
+			// run() with suppressErrors=true preserves the original stderr on the
+			// thrown Error so we can recognise tmux's "no sessions" valid-empty
+			// state vs a real Docker failure. errMsg() alone would only see the
+			// wrapped message and miss every match here.
+			const stderr = (err as { stderr?: string }).stderr ?? "";
+			const haystack = stderr + " " + errMsg(err);
 			if (
-				!msg.includes("No such file or directory") &&
-				!msg.includes("no server running") &&
-				!msg.includes("error connecting to")
+				!haystack.includes("No such file or directory") &&
+				!haystack.includes("no server running") &&
+				!haystack.includes("error connecting to")
 			) {
-				logger.warn("Docker", `listSessions failed: ${msg}`);
+				logger.warn("Docker", `listSessions failed: ${errMsg(err)}`);
 			}
 			return [];
 		}

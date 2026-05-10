@@ -93,7 +93,7 @@ The `release.yml` workflow fires on the tag, builds, and uploads `main.js` / `ma
 
 ## Status
 
-Under active development, pre-1.0. Phase 4 (MCP server enhancements) and Phase 5 (UX depth) are complete. CI workflows (`.github/workflows/check.yml`, `release.yml`) are in place. Phase 6 (community plugin submission) follows beta stabilisation. See [roadmap](docs/roadmap.md).
+Under active development, pre-1.0. Tagged releases are published via CI; community plugin submission follows beta stabilisation. See [roadmap](docs/roadmap.md).
 
 ## License
 

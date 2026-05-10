@@ -7,6 +7,25 @@ set -euo pipefail
 
 SOURCES_FILE="/etc/oas/firewall-sources.tsv"
 EXTRAS_FILE="/etc/oas/firewall-extras.txt"
+LOCK_FILE="/var/lock/oas-firewall.lock"
+
+# Serialise concurrent invocations. The plugin can re-init while a manual
+# `init-firewall.sh` is running, which would race the ipset swap and leave
+# the OUTPUT chain attached to a half-built set. flock with -n bails fast
+# rather than queueing — the second caller's intent is already satisfied
+# by the first.
+# --disable / --status / --list-sources don't mutate the active ruleset
+# in conflicting ways, so they skip the lock to stay responsive.
+case "${1:-}" in
+  --disable|--status|--list-sources) ;;
+  *)
+    exec 9>"$LOCK_FILE"
+    if ! flock -n 9; then
+      echo "init-firewall.sh: another instance is already running ($LOCK_FILE)" >&2
+      exit 1
+    fi
+    ;;
+esac
 
 case "${1:-}" in
   --disable)
@@ -128,7 +147,16 @@ ipset create allowed_ips_new hash:net -exist
 ipset flush allowed_ips_new
 
 echo "Resolving domains..."
+# Track baseline domains separately so a failure to resolve one (e.g.
+# api.anthropic.com) is treated as a hard error rather than a silent gap.
+# Plugin/file-supplied entries can fail safely with a warning — the user
+# may have typo'd a domain or be working offline.
+declare -A IS_BASELINE
+for d in "${BASELINE_DOMAINS[@]}"; do IS_BASELINE[$d]=1; done
+
 PIDS=()
+PID_DOMAIN=()
+PID_TIER=()
 for entry in "${ALLOWED_DOMAINS[@]}"; do
   # CIDR (e.g. 10.0.0.0/16) or bare IPv4 — add directly, no DNS needed.
   if [[ "$entry" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}(/[0-9]{1,2})?$ ]]; then
@@ -140,7 +168,6 @@ for entry in "${ALLOWED_DOMAINS[@]}"; do
   (
     ips=$(dig +short A "$entry" 2>/dev/null | grep -E '^[0-9]+\.' || true)
     if [ -z "$ips" ]; then
-      echo "WARNING: failed to resolve $entry" >&2
       exit 1
     fi
     for ip in $ips; do
@@ -148,15 +175,38 @@ for entry in "${ALLOWED_DOMAINS[@]}"; do
     done
   ) &
   PIDS+=($!)
+  PID_DOMAIN+=("$entry")
+  if [ -n "${IS_BASELINE[$entry]:-}" ]; then
+    PID_TIER+=("baseline")
+  else
+    PID_TIER+=("optional")
+  fi
 done
 
-FAILED=0
-for pid in "${PIDS[@]}"; do
-  wait "$pid" || FAILED=$((FAILED + 1))
+BASELINE_FAILED=0
+OPTIONAL_FAILED=0
+for i in "${!PIDS[@]}"; do
+  pid="${PIDS[$i]}"
+  if ! wait "$pid"; then
+    domain="${PID_DOMAIN[$i]}"
+    tier="${PID_TIER[$i]}"
+    if [ "$tier" = "baseline" ]; then
+      echo "ERROR: failed to resolve baseline domain $domain" >&2
+      BASELINE_FAILED=$((BASELINE_FAILED + 1))
+    else
+      echo "WARNING: failed to resolve $domain ($tier)" >&2
+      OPTIONAL_FAILED=$((OPTIONAL_FAILED + 1))
+    fi
+  fi
 done
 
-if [ "$FAILED" -gt 0 ]; then
-  echo "WARNING: $FAILED domain(s) failed to resolve — firewall may have gaps" >&2
+if [ "$BASELINE_FAILED" -gt 0 ]; then
+  echo "ERROR: $BASELINE_FAILED baseline domain(s) failed to resolve — refusing to apply firewall with required gaps" >&2
+  ipset destroy allowed_ips_new 2>/dev/null || true
+  exit 1
+fi
+if [ "$OPTIONAL_FAILED" -gt 0 ]; then
+  echo "WARNING: $OPTIONAL_FAILED optional domain(s) failed to resolve — firewall applied without them" >&2
 fi
 
 # Aggregate into CIDR blocks if possible
@@ -174,8 +224,13 @@ fi
 ipset swap allowed_ips_new allowed_ips
 ipset destroy allowed_ips_new
 
-# Flush existing OUTPUT rules (idempotent)
-iptables -F OUTPUT 2>/dev/null || true
+# Flush existing OUTPUT rules (idempotent). Capture stderr so we can
+# distinguish "no rules to flush" (fine) from "iptables broken" (fatal —
+# subsequent rule appends would silently attach to nothing).
+flush_err=$(iptables -F OUTPUT 2>&1 >/dev/null) || {
+  echo "ERROR: iptables -F OUTPUT failed: $flush_err" >&2
+  exit 1
+}
 
 # Allow loopback
 iptables -A OUTPUT -o lo -j ACCEPT

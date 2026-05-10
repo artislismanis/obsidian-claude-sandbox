@@ -1,6 +1,6 @@
 # How to install via BRAT
 
-Once Phase 2 release automation ships a tagged GitHub Release, you can install via Obsidian's [BRAT plugin](https://github.com/TfTHacker/obsidian42-brat) without cloning the repo.
+The plugin is distributed via tagged GitHub Releases. You can install it through Obsidian's [BRAT plugin](https://github.com/TfTHacker/obsidian42-brat) without cloning the repo.
 
 ## One-time BRAT setup
 

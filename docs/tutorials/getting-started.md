@@ -20,7 +20,11 @@ This produces `oas-sandbox:latest` (~800 MB). Takes a few minutes the first time
 
 ## 2. Install the plugin
 
-Until Phase 2 ships a BRAT-compatible release, install manually:
+Two options:
+
+**Option A — BRAT (recommended).** See [`how-to/install-via-brat.md`](../how-to/install-via-brat.md). BRAT downloads the latest GitHub Release and keeps the plugin updated automatically.
+
+**Option B — build from source.**
 
 ```bash
 cd ~/code/obsidian-agent-sandbox/plugin
@@ -30,7 +34,7 @@ npm run build
 
 Copy the contents of `plugin/dist/` into `<your-vault>/.obsidian/plugins/obsidian-agent-sandbox/`. Create the folder if it doesn't exist.
 
-Restart Obsidian → **Settings → Community plugins → Agent Sandbox → enable**.
+Either way: restart Obsidian → **Settings → Community plugins → Agent Sandbox → enable**.
 
 ## 3. Point it at your compose file
 
