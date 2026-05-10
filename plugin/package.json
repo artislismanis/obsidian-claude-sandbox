@@ -36,7 +36,7 @@
 		"@eslint/js": "^10.0.1",
 		"@types/mocha": "^10.0.10",
 		"@types/node": "^24.0.0",
-		"@typescript-eslint/eslint-plugin": "^8.57.2",
+		"@typescript-eslint/eslint-plugin": "^8.59.2",
 		"@typescript-eslint/parser": "^8.57.2",
 		"@wdio/cli": "^9.27.0",
 		"@wdio/globals": "^9.27.0",
