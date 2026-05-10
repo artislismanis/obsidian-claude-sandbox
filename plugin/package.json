@@ -44,7 +44,7 @@
 		"@wdio/spec-reporter": "^9.27.0",
 		"builtin-modules": "^3.3.0",
 		"esbuild": "^0.28.0",
-		"eslint": "^10.1.0",
+		"eslint": "^10.3.0",
 		"husky": "^9.1.7",
 		"lint-staged": "^16.4.0",
 		"mocha": "^10.8.2",
