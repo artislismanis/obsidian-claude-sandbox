@@ -34,4 +34,4 @@ Bind it to a hotkey for one-keystroke context switching: **Settings → Hotkeys*
 
 ## Detaching / reattaching without killing
 
-Inside a tmux-attached tab, press `Ctrl+B D` to detach. The tab goes blank; you can close it. Next time you open that session name, you reattach to the same running process.
+Inside a tmux-attached tab, press `Ctrl-\` to detach. The tab goes blank; you can close it. Next time you open that session name, you reattach to the same running process. (The container's `tmux.conf` rebinds the prefix to `Ctrl-\`; the default `Ctrl+B` prefix is unbound.)

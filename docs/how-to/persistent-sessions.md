@@ -13,7 +13,7 @@ The workaround: **use named tmux sessions** so closing a tab doesn't kill your w
 
 ## Picking up multiple sessions
 
-The status-bar sandbox pill's right-click menu shows all live tmux sessions. Click to attach. Or use **Sandbox: Switch to Sandbox session…** for a filterable picker.
+Click the status-bar sandbox pill to open its menu. Live tmux sessions are listed there — click one to attach. Or use **Sandbox: Switch to Sandbox session…** for a filterable picker.
 
 ## Cleanup
 

@@ -33,7 +33,7 @@ Additive union; no precedence; `--list-sources` tags every entry with its origin
 
 ## Why no separate permission toggle for read / writeScoped?
 
-Earlier versions exposed all 7 MCP tiers as settings toggles. This misled users: "turning off `read` denies Claude access to vault content", which is false — Claude can always read the vault via filesystem. What the toggles actually controlled was whether the Obsidian-metadata-aware *tools* were registered, which is an ergonomics switch, not a permission gate.
+Earlier versions exposed every MCP tier (read, writeScoped, agent, navigate, manage, extensions, writeReviewed, writeVault) as a separate settings toggle. This misled users: "turning off `read` denies Claude access to vault content", which is false — Claude can always read the vault via filesystem. What the toggles actually controlled was whether the Obsidian-metadata-aware *tools* were registered, which is an ergonomics switch, not a permission gate.
 
 The split: `read` and `writeScoped` (capability tiers — always on) vs the five escalation tiers (real permissions — user toggles). This keeps the mental model honest: **toggles exist for capabilities that go beyond filesystem access**.
 

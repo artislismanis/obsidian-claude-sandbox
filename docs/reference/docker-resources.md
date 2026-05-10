@@ -57,9 +57,11 @@ The MCP HTTP server runs **on the host** inside the Obsidian plugin — it is no
 
 Injected into the container by the plugin at compose-up time (see `container/docker-compose.yml`):
 
-- `PKM_VAULT_PATH`, `PKM_WRITE_DIR`, `MEMORY_FILE_NAME`, `MEMORY_FILE_PATH`
+- `PKM_WRITE_DIR`, `MEMORY_FILE_NAME`, `MEMORY_FILE_PATH`
 - `ALLOWED_PRIVATE_HOSTS`, `OAS_ALLOWED_DOMAINS`
 - `OAS_MCP_TOKEN`, `OAS_MCP_PORT`, `OAS_HOST_IP`
-- `TTYD_PORT`, `SUDO_PASSWORD`
+- `TTYD_PORT`, `SUDO_PASSWORD`, `TERM`
+
+`PKM_VAULT_PATH` is consumed only on the host side as the bind-mount source — it is not exposed inside the container. Use `verify.sh` from inside the container to see the full set with values.
 
 The full list with values (inside a running container) comes from `verify.sh`.

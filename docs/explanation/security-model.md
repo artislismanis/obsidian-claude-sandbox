@@ -44,7 +44,7 @@ The MCP server's tools are split into two kinds of tier:
 
 ## Layer 4 — Human-in-the-loop review
 
-When `writeReviewed` is enabled, all 11 write ops (`create`, `modify`, `append`, `prepend`, `patch`, `search_replace`, `frontmatter_set`, `frontmatter_delete`, `rename`, `move`, `delete`) route through `runWrite` → `DiffReviewModal`. The modal shows:
+When `writeReviewed` is enabled, every write op routes through a review modal. The 13 gated ops are: 11 single-file writes (`create`, `modify`, `append`, `prepend`, `patch`, `search_replace`, `frontmatter_set`, `frontmatter_delete`, `rename`, `move`, `delete`) plus `create_folder` and the batch path (`batch_frontmatter`, which uses its own `BatchReviewModal`). The single-file modal shows:
 
 - For content edits: a unified diff of old vs new.
 - For frontmatter edits: JSON-stringified old vs new FM.
@@ -52,7 +52,7 @@ When `writeReviewed` is enabled, all 11 write ops (`create`, `modify`, `append`,
 
 The gate is **structural**: every write handler in `mcp-tools.ts` constructs a `runWrite` call, so there's no path that mutates without passing through the review step. Adding a new write op requires explicitly opting-out of review — not the default.
 
-Batch operations (`vault_batch_frontmatter`) use a separate `BatchReviewModal` with per-item checkboxes so the user can approve a subset.
+`vault_batch_frontmatter` uses the per-item checkbox `BatchReviewModal` so the user can approve a subset of matched files in one pass.
 
 ## Layer 5 — Rate limiting + audit
 
