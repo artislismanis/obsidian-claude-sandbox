@@ -436,6 +436,55 @@ describe("Periodic Notes integration", () => {
 		expect((r.content[0] as { text: string }).text).toContain("Daily/2026-04-19.md");
 	});
 
+	it("rejects when the format string produces a path-traversal escape", async () => {
+		// User-controlled `format` is processed by moment, which passes
+		// through any characters that aren't moment tokens — including
+		// `/`, `..`, etc. The fix added an isVaultPathSafe gate after
+		// path computation; this test pins it: a format that resolves
+		// outside the vault root must error rather than write/read.
+		const { app } = mockApp("{}");
+		// Mount a FileSystemAdapter-instance on the mock vault so the
+		// safety gate's getVaultBasePath returns a real path (rather than
+		// null, which would make the gate a no-op for mobile / unit-test
+		// adapters). We instantiate the mocked FileSystemAdapter class
+		// from the top-level `vi.mock("obsidian", ...)` block.
+		const { FileSystemAdapter } = await import("obsidian");
+		const adapter = new (FileSystemAdapter as unknown as new () => {
+			getBasePath: () => string;
+			getFullPath: (p: string) => string;
+		})();
+		adapter.getBasePath = () => "/tmp/vault-base";
+		adapter.getFullPath = (p: string) => `/tmp/vault-base/${p}`;
+		(app.vault as unknown as { adapter: typeof adapter }).adapter = adapter;
+		(app as unknown as { plugins: unknown }).plugins = {
+			getPlugin: (id: string) =>
+				id === "periodic-notes"
+					? {
+							instance: {
+								settings: {
+									daily: {
+										enabled: true,
+										folder: "Daily",
+										// Escapes vault: "../../etc/passwd" disguised as a moment format
+										// (square brackets are moment's literal-passthrough syntax).
+										format: "[../../../etc/passwd]",
+									},
+								},
+							},
+						}
+					: null,
+			enabledPlugins: new Set(["periodic-notes"]),
+		};
+		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
+		const r = await getTool(tools, "vault_periodic_note").handler({
+			periodicity: "daily",
+			date: "2026-04-19",
+			create: true,
+		});
+		expect(r.isError).toBe(true);
+		expect((r.content[0] as { text: string }).text).toMatch(/outside the vault/i);
+	});
+
 	it("returns not-found when create:false and file absent", async () => {
 		const { app } = mockApp("{}");
 		(app as unknown as { plugins: unknown }).plugins = {

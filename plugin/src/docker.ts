@@ -67,6 +67,19 @@ export function windowsToWslPath(windowsPath: string): string {
  * Builds the inner shell command string with env vars and cd.
  * `dockerCmd` must be a trusted literal — it is NOT escaped.
  */
+/** Sensitive env-var keys that must never carry a literal newline; a CR/LF
+ *  inside the secret would let an attacker who controls the value inject an
+ *  extra command into the bash export prefix (e.g. `'\nrm -rf /\n'`). The
+ *  shell-escape pass quotes single-quotes but happily passes through newlines,
+ *  which `bash -c` treats as command separators. We reject early instead. */
+const SENSITIVE_ENV_KEYS = new Set(["SUDO_PASSWORD", "OAS_MCP_TOKEN"]);
+
+function assertNoCrlf(key: string, value: string): void {
+	if (value.includes("\n") || value.includes("\r")) {
+		throw new Error(`Invalid value for ${key}: must not contain newlines or carriage returns.`);
+	}
+}
+
 function buildInnerCommand(
 	composePath: string,
 	dockerCmd: string,
@@ -76,6 +89,7 @@ function buildInnerCommand(
 
 	const envPrefix = Object.entries(envVars)
 		.map(([key, value]) => {
+			if (SENSITIVE_ENV_KEYS.has(key)) assertNoCrlf(key, value);
 			const escapedValue = value.replace(/'/g, "'\\''");
 			return `${key}='${escapedValue}'`;
 		})
@@ -322,6 +336,16 @@ export class DockerManager {
 				validate: isValidCpus,
 				invalidMsg: "Invalid CPU limit. Use a number (e.g. 4, 2.5).",
 			},
+			// SUDO_PASSWORD and OAS_MCP_TOKEN are validated for CR/LF in
+			// buildInnerCommand (SENSITIVE_ENV_KEYS). Caveat: these values
+			// appear on the bash command line as `export SUDO_PASSWORD='…'`,
+			// which is briefly visible to other host users via `ps -ef` while
+			// docker compose is invoked. Switching to stdin / `--env-file` for
+			// these would require splitting the WSL / local-Windows / local
+			// invocation paths and rewriting the dockerCmd assembly; tracked
+			// as a known limitation. Mitigations: (a) MCP token rotation via
+			// settings, (b) sudoPassword is the user's own password on their
+			// own machine, (c) the validator above prevents shell injection.
 			{ key: "SUDO_PASSWORD", value: sudoPassword },
 			{ key: "OAS_MCP_TOKEN", value: mcpToken },
 			{ key: "OAS_MCP_PORT", value: mcpPort ? String(mcpPort) : "" },
@@ -492,8 +516,11 @@ export class DockerManager {
 			args = ["-c", buildInnerCommand(composePath, "docker compose down", downEnv)];
 		}
 
-		// On Windows, child processes survive parent exit naturally.
-		// detached: true on Windows creates a visible console window.
+		// detached:true on Linux/Mac puts the child into its own process group
+		// so it survives Obsidian's exit (otherwise SIGTERM-on-parent-exit
+		// would propagate). On Windows, children survive parent exit naturally
+		// and detached:true would pop a visible console window — so we leave
+		// it false there. stdio:"ignore" + unref() complete the detachment.
 		const child = spawn(shell, args, {
 			detached: process.platform !== "win32",
 			stdio: "ignore",

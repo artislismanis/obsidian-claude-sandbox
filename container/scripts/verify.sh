@@ -11,7 +11,12 @@
 # etc.) are informational and don't affect the exit code, so verify.sh
 # stays usable as a general diagnostic in degraded contexts.
 
-set -u
+# -e is intentionally omitted: this script is a diagnostic and many sections
+# (cgroup reads, sudo probe, npm list, curl healthcheck) are expected to
+# fail on degraded systems without aborting the whole report. -u catches
+# typos in var refs; pipefail ensures e.g. `cmd | head -1` propagates
+# meaningful exit codes inside helpers.
+set -uo pipefail
 
 # Counter fed by tool_version / tool_present; checked at exit.
 MISSING_TOOLS=0

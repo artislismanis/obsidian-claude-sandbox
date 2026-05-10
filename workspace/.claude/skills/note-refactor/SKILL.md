@@ -18,6 +18,7 @@ Structural vault changes — rename, move, delete — are the highest-risk opera
 
 - The `manage` tier must be enabled for rename/move/delete tools to be available.
 - If `writeReviewed` is also enabled, each operation pops a review modal showing the affected backlinks. You don't need to call `vault_backlinks` separately in that case — but doing so up front gives the user a chance to abort without seeing the modal per file.
+- Before chaining manage-tier tools, call `mcp__obsidian__mcp_capabilities` to confirm `manage` (and, if you plan to lean on the modal, `writeReviewed`) are actually on for this session. Tier toggles change per-vault and per-user — never assume from tool *name* presence alone.
 
 ## Tool chain
 

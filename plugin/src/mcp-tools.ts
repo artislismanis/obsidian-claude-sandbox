@@ -154,6 +154,19 @@ function resolveFile(
 	return resolved;
 }
 
+/**
+ * Posix-segment check for `..` components. Replaces the coarse
+ * `path.includes("..")` which would also reject legitimate names like
+ * `notes/v1..2.md` or `..safe/foo.md`. We split on both `/` and `\` so callers
+ * don't need to worry about backslashes appearing on Windows-shaped inputs.
+ */
+function pathHasParentSegment(p: string): boolean {
+	for (const segment of p.split(/[/\\]/)) {
+		if (segment === "..") return true;
+	}
+	return false;
+}
+
 /** True when `vaultPath` resolves to a real filesystem path inside the vault base. */
 function isVaultPathSafe(app: App, vaultPath: string): boolean {
 	const base = getVaultBasePath(app);
@@ -919,17 +932,28 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 				const others = app.vault
 					.getMarkdownFiles()
 					.filter((other) => !alreadyLinked.has(other.path));
+				// Bounds for an inherently O(N×M) scan: per-file early exit
+				// caps each comparison to the first ~5k words (well past the
+				// point where any score signal stabilises), and SCAN_FILE_CAP
+				// stops the walk once we've examined enough files to populate
+				// `limit` results several times over. Without these, a vault
+				// of 10k notes × 50 KiB each pegged the UI thread for >30s.
+				const PER_FILE_WORD_CAP = 5000;
+				const SCAN_FILE_CAP = Math.max(500, limit * 50);
+				let scanned = 0;
 				const candidates: { path: string; score: number }[] = [];
 				await forEachMarkdown((other, otherContent) => {
+					if (scanned++ >= SCAN_FILE_CAP) return true;
 					let score = 0;
 					if (wordSet.has(other.basename.toLowerCase())) score += 5;
 					const otherWords = otherContent
 						.toLowerCase()
 						.replace(/[^\w\s]/g, " ")
-						.split(/\s+/)
-						.filter((w) => w.length > 3);
-					for (const w of otherWords) {
-						if (wordSet.has(w)) score++;
+						.split(/\s+/);
+					const cap = Math.min(otherWords.length, PER_FILE_WORD_CAP);
+					for (let i = 0; i < cap; i++) {
+						const w = otherWords[i];
+						if (w.length > 3 && wordSet.has(w)) score++;
 					}
 					if (score > 0) candidates.push({ path: other.path, score });
 				}, others);
@@ -1029,8 +1053,10 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 					// rely solely on isVaultPathSafe (which only blocks via realpath
 					// of an existing ancestor — for an entirely new tree the
 					// not-yet-existing portion isn't checked).
-					if (path.includes("..") || path.startsWith("/") || path.startsWith("\\"))
-						return error("Path may not contain '..' or start with '/' or '\\'.");
+					if (pathHasParentSegment(path) || path.startsWith("/") || path.startsWith("\\"))
+						return error(
+							"Path may not contain a '..' segment or start with '/' or '\\'.",
+						);
 					const guard = guardPath(path);
 					if (guard) return guard;
 					if (!isVaultPathSafe(app, path))
@@ -1235,6 +1261,22 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 					if (!result.ok) return result.error;
 					const f = result.file;
 					const content = await app.vault.read(f);
+
+					// Hard length budget: even without nested quantifiers, a
+					// linear-but-large regex on multi-MB content blocks the
+					// event loop for seconds — past the MCP tool timeout (which
+					// only fires after replace returns), freezing Obsidian's UI
+					// thread. 5 MiB is generous for any sane vault note (the
+					// largest markdown file in a typical vault is well under
+					// 1 MiB) and bounds replace() time to ~100ms even under
+					// adversarial regex shapes that don't trip the nested-
+					// quantifier guard below.
+					const REPLACE_MAX_CONTENT_BYTES = 5 * 1024 * 1024;
+					if (content.length > REPLACE_MAX_CONTENT_BYTES) {
+						return error(
+							`File too large for search/replace (${content.length} chars > ${REPLACE_MAX_CONTENT_BYTES}). Edit a smaller portion or split the file.`,
+						);
+					}
 
 					let pattern: RegExp;
 					if (useRegex) {
@@ -1548,7 +1590,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 					trimmed.startsWith(".") ||
 					trimmed.includes("/") ||
 					trimmed.includes("\\") ||
-					trimmed.includes("..")
+					pathHasParentSegment(trimmed)
 				)
 					return error(
 						"'name' must be a non-empty, non-hidden bare filename (no slashes, no leading dot, no '..').",
@@ -1593,8 +1635,8 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 			handler: async ({ file, path, to: dest }) => {
 				const f = resolveFile(app, { file, path }, pathFilter);
 				if (!f) return error("File not found.");
-				if (dest.includes("..") || dest.includes("\\"))
-					return error("'to' may not contain '..' or backslashes.");
+				if (pathHasParentSegment(dest) || dest.includes("\\"))
+					return error("'to' may not contain a '..' segment or backslashes.");
 				const cleanDest = dest.replace(/^\/+|\/+$/g, "");
 				const newPath = cleanDest ? `${cleanDest}/${f.name}` : f.name;
 				if (!isVaultPathSafe(app, newPath))
@@ -1692,17 +1734,29 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 
 			handler: async ({ query, property, value: rawValue, dryRun = true }) => {
 				const search = prepareSimpleSearch(query);
+				// Cap matches so a broad query (`"the"`) doesn't load the entire
+				// vault into memory and synchronously rewrite every frontmatter
+				// block. The dry-run preview still prints the truncated list and
+				// callers see the "showing first N of M" tail.
+				const BATCH_MATCH_CAP = 500;
 				const matched: TFile[] = [];
+				let totalMatched = 0;
 				await forEachMarkdown((file, content) => {
-					if (search(content)) matched.push(file);
+					if (!search(content)) return;
+					totalMatched++;
+					if (matched.length < BATCH_MATCH_CAP) matched.push(file);
 				});
 
 				if (matched.length === 0) return text("No files matched the query.");
+				const truncationNote =
+					totalMatched > BATCH_MATCH_CAP
+						? `\n\n[showing first ${BATCH_MATCH_CAP} of ${totalMatched} matches — narrow the query to operate on more]`
+						: "";
 
 				if (dryRun) {
 					const label = rawValue !== undefined ? `set ${property}` : `delete ${property}`;
 					return text(
-						`Dry run — would ${label} on ${matched.length} file(s):\n${matched.map((f) => f.path).join("\n")}`,
+						`Dry run — would ${label} on ${matched.length} file(s):\n${matched.map((f) => f.path).join("\n")}${truncationNote}`,
 					);
 				}
 
@@ -1776,7 +1830,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 				}
 
 				const label = rawValue !== undefined ? `Set ${property}` : `Deleted ${property}`;
-				return text(`${label} on ${targets.length} file(s).`);
+				return text(`${label} on ${targets.length} file(s).${truncationNote}`);
 			},
 		}),
 	);

@@ -4,7 +4,8 @@ What's left to do. Implemented work has been removed; the git log is the source 
 
 ## Pre-1.0 stabilisation
 
-- [ ] First BRAT-compatible release — bump version, push the tag, verify the GitHub Release and a clean BRAT install (see `docs/how-to/release.md`).
+- [x] First BRAT-compatible release — shipped at `0.1.x` (see `plugin/manifest.json` / `plugin/versions.json`); tags are published via `release.yml`.
+- [ ] Beta-feedback pass on the BRAT release — collect issues from early installers, tune defaults, and tighten release notes before the next minor bump.
 - [ ] Capture a GIF or screenshot of the core workflow for the top of the README.
 - [ ] Optional audible or tray notification when Claude transitions to "awaiting input" after a long-running task.
 

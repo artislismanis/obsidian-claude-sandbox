@@ -1,8 +1,14 @@
 /* Agent Sandbox plugin styles */
 
 /* ============================================================
- * xterm.js base styles (from @xterm/xterm/css/xterm.css)
+ * xterm.js base styles (verbatim copy of @xterm/xterm/css/xterm.css).
  * Required for correct terminal rendering.
+ *
+ * MAINTENANCE: when bumping @xterm/xterm in package.json, sync this
+ * block from node_modules/@xterm/xterm/css/xterm.css to keep visual
+ * behaviour aligned with the bundled JS. We embed rather than `@import`
+ * because Obsidian doesn't bundle CSS imports for plugins — styles.css
+ * must be self-contained.
  * ============================================================ */
 
 .xterm {
@@ -262,7 +268,7 @@
 	z-index: 5;
 	padding: 3px 8px;
 	border-radius: var(--radius-s);
-	background-color: var(--background-modifier-error-rgb, var(--background-secondary));
+	background-color: var(--background-modifier-error, var(--background-secondary));
 	color: var(--text-on-accent, var(--text-normal));
 	font-size: var(--font-ui-smaller);
 	pointer-events: none;

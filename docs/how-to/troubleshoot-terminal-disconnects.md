@@ -4,7 +4,7 @@ The in-Obsidian terminal sometimes drops its WebSocket to the container even tho
 
 ## What the plugin already does
 
-- **Auto-reconnect on abnormal close.** When the WebSocket closes with anything other than a clean code (1000 / 1001 / 1005), the terminal tab keeps its xterm instance and scrollback and retries the connection on a 0.5s → 1s → 2s → 4s → 8s backoff. A small `Connection dropped — reconnecting (attempt n/5, in Ns)…` banner appears in the top-right of the terminal during retries. On success the terminal prints `[agent-sandbox] terminal reconnected`.
+- **Auto-reconnect on abnormal close.** When the WebSocket closes with anything other than a clean code (1000 / 1001 / 1005), the terminal tab keeps its xterm instance and scrollback and retries the connection on a 0.5s → 1s → 2s → 4s → 8s → 8s → 8s → 8s backoff (eight attempts total). A small `Connection dropped — reconnecting (attempt n/8, in Ns)…` banner appears in the top-right of the terminal during retries. On success the terminal prints `[agent-sandbox] terminal reconnected`.
 - **Lifecycle telemetry.** Every WS open/close/reconnect is recorded in a process-wide ring buffer (last 200 events) and written to the developer console. Close lines look like:
   ```
   [Agent Sandbox] [Terminal] WebSocket dropped — code=1006 (abnormal-no-close-frame)
@@ -54,7 +54,7 @@ When a drop happens, gather both ends of the timeline before doing anything else
 | `1006`, `idleMsBeforeClose` low | No matching `disconnected` line, or container restart marker | ttyd or container died. Check `docker ps` and `docker logs`. |
 | `1011` internal-error | ttyd error before the disconnect line | ttyd-side problem; report with the log excerpt. |
 | `1000`/`1001`/`1005` (clean) | Paired `[oas-session] end` with `exit=0` | Container was stopped or the tab was closed deliberately. No reconnect — the error screen prompts a manual retry. |
-| Reconnect gives up after 5 attempts | Container `Status` is not `running` | Container is down. Use **Sandbox: Start Container**. |
+| Reconnect gives up after 8 attempts | Container `Status` is not `running` | Container is down. Use **Sandbox: Start Container**. |
 
 ## If reconnects don't help
 
@@ -62,6 +62,21 @@ When a drop happens, gather both ends of the timeline before doing anything else
 - **Check the host firewall.** Especially on Windows + WSL2 with mirrored networking; see [Configure the firewall](configure-firewall.md).
 - **Restart the container.** **Sandbox: Restart Container** in the command palette. This forces a clean `down` + `up -d`.
 - **File a report.** Attach the copied connection log and the matching `docker logs --tail 200 oas-sandbox` excerpt to the issue.
+
+## MCP proxy debug knobs
+
+The sandbox-side Obsidian MCP proxy (`workspace/.claude/scripts/obsidian-mcp-proxy.js`) honours two environment variables when troubleshooting MCP-tool hangs or unexplained tool errors. Set them in a terminal *before* launching `claude`:
+
+| Env var | Default | Effect |
+|---|---|---|
+| `OAS_MCP_TIMEOUT_MS` | `15000` | Per-request HTTP timeout (ms) for calls from the proxy to the plugin's MCP server. Bump it if you see "MCP proxy: HTTP request timed out" on heavy tools (e.g. very large `vault_search`). |
+| `OAS_MCP_DEBUG` | unset | Set to `1` to log every proxy request/response to stderr. Combine with `claude --debug` for an end-to-end trace. |
+
+Example:
+
+```bash
+OAS_MCP_DEBUG=1 OAS_MCP_TIMEOUT_MS=30000 claude
+```
 
 ## Related
 

@@ -14,3 +14,13 @@ Dockerfile  text eol=lf
 *.mjs       text eol=lf
 *.mts       text eol=lf
 *.conf      text eol=lf
+
+# Mark binary assets so git doesn't try to diff or line-end-normalise them.
+*.png       binary
+*.gif       binary
+*.jpg       binary
+*.jpeg      binary
+*.ico       binary
+
+# Keep generated lockfiles out of GitHub language stats and PR diff noise.
+package-lock.json linguist-generated=true

@@ -54,7 +54,7 @@ Shell scripts called on events. Currently ships `notify-status.sh` (activity sig
 }
 ```
 
-Events include `UserPromptSubmit`, `Stop`, `Notification`, `SubagentStart`. See Claude Code docs for the full list.
+Events include `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, `SubagentStop`, `Notification`, `SessionStart`, `SessionEnd`. See Claude Code docs for the full list.
 
 ## `.claude/settings.json` — Claude Code config
 

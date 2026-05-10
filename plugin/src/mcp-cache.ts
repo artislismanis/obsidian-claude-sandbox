@@ -1,9 +1,9 @@
-import type { MetadataCache } from "obsidian";
+import type { EventRef, MetadataCache } from "obsidian";
 
 export class VaultCache {
 	private cache = new Map<string, unknown>();
 	private metadataCache: MetadataCache;
-	private unregister: (() => void)[] = [];
+	private eventRefs: EventRef[] = [];
 
 	constructor(metadataCache: MetadataCache) {
 		this.metadataCache = metadataCache;
@@ -11,9 +11,11 @@ export class VaultCache {
 		// All cached values (graph, tag counts, property names) derive from
 		// metadataCache. "resolved" fires after a batch of metadata updates,
 		// so wholesale invalidation is correct and avoids per-key bookkeeping.
-		const onResolved = () => this.invalidateAll();
-		this.metadataCache.on("resolved", onResolved);
-		this.unregister.push(() => this.metadataCache.off("resolved", onResolved));
+		// Use EventRef + offref (Obsidian's recommended pattern) instead of
+		// raw on/off — the matching offref pairs by ref identity rather than
+		// by callback identity, so it survives any internal wrapping the API
+		// does on its handlers.
+		this.eventRefs.push(this.metadataCache.on("resolved", () => this.invalidateAll()));
 	}
 
 	get<T>(key: string, computeFn: () => T): T {
@@ -28,8 +30,8 @@ export class VaultCache {
 	}
 
 	destroy(): void {
-		for (const fn of this.unregister) fn();
-		this.unregister = [];
+		for (const ref of this.eventRefs) this.metadataCache.offref(ref);
+		this.eventRefs = [];
 		this.cache.clear();
 	}
 }

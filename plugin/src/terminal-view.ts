@@ -254,6 +254,8 @@ export class TerminalView extends ItemView {
 		}
 	}
 
+	private scopeInstalled = false;
+
 	async onOpen(): Promise<void> {
 		this.generation++;
 
@@ -261,11 +263,18 @@ export class TerminalView extends ItemView {
 		// the DOM event reaches xterm.js. Register a Scope handler that blocks
 		// Obsidian's navigation and routes the ESC byte through xterm's input
 		// pipeline so wsTxBytes accounting and any onData chain stay consistent.
-		this.scope = new Scope(this.app.scope);
-		this.scope.register([], "Escape", () => {
-			this.term?.input("\x1b");
-			return false;
-		});
+		// Idempotency guard: onOpen is invoked again after Obsidian restores a
+		// persisted leaf without first popping our previous Scope, so without
+		// this flag we'd allocate a new Scope each time and leak the prior one
+		// (the user only sees the most-recent one's Escape binding work).
+		if (!this.scopeInstalled) {
+			this.scope = new Scope(this.app.scope);
+			this.scope.register([], "Escape", () => {
+				this.term?.input("\x1b");
+				return false;
+			});
+			this.scopeInstalled = true;
+		}
 
 		void this.connect();
 	}
@@ -273,6 +282,7 @@ export class TerminalView extends ItemView {
 	async onClose(): Promise<void> {
 		this.generation++;
 		this.dispose();
+		this.scopeInstalled = false;
 	}
 
 	onResize(): void {
@@ -351,7 +361,11 @@ export class TerminalView extends ItemView {
 		errorDiv.createEl("p").setText(message);
 		const retryBtn = errorDiv.createEl("button");
 		retryBtn.setText("Retry");
-		retryBtn.addEventListener("click", () => {
+		// registerDomEvent is the Component-managed addEventListener: Obsidian
+		// removes it automatically when this view is unloaded, so a rapid
+		// view-close while the error UI is showing can't leak a closure
+		// holding `this` (and the disposed term + ws) past the view's life.
+		this.registerDomEvent(retryBtn, "click", () => {
 			void this.connect();
 		});
 	}
@@ -449,9 +463,13 @@ export class TerminalView extends ItemView {
 			term.onSelectionChange(() => {
 				if (!this.getSettings().clipboardAutoCopy) return;
 				const selection = term.getSelection();
-				if (selection) {
-					navigator.clipboard.writeText(selection).catch(() => {});
-				}
+				if (!selection) return;
+				// navigator.clipboard.writeText silently throws DOMException
+				// "Document is not focused" when Obsidian's window has lost
+				// focus mid-selection (e.g. user dragged across, clicked away).
+				// Skip the write rather than emitting a noisy console warning.
+				if (typeof document !== "undefined" && !document.hasFocus()) return;
+				navigator.clipboard.writeText(selection).catch(() => {});
 			}),
 		);
 
@@ -597,7 +615,16 @@ export class TerminalView extends ItemView {
 					} finally {
 						// Re-enable input only on the still-current term — a fast
 						// view close that swapped this.term should leave it alone.
-						if (this.term === term) term.options.disableStdin = wasStdinDisabled;
+						// Wrap the options setter: dispose() races this timer and
+						// can null `term.options` mid-call, throwing TypeError out
+						// of the finally block (which would otherwise propagate).
+						if (this.term === term) {
+							try {
+								term.options.disableStdin = wasStdinDisabled;
+							} catch {
+								/* term disposed before re-enable landed */
+							}
+						}
 					}
 				}, delay);
 				this.injectionTimers.push(id);
@@ -664,7 +691,10 @@ export class TerminalView extends ItemView {
 		};
 
 		const onError = () => {
-			logger.error("Terminal", `WebSocket error (gen ${gen}, instance ${this.instanceId})`);
+			logger.error(
+				"Terminal",
+				`WebSocket error (gen ${gen}, instance ${this.instanceId}, url=${ws.url}, readyState=${ws.readyState})`,
+			);
 			this.logEvent(gen, "error");
 		};
 

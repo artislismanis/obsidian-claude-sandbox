@@ -6,10 +6,10 @@ The workaround: **use named tmux sessions** so closing a tab doesn't kill your w
 
 ## Named session workflow
 
-1. **Sandbox: Open Sandbox Session…** → enter a name (e.g. `work`, `research`, `debug`).
+1. **Open Sandbox Session...** → enter a name (e.g. `work`, `research`, `debug`).
 2. A terminal opens inside tmux session `work`. Inside it, run Claude Code or whatever you like.
 3. Close the Obsidian tab. The tmux session keeps running.
-4. Later — Obsidian re-opened, container still running — run **Sandbox: Open Sandbox Session…** with the same name. You re-attach, Claude's context intact.
+4. Later — Obsidian re-opened, container still running — run **Open Sandbox Session...** with the same name. You re-attach, Claude's context intact.
 
 ## Picking up multiple sessions
 

@@ -8,9 +8,9 @@ The container is the security boundary. Inside it, Claude runs with `bypassPermi
 
 So the repo is structured to make that distinction mechanical, not conventional:
 
-- `container/` is infra. It builds the image. It is not mounted inside the running container. Claude cannot see it, cannot modify it, cannot know what's in it except through what the image exposes at runtime (e.g. `verify.sh`).
+- `container/` is infra. It builds the image. It is not mounted inside the running container. Claude cannot modify it, and the *contents* of those files are invisible from inside (file existence and source tags can still be inferred at runtime via `init-firewall.sh --list-sources`, which reports `[baseline]` / `[plugin]` / `[file]` origins).
 - `workspace/` is Claude's domain. It is mounted rw at `/workspace/`. Claude edits freely. Changes appear as unstaged modifications on the host; the human reviews and commits via normal git on a feature branch.
-- `plugin/` is the Obsidian plugin. It's how you invoke the sandbox from inside Obsidian. Changes here are unrelated to sandbox state.
+- `plugin/` is the Obsidian plugin. It's how you invoke the sandbox from inside Obsidian. Changes here are unrelated to sandbox state. Plugin-internal architecture and conventions live in [`plugin/CLAUDE.md`](../../plugin/CLAUDE.md).
 
 ## The three tiers
 

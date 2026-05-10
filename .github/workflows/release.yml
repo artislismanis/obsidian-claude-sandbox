@@ -5,6 +5,10 @@ on:
     tags:
       - "[0-9]+.[0-9]+.[0-9]+"
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -27,7 +31,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify tag matches manifest.json
+      - name: Verify tag matches manifest.json and versions.json
         run: |
           TAG_VERSION="${GITHUB_REF_NAME}"
           MANIFEST_VERSION=$(node -p "require('./manifest.json').version")
@@ -35,16 +39,21 @@ jobs:
             echo "Tag $TAG_VERSION does not match manifest.json version $MANIFEST_VERSION"
             exit 1
           fi
+          if ! jq -e --arg v "$TAG_VERSION" 'has($v)' versions.json > /dev/null; then
+            echo "versions.json is missing an entry for $TAG_VERSION"
+            echo "Run \`npm version $TAG_VERSION\` (or update versions.json manually) so BRAT and Obsidian know which app version this plugin requires."
+            exit 1
+          fi
 
       - name: Build
         run: npm run build
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.4.0
         with:
           name: ${{ github.ref_name }}
           draft: false
-          prerelease: true
+          prerelease: ${{ vars.RELEASE_PRERELEASE != 'false' }}
           generate_release_notes: true
           files: |
             plugin/dist/main.js

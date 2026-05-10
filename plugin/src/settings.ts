@@ -20,7 +20,7 @@ import {
 	isValidPrivateHosts,
 	isValidWriteDir,
 } from "./validation";
-import { existsSync } from "fs";
+import { access } from "fs/promises";
 import { join } from "path";
 
 export type TerminalThemeMode = "obsidian" | "dark" | "light";
@@ -144,6 +144,12 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 	plugin: AgentSandboxPlugin;
 	private activeTab: TabId = "general";
 	private restartNeeded = false;
+	// Cache of compose-file-existence checks keyed by path, populated
+	// asynchronously to avoid blocking the renderer with sync `existsSync`.
+	// Values: true=found, false=missing, undefined=not yet checked. We
+	// re-render once a previously-pending path resolves so the warning text
+	// appears without user interaction.
+	private composePathExists: Map<string, boolean> = new Map();
 
 	constructor(app: App, plugin: AgentSandboxPlugin) {
 		super(app, plugin);
@@ -368,16 +374,35 @@ export class AgentSandboxSettingTab extends PluginSettingTab {
 
 		const composeSetting = new Setting(el).setName("Docker Compose path").setDesc(composeDesc);
 
-		if (
-			!isWsl &&
-			this.plugin.settings.dockerComposeFilePath &&
-			!existsSync(join(this.plugin.settings.dockerComposeFilePath, "docker-compose.yml"))
-		) {
-			composeSetting.descEl.createEl("br");
-			composeSetting.descEl.createEl("strong", {
-				text: "docker-compose.yml not found at this path.",
-				cls: "sandbox-settings-warning-text",
-			});
+		// Compose-file existence is computed off the event loop. Sync
+		// existsSync used to block the renderer with a stat per render — fine
+		// for one path, but the settings tab re-renders on every keystroke
+		// (onChange → display()), so the cost added up. The cache here
+		// short-circuits repeat checks for the same path and the async miss
+		// path triggers a one-shot re-render once the answer arrives.
+		if (!isWsl && this.plugin.settings.dockerComposeFilePath) {
+			const composePath = this.plugin.settings.dockerComposeFilePath;
+			const yml = join(composePath, "docker-compose.yml");
+			const cached = this.composePathExists.get(yml);
+			if (cached === false) {
+				composeSetting.descEl.createEl("br");
+				composeSetting.descEl.createEl("strong", {
+					text: "docker-compose.yml not found at this path.",
+					cls: "sandbox-settings-warning-text",
+				});
+			} else if (cached === undefined) {
+				// Kick off the probe; re-render the panel once the answer
+				// lands. We re-display only when the active tab is still
+				// general — switching tabs while a probe is in flight is fine
+				// because the answer is cached for the next render.
+				const activeAtProbe = this.activeTab;
+				access(yml)
+					.then(() => this.composePathExists.set(yml, true))
+					.catch(() => this.composePathExists.set(yml, false))
+					.finally(() => {
+						if (this.activeTab === activeAtProbe) this.display();
+					});
+			}
 		}
 
 		composeSetting.addText((text) =>

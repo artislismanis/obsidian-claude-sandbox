@@ -48,7 +48,7 @@ The settings tab validates the path on input — a green tick means Obsidian can
 
 ## 4. Start the container
 
-Click the box-icon in the ribbon → **Start container**, or run the command **Sandbox: Start Container**.
+Run the command **Sandbox: Start Container** from the command palette. (The ribbon's terminal icon — labelled **Open Sandbox Terminal** — opens a terminal once the container is up; if the container is stopped, it prompts you to start it.)
 
 The status bar cycles through:
 - `Sandbox: ⏳ Starting`

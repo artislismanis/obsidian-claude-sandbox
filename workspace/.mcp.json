@@ -1,7 +1,8 @@
 {
 	"mcpServers": {
 		"memory": {
-			"command": "mcp-server-memory"
+			"command": "mcp-server-memory",
+			"instructions": "Use this for cross-session notes Claude wants to remember about this user/project. Storage is per-vault (the plugin sets MEMORY_FILE_PATH to vault/.oas/memory.json). See workspace/CLAUDE.md \"Memory — MCP knowledge graph\" for entity-type and observation conventions."
 		},
 		"obsidian": {
 			"command": "node",

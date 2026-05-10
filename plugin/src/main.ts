@@ -48,6 +48,7 @@ export default class AgentSandboxPlugin extends Plugin {
 	private firewallPollId: number | null = null;
 	private lastFirewallRefreshAt = 0;
 	private mcpServer: ObsidianMcpServer | null = null;
+	private layoutReadyHandled = false;
 	private lastKnownContainerId: string = "";
 	private activityUi!: ActivityUi;
 	private agentOutput!: AgentOutputNotifier;
@@ -146,6 +147,13 @@ export default class AgentSandboxPlugin extends Plugin {
 		});
 
 		this.app.workspace.onLayoutReady(() => {
+			// onLayoutReady can fire more than once across rapid disable/enable
+			// cycles in Obsidian (the workspace event has been observed to
+			// re-fire when the plugin re-registers during a layout transition).
+			// A double backgroundStartup races docker probe and status-bar
+			// state — guard with a one-shot flag.
+			if (this.layoutReadyHandled) return;
+			this.layoutReadyHandled = true;
 			void this.backgroundStartup();
 		});
 
@@ -198,7 +206,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			name: "Open Sandbox Session...",
 			callback: async () => {
 				const name = await this.promptSessionName("New Session");
-				if (name) this.activateTerminalView(name);
+				if (name) void this.activateTerminalView(name);
 			},
 		});
 
@@ -311,6 +319,16 @@ export default class AgentSandboxPlugin extends Plugin {
 							this.docker.stopDetached();
 							return;
 						}
+						// Promise.race: whichever of (docker stop) or (5s timer)
+						// resolves first wins. The losing branch keeps running —
+						// docker stop continues in the background (its result is
+						// discarded), and the timer leaks until GC clears it.
+						// Adding an AbortController here would only cancel the
+						// timer, not the underlying `child_process.exec` inside
+						// DockerManager.stop(); that would require routing a
+						// signal through the docker layer (non-trivial across the
+						// WSL/Windows command-builder paths). Tradeoff accepted:
+						// quit is racing against Obsidian shutdown anyway.
 						await Promise.race([
 							this.docker.stop().catch((err) => {
 								logger.warn(
@@ -336,7 +354,9 @@ export default class AgentSandboxPlugin extends Plugin {
 		// overwritten by a stale trailing call. Await the explicit save before
 		// returning so a fast disable+quit doesn't lose recent settings changes.
 		this.debouncedSaveSettings.cancel?.();
-		await this.saveData(this.settings).catch(() => {});
+		await this.saveData(this.settings).catch((e) =>
+			logger.error("Plugin", "Save on unload failed", e),
+		);
 		// Await mcpServer.stop() so the HTTP server's `close()` fully completes
 		// (sockets closed, port released) before Obsidian considers us unloaded.
 		// The 2s race inside stop() bounds worst-case wait.
@@ -401,7 +421,7 @@ export default class AgentSandboxPlugin extends Plugin {
 			active: true,
 			state: sessionName ? { sessionName } : {},
 		});
-		this.app.workspace.revealLeaf(leaf);
+		await this.app.workspace.revealLeaf(leaf);
 		const view = leaf.view instanceof TerminalView ? leaf.view : null;
 		if (view && initialPrompt) view.queueInitialPrompt(initialPrompt);
 		return view;
@@ -702,7 +722,7 @@ export default class AgentSandboxPlugin extends Plugin {
 				.setDisabled(!running)
 				.onClick(async () => {
 					const name = await this.promptSessionName("New Session");
-					if (name) this.activateTerminalView(name);
+					if (name) void this.activateTerminalView(name);
 				}),
 		);
 

@@ -42,6 +42,18 @@ export interface ReviewResult {
 	approved: boolean;
 }
 
+/**
+ * Lightweight near-LCS diff: walks old/new line-pointers in lockstep and
+ * peeks up to 3 lines ahead to recover from short insertions/deletions.
+ * Intentionally NOT a full Myers/LCS — for the review-modal use case (small
+ * text edits that the user is about to approve) the readable output of an
+ * approximate diff is preferable to the implementation cost of a real LCS.
+ *
+ * Known limitations: a >3-line shift in one side falls through to the naive
+ * "delete old; insert new" branch, producing a chunky but still-correct diff.
+ * If we start showing diffs of mass refactors here, swap this for a proper
+ * LCS implementation (e.g. diff-match-patch).
+ */
 export function computeUnifiedDiff(oldText: string, newText: string): string {
 	const oldLines = oldText.split("\n");
 	const newLines = newText.split("\n");

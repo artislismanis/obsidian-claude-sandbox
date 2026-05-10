@@ -20,7 +20,7 @@ Out-of-workspace writes require the `writeReviewed` tier — each change trigger
 
 ## Tool selection
 
-Every write op has a `_reviewed` variant that calls the review modal before applying:
+Content-write ops register a `_reviewed` variant when the `writeReviewed` tier is on; that variant calls the review modal before applying:
 
 | Operation | Tool |
 |---|---|
@@ -32,7 +32,17 @@ Every write op has a `_reviewed` variant that calls the review modal before appl
 | Find/replace within one file | `vault_search_replace_reviewed` |
 | Targeted insert at heading/line | `vault_patch_reviewed` |
 
-**Never** use the non-reviewed variant for out-of-workspace paths — the server blocks it via the `writeScoped` guard, but `writeVault` (if enabled) would silently bypass review.
+Manage-tier ops (rename / move / delete / create-folder / batch-frontmatter) keep their plain names — there is no `_reviewed` suffix. They are reviewed implicitly when both the `manage` tier and `writeReviewed` are enabled; each call surfaces a review modal showing the affected backlinks (or, for `vault_batch_frontmatter`, a per-item batch modal):
+
+| Operation | Tool |
+|---|---|
+| Rename a file | `vault_rename` |
+| Move a file | `vault_move` |
+| Delete a file | `vault_delete` |
+| Create a folder | `vault_create_folder` |
+| Batch-set frontmatter across many files | `vault_batch_frontmatter` |
+
+**Never** use the non-reviewed content-write variant for out-of-workspace paths — the server blocks it via the `writeScoped` guard, but `writeVault` (if enabled) would silently bypass review.
 
 ## Pre-write checklist
 

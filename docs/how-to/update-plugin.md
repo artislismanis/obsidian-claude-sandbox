@@ -31,7 +31,7 @@ docker compose build
 
 Restart the container via the plugin (**Sandbox: Restart Container**).
 
-Check you got the new image: **Sandbox: Container Status** or `docker compose exec sandbox verify.sh` — look at the version line in the header.
+Check you got the new image: **Sandbox: Container Status** or `cd container && docker compose exec sandbox verify.sh` — look at the version line in the header.
 
 ## When to rebuild vs just update
 

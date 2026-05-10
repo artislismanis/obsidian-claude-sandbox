@@ -77,8 +77,9 @@ function createMockApp() {
 			getFirstLinkpathDest: vi.fn(() => null),
 			resolvedLinks: {},
 			unresolvedLinks: {},
-			on: vi.fn(),
+			on: vi.fn(() => ({})),
 			off: vi.fn(),
+			offref: vi.fn(),
 		},
 		fileManager: {
 			renameFile: vi.fn(async () => {}),
@@ -141,6 +142,96 @@ describe("ObsidianMcpServer", () => {
 		it("start is idempotent", async () => {
 			await server.start();
 			expect(server.isRunning()).toBe(true);
+		});
+	});
+
+	describe("rate limiter boundary", () => {
+		it("expires entries at exactly RATE_WINDOW_MS (not before, not after)", () => {
+			interface BucketShape {
+				timestamps: number[];
+			}
+			interface RateLimiterShape {
+				buckets: Map<string, BucketShape>;
+				check: (tool: string, tier: "read" | "writeScoped") => boolean;
+			}
+			const rl = (server as unknown as { rateLimiter: RateLimiterShape }).rateLimiter;
+			// Seed a bucket with a synthetic timestamp exactly RATE_WINDOW_MS
+			// in the past so we can assert the boundary semantics: the
+			// implementation uses `now - ts >= RATE_WINDOW_MS` to expire, so
+			// an entry at exactly the window boundary is expired (drops out
+			// of the count) and a new request is accepted.
+			const RATE_WINDOW_MS = 60_000;
+			const now = Date.now();
+			rl.buckets.set("__boundary_probe__", {
+				timestamps: [now - RATE_WINDOW_MS],
+			});
+			// First check: the boundary entry is expired-and-removed; the
+			// new entry is recorded and allowed.
+			expect(rl.check("__boundary_probe__", "read")).toBe(true);
+			const bucket = rl.buckets.get("__boundary_probe__")!;
+			expect(bucket.timestamps.length).toBe(1);
+			expect(bucket.timestamps[0]).toBeGreaterThanOrEqual(now);
+		});
+	});
+
+	describe("auth length compare", () => {
+		it("rejects on length mismatch without going through timingSafeEqual", async () => {
+			// timingSafeEqual throws on length mismatch — checkAuth must
+			// guard with a length check first. A wrong-token of a different
+			// length should produce a clean 401 (not a 500 thrown error).
+			const res = await httpRequest(
+				"POST",
+				"/mcp",
+				{ "Content-Type": "application/json", Authorization: "Bearer short" },
+				"{}",
+			);
+			expect(res.status).toBe(401);
+		});
+
+		it("rejects on length mismatch even when much longer than expected", async () => {
+			const res = await httpRequest(
+				"POST",
+				"/mcp",
+				{
+					"Content-Type": "application/json",
+					Authorization: "Bearer " + "a".repeat(1000),
+				},
+				"{}",
+			);
+			expect(res.status).toBe(401);
+		});
+	});
+
+	describe("body size limit", () => {
+		it("rejects payloads above MAX_BODY_BYTES with auth ok", async () => {
+			// MAX_BODY_BYTES is 1 MiB. We send 1.5 MiB of JSON-ish junk
+			// (still inside an envelope) so the listener accepts the
+			// connection then trips the size guard mid-stream.
+			const big = JSON.stringify({
+				jsonrpc: "2.0",
+				id: 1,
+				method: "x",
+				payload: "a".repeat(1_500_000),
+			});
+			const res = await httpRequest(
+				"POST",
+				"/mcp",
+				{
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${TEST_TOKEN}`,
+				},
+				big,
+			).catch(() => null);
+			// On many platforms the server destroys the request before
+			// finishing the response, which surfaces as a connection
+			// reset (null result). Either outcome is acceptable — what
+			// matters is the listener is still alive after.
+			if (res) expect(res.status).toBeGreaterThanOrEqual(400);
+			// Listener still up: a small follow-up request goes through.
+			const after = await httpRequest("GET", "/mcp/health", {
+				Authorization: `Bearer ${TEST_TOKEN}`,
+			});
+			expect(after.status).toBe(200);
 		});
 	});
 
@@ -207,9 +298,33 @@ describe("ObsidianMcpServer", () => {
 		it("handles CORS preflight without auth", async () => {
 			const res = await httpRequest("OPTIONS", "/mcp");
 			expect(res.status).toBe(204);
-			expect(res.headers["access-control-allow-origin"]).toBe("*");
+			// No Origin header was sent → no ACAO echoed; only the always-on
+			// methods/headers are advertised. Loopback-origin echoing is
+			// covered by the dedicated "echoes ACAO" test below.
+			expect(res.headers["access-control-allow-origin"]).toBeUndefined();
 			expect(res.headers["access-control-allow-methods"]).toContain("POST");
 			expect(res.headers["access-control-allow-headers"]).toContain("Authorization");
+		});
+
+		it("echoes ACAO for loopback origins", async () => {
+			const res = await httpRequest("OPTIONS", "/mcp", { Origin: "http://127.0.0.1:5555" });
+			expect(res.status).toBe(204);
+			expect(res.headers["access-control-allow-origin"]).toBe("http://127.0.0.1:5555");
+			expect(res.headers["vary"]).toBe("Origin");
+		});
+
+		it("echoes ACAO for app:// origins (Obsidian client)", async () => {
+			const res = await httpRequest("OPTIONS", "/mcp", { Origin: "app://obsidian.md" });
+			expect(res.status).toBe(204);
+			expect(res.headers["access-control-allow-origin"]).toBe("app://obsidian.md");
+		});
+
+		it("omits ACAO for non-loopback origins", async () => {
+			const res = await httpRequest("OPTIONS", "/mcp", {
+				Origin: "https://evil.example.com",
+			});
+			expect(res.status).toBe(204);
+			expect(res.headers["access-control-allow-origin"]).toBeUndefined();
 		});
 
 		it("returns 400 for GET without session", async () => {
@@ -228,17 +343,18 @@ describe("ObsidianMcpServer", () => {
 	});
 
 	describe("CORS headers", () => {
-		it("includes CORS headers on authenticated responses", async () => {
+		it("includes CORS expose-headers on authenticated responses", async () => {
 			const res = await httpRequest(
 				"POST",
 				"/mcp",
 				{
 					"Content-Type": "application/json",
 					Authorization: `Bearer ${TEST_TOKEN}`,
+					Origin: "http://localhost:1234",
 				},
 				JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
 			);
-			expect(res.headers["access-control-allow-origin"]).toBe("*");
+			expect(res.headers["access-control-allow-origin"]).toBe("http://localhost:1234");
 			expect(res.headers["access-control-expose-headers"]).toContain("Mcp-Session-Id");
 		});
 	});
