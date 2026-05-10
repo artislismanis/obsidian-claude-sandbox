@@ -47,7 +47,7 @@
 		"esbuild": "^0.28.0",
 		"eslint": "^10.1.0",
 		"husky": "^9.1.7",
-		"lint-staged": "^16.4.0",
+		"lint-staged": "^17.0.4",
 		"mocha": "^10.8.2",
 		"obsidian": "^1.7.2",
 		"obsidian-launcher": "^3.0.2",
