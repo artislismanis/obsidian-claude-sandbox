@@ -23,7 +23,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
           cache-dependency-path: plugin/package-lock.json
 
@@ -32,6 +32,9 @@ jobs:
 
       - name: Lint + format + type-check + unit tests
         run: npm run check
+
+      - name: Build plugin (required for e2e)
+        run: npm run build
 
       - name: Install xvfb for headless e2e
         run: sudo apt-get update && sudo apt-get install -y xvfb

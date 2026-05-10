@@ -25,7 +25,7 @@ Obsidian (host)
 
 Container (oas-sandbox)
   ├── Claude Code CLI + skills + hooks
-  ├── tmux, ttyd, Node 22, Python 3.12
+  ├── tmux, ttyd, Node 24, Python 3.12
   ├── Outbound firewall (allowlist)
   └── Workspace files (rw, committable)
 ```

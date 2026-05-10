@@ -6,7 +6,7 @@ This folder contains the Docker image definition and supporting scripts for the 
 
 | File | Purpose |
 |------|---------|
-| `Dockerfile` | Container image definition (Ubuntu 24.04, Node 22, Python 3.12, Claude Code, ttyd, firewall tools) |
+| `Dockerfile` | Container image definition (Ubuntu 24.04, Node 24, Python 3.12, Claude Code, ttyd, firewall tools) |
 | `docker-compose.yml` | Service, mounts, resource limits, OAS naming |
 | `.env.example` | Environment template (copy to `.env` for standalone CLI use) |
 | `.dockerignore` | Excludes from the build context |
