@@ -117,7 +117,7 @@ After that, `npm run test:integration` will include the four Claude tests (`clau
 | Suite | Path | What's covered |
 |-------|------|----------------|
 | **Unit** | `src/__tests__/*.test.ts` | Input validation (write dir, private hosts, memory, CPUs, bind address, port, memory file name, path-prefix lists), WSL + Windows shell escaping (incl. `$`/backtick neutralisation), WSL path conversion, env var injection, `parseIsRunning` state machine, ttyd polling / URL construction, status bar state transitions, firewall status bar, timing-safe MCP auth, path traversal protection, every MCP tool handler |
-| **Integration** | `test/integration/*.test.ts` | Container health + `verify.sh`, vault ro/rw mounts + mount isolation, narrow sudo scope + `SUDO_PASSWORD` unset after drop-privileges, MCP env var injection, MCP HTTP auth / routing / CORS, Docker resource naming (`oas-test` prefix), firewall enable / allowlist / disable, tmux session create + list + persist, ttyd port remapping, Claude Code auth + `claude -p` execution + memory MCP tool use + filesystem `Read` tool |
+| **Integration** | `test/integration/*.test.ts` | Container health + `verify.sh`, vault ro/rw mounts + mount isolation, narrow sudo scope + `OAS_SUDO_PASSWORD` unset after drop-privileges, MCP env var injection, MCP HTTP auth / routing / CORS, Docker resource naming (`oas-test` prefix), firewall enable / allowlist / disable, tmux session create + list + persist, ttyd port remapping, Claude Code auth + `claude -p` execution + memory MCP tool use + filesystem `Read` tool |
 | **E2E** | `test/e2e/specs/*.e2e.ts` | Plugin loads and is enabled, ribbon icon present, status bar renders, all commands registered, settings tabs render, MCP permission tiers visible with correct defaults, MCP token auto-generates and regenerates, numeric/text setting validation adds/removes `sandbox-input-error` class, bind address security warning toggles dynamically, per-setting "Requires restart" labels appear on restart-needing settings only |
 
 ## What's NOT covered (and why)
@@ -292,7 +292,7 @@ These span process boundaries (full Obsidian close, not `browser.reloadObsidian`
 
 **Actions:** Start the container.
 
-**Expected:** Inside the container, `$PKM_VAULT_PATH` resolves to `/mnt/c/vault`; no WSL terminal window flashes during start/stop.
+**Expected:** Inside the container, `$OAS_VAULT_PATH` resolves to `/mnt/c/vault`; no WSL terminal window flashes during start/stop.
 
 #### Rancher Desktop: path with spaces
 
@@ -689,7 +689,7 @@ Also check that toggling MCP off via **Sandbox: Toggle MCP Server** while a sess
 
 **Setup:** `agentOutputNotify` = `new`. Container running.
 
-**Actions:** Within a ~3 s window, have Claude create ~5 files under `$PKM_WRITE_DIR` across two separate invocations (so the second batch lands inside the 5 s rate-limit window after the first notice).
+**Actions:** Within a ~3 s window, have Claude create ~5 files under `$OAS_VAULT_WRITE_DIR` across two separate invocations (so the second batch lands inside the 5 s rate-limit window after the first notice).
 
 **Expected:**
 - First batch surfaces a Notice ~2 s after the last create (e.g. "Agent output: 3 created").

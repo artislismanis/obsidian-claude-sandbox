@@ -89,7 +89,7 @@ print_mount() {
 }
 print_mount "/workspace"                                        "Claude workspace (host: workspace/)"
 print_mount "/workspace/vault"                                  "Obsidian vault (read-only)"
-print_mount "/workspace/vault/${PKM_WRITE_DIR:-agent-workspace}" "Vault writable subfolder"
+print_mount "/workspace/vault/${OAS_VAULT_WRITE_DIR:-agent-workspace}" "Vault writable subfolder"
 print_mount "/workspace/vault/.oas"                             "Vault infrastructure (memory, etc.)"
 print_mount "/home/claude/.claude"                              "Claude Code config (named volume)"
 print_mount "/home/claude/.shell-history"                       "Shell history (named volume)"
@@ -109,7 +109,7 @@ write_check() {
     printf "  %-48s %s\n" "$dir" "[MISSING — dir does not exist]"
   fi
 }
-write_check "/workspace/vault/${PKM_WRITE_DIR:-agent-workspace}"
+write_check "/workspace/vault/${OAS_VAULT_WRITE_DIR:-agent-workspace}"
 write_check "/workspace/vault/.oas"
 
 echo ""
@@ -124,13 +124,13 @@ echo ""
 echo "── Container env ──────────────────────────────────"
 # Only env vars that docker-compose.yml actually injects into the
 # container (see container/docker-compose.yml `environment:` block).
-# Host-side configuration knobs like PKM_VAULT_PATH, CONTAINER_MEMORY,
-# TTYD_BIND, etc. are consumed by `docker compose` on the host at
+# Host-side configuration knobs like OAS_VAULT_PATH, OAS_CONTAINER_MEMORY,
+# OAS_TTYD_BIND, etc. are consumed by `docker compose` on the host at
 # launch time to build mount sources, resource limits, and port
 # bindings — they're not exposed inside the container. Resource limits
 # are surfaced in the next section from cgroup; mount-source paths are
 # visible above in Mount points.
-for var in TERM TTYD_PORT PKM_WRITE_DIR MEMORY_FILE_NAME ALLOWED_PRIVATE_HOSTS OAS_ALLOWED_DOMAINS MEMORY_FILE_PATH; do
+for var in TERM OAS_TTYD_PORT OAS_VAULT_WRITE_DIR OAS_MEMORY_FILE_NAME OAS_ALLOWED_PRIVATE_HOSTS OAS_ALLOWED_DOMAINS MEMORY_FILE_PATH; do
   printf "  %-24s = %s\n" "$var" "${!var:-<unset>}"
 done
 
@@ -222,11 +222,11 @@ if [ -d "/workspace/vault" ] && [ "$(ls -A /workspace/vault 2>/dev/null)" ]; the
   echo "  Vault: mounted at /workspace/vault (${VAULT_ITEMS} items)"
 else
   echo "  WARNING: No vault content at /workspace/vault"
-  echo "    Set PKM_VAULT_PATH in container/.env and restart the container"
+  echo "    Set OAS_VAULT_PATH in container/.env and restart the container"
 fi
 
-if curl -sf "http://localhost:${TTYD_PORT:-7681}/" > /dev/null 2>&1; then
-  echo "  ttyd:  listening on port ${TTYD_PORT:-7681}"
+if curl -sf "http://localhost:${OAS_TTYD_PORT:-7681}/" > /dev/null 2>&1; then
+  echo "  ttyd:  listening on port ${OAS_TTYD_PORT:-7681}"
 else
   echo "  ttyd:  not yet listening (normal during build or exec)"
 fi

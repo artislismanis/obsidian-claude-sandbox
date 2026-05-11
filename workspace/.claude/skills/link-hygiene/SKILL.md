@@ -16,7 +16,7 @@ Periodic vault cleanup: broken links, orphans, and missed cross-references. Alwa
 
 ## Constraints
 
-- Writes to the vault outside `$PKM_WRITE_DIR` require the `writeReviewed` tier; each change will pop a diff modal. If the tier isn't enabled, suggest changes only.
+- Writes to the vault outside `$OAS_VAULT_WRITE_DIR` require the `writeReviewed` tier; each change will pop a diff modal. If the tier isn't enabled, suggest changes only.
 - Never mass-delete. Orphan status is a hint, not a verdict.
 - Show the user a summary (counts + sample) before applying any batch change.
 
@@ -34,7 +34,7 @@ Summarize counts and show the user before acting.
 
 For each unresolved link, decide:
 - **Typo?** Use `vault_search_replace` on the source file with the corrected wikilink.
-- **Missing note the user wants?** Create it via `vault_create` (inside `$PKM_WRITE_DIR`) with a stub (`# Title\n\n(placeholder)`), then the wikilink resolves.
+- **Missing note the user wants?** Create it via `vault_create` (inside `$OAS_VAULT_WRITE_DIR`) with a stub (`# Title\n\n(placeholder)`), then the wikilink resolves.
 - **Stale reference?** Use `vault_search_replace` to remove the wikilink.
 
 Never decide silently — present the user with `{source, broken_link, proposed_action}` and wait for confirmation on ambiguous cases.

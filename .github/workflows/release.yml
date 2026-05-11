@@ -5,6 +5,10 @@ on:
     tags:
       - "[0-9]+.[0-9]+.[0-9]+"
 
+# Top-level least-privilege fail-safe. The release job overrides with
+# the perms it actually needs (contents: write for the GH Release).
+permissions: {}
+
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -15,6 +19,12 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+      # SLSA build-provenance attestation (the Sigstore-rooted alternative
+      # to PGP-signing SHA256SUMS). Lets users verify with
+      # `gh attestation verify` that the artifact was produced by this
+      # workflow run, not tampered after the fact.
+      id-token: write
+      attestations: write
     defaults:
       run:
         working-directory: plugin
@@ -70,8 +80,20 @@ jobs:
           sha256sum main.js manifest.json styles.css > SHA256SUMS
           cat SHA256SUMS
 
+      # Sign the three release artifacts (not SHA256SUMS — the attestation
+      # IS the signed root of trust). Verify with:
+      #   gh attestation verify <file> --repo <owner>/<repo>
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: |
+            plugin/dist/main.js
+            plugin/dist/manifest.json
+            plugin/dist/styles.css
+
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.4.0
+        # SHA is v2.6.2 — keep comment in sync when bumping.
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
         with:
           name: ${{ github.ref_name }}
           draft: false

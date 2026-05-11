@@ -5,7 +5,7 @@ The sandbox balances "let Claude actually do useful things" against "don't let C
 ## Layer 1 — Filesystem isolation
 
 - The vault is mounted **read-only** at `/workspace/vault/` inside the container.
-- Exactly one subdirectory — `$PKM_WRITE_DIR` (default `agent-workspace/`) — is mounted **read-write**. `.oas/` is also rw (memory + audit).
+- Exactly one subdirectory — `$OAS_VAULT_WRITE_DIR` (default `agent-workspace/`) — is mounted **read-write**. `.oas/` is also rw (memory + audit).
 - Writes to any other vault path fail with `EROFS` at the kernel level, regardless of what Claude or any agent running inside the container tries to do.
 - Everything under `workspace/` on the host is rw inside the container; it's explicitly Claude's domain.
 
@@ -28,7 +28,7 @@ The MCP server's tools are split into two kinds of tier:
 
 **Always-on (capabilities)** — enabled whenever MCP is on:
 - `read` — search, read, metadata, tags, links, backlinks, frontmatter.
-- `writeScoped` — create/modify within `$PKM_WRITE_DIR`.
+- `writeScoped` — create/modify within `$OAS_VAULT_WRITE_DIR`.
 - The always-on `agent_status_set` tool — activity signal (not file access; UI only). It is a single tool, not a tier of its own.
 
 **Gated (escalations)** — off by default; each opt-in grants access beyond filesystem:

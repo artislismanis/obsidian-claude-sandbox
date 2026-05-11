@@ -1,18 +1,23 @@
 name: plugin check
 
+# Runs on every PR and push to main — no `paths:` filter. Path filtering
+# was tempting because the unit tests are fast but e2e is ~25s, but a
+# path-filtered workflow can never be safely set as a required status
+# check (a PR that touches only docs would block forever waiting on a
+# status that never arrives). Keep the workflow unconditional and put
+# any per-file optimisation inside the job if needed later.
+
 on:
-  pull_request:
-    paths:
-      - "plugin/**"
-      - ".github/workflows/check.yml"
+  pull_request: {}
   push:
     branches: [main]
-    paths:
-      - "plugin/**"
-      - ".github/workflows/check.yml"
+  workflow_dispatch: {}
+
+# Top-level least-privilege fail-safe. Jobs override as needed.
+permissions: {}
 
 concurrency:
-  group: check-${{ github.workflow }}-${{ github.ref }}
+  group: check-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -43,7 +48,8 @@ jobs:
       # Fine-grained per-Obsidian-version invalidation isn't worth the
       # complexity — a stale cache just means one extra download.
       - name: Cache Obsidian + chromedriver downloads
-        uses: actions/cache@v4
+        # SHA-pinned to v5.0.5 — runs on Node 24, matching setup-node above.
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: plugin/.obsidian-cache
           key: ${{ runner.os }}-obsidian-${{ hashFiles('plugin/wdio.conf.mts', 'plugin/package-lock.json') }}

@@ -4,18 +4,18 @@ set -euo pipefail
 # Entrypoint runs as root so we can (optionally) update the claude user's
 # password for interactive sudo, then drop to the claude user for ttyd.
 #
-# SUDO_PASSWORD is a human-intent gate for narrow sudo (apt-get only).
+# OAS_SUDO_PASSWORD is a human-intent gate for narrow sudo (apt-get only).
 # If unset or empty, the claude user password stays unset and `sudo`
 # fails at the password prompt — i.e. sudo is effectively disabled.
 # See container/.env.example and README.md "Development" section.
 
-if [[ -n "${SUDO_PASSWORD:-}" ]]; then
-    echo "claude:${SUDO_PASSWORD}" | chpasswd
+if [[ -n "${OAS_SUDO_PASSWORD:-}" ]]; then
+    echo "claude:${OAS_SUDO_PASSWORD}" | chpasswd
 fi
 
-# Unset before dropping privileges so SUDO_PASSWORD does not leak into
+# Unset before dropping privileges so OAS_SUDO_PASSWORD does not leak into
 # the child shell's environment (would otherwise be visible via `env`).
-unset SUDO_PASSWORD
+unset OAS_SUDO_PASSWORD
 
 # On WSL2 (Rancher Desktop, Docker Desktop WSL2 backend, raw Docker Engine in
 # WSL2), host.docker.internal is set to the Docker bridge gateway (172.17.0.1)
@@ -91,7 +91,7 @@ ensure_ownership() {
 ensure_ownership /home/claude/.claude
 ensure_ownership /home/claude/.shell-history
 # Vault RW overlays
-ensure_ownership "/workspace/vault/${PKM_WRITE_DIR:-agent-workspace}"
+ensure_ownership "/workspace/vault/${OAS_VAULT_WRITE_DIR:-agent-workspace}"
 ensure_ownership /workspace/vault/.oas
 
 # IPv4-only stance: docker-compose sets net.ipv6.conf.all.disable_ipv6=1, but
@@ -108,16 +108,16 @@ if [[ -r /proc/sys/net/ipv6/conf/all/disable_ipv6 ]]; then
 fi
 
 # Ensure memory file exists (MCP memory server expects it).
-memory_file="/workspace/vault/.oas/${MEMORY_FILE_NAME:-memory.json}"
+memory_file="/workspace/vault/.oas/${OAS_MEMORY_FILE_NAME:-memory.json}"
 if [[ ! -f "$memory_file" ]]; then
     install -o "${claude_uid}" -g "${claude_gid}" -m 644 /dev/null "$memory_file"
 fi
 
-# Drop to the claude user and run ttyd. TTYD_PORT falls through from
+# Drop to the claude user and run ttyd. OAS_TTYD_PORT falls through from
 # docker-compose.yml (defaults to 7681).
 #
 # -d 6 raises ttyd's log level from the default (notice) to info, so each
 # WebSocket open/close lands in `docker logs oas-sandbox` with timestamp
-# and remote addr. Override via TTYD_DEBUG (1=err … 7=debug) if you need
-# more detail; ttyd's WS ping interval defaults to 5s and is fine.
-exec gosu claude ttyd -W -d "${TTYD_DEBUG:-6}" -p "${TTYD_PORT:-7681}" /usr/local/bin/session.sh
+# and remote addr. Override via OAS_TTYD_DEBUG (1=err … 7=debug) if you
+# need more detail; ttyd's WS ping interval defaults to 5s and is fine.
+exec gosu claude ttyd -W -d "${OAS_TTYD_DEBUG:-6}" -p "${OAS_TTYD_PORT:-7681}" /usr/local/bin/session.sh

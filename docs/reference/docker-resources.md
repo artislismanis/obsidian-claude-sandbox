@@ -35,12 +35,12 @@ Inspect: `docker volume ls | grep oas-`.
 | Host path | Container path | Mode |
 |---|---|---|
 | `workspace/` | `/workspace/` | rw |
-| `$PKM_VAULT_PATH` | `/workspace/vault/` | ro |
-| `$PKM_VAULT_PATH/$PKM_WRITE_DIR/` | `/workspace/vault/$PKM_WRITE_DIR/` | rw |
-| `$PKM_VAULT_PATH/.oas/` | `/workspace/vault/.oas/` | rw |
+| `$OAS_VAULT_PATH` | `/workspace/vault/` | ro |
+| `$OAS_VAULT_PATH/$OAS_VAULT_WRITE_DIR/` | `/workspace/vault/$OAS_VAULT_WRITE_DIR/` | rw |
+| `$OAS_VAULT_PATH/.oas/` | `/workspace/vault/.oas/` | rw |
 | `container/firewall-extras.txt` | `/etc/oas/firewall-extras.txt` | ro |
 
-The read-only vault + rw write-dir is the core security invariant: the agent can read the whole vault but only write inside `$PKM_WRITE_DIR` (unless the user grants `writeReviewed` or `writeVault` MCP tiers).
+The read-only vault + rw write-dir is the core security invariant: the agent can read the whole vault but only write inside `$OAS_VAULT_WRITE_DIR` (unless the user grants `writeReviewed` or `writeVault` MCP tiers).
 
 ## Ports
 
@@ -57,11 +57,12 @@ The MCP HTTP server runs **on the host** inside the Obsidian plugin — it is no
 
 Injected into the container by the plugin at compose-up time (see `container/docker-compose.yml`):
 
-- `PKM_WRITE_DIR`, `MEMORY_FILE_NAME`, `MEMORY_FILE_PATH`
-- `ALLOWED_PRIVATE_HOSTS`, `OAS_ALLOWED_DOMAINS`
+- `OAS_VAULT_WRITE_DIR`, `OAS_MEMORY_FILE_NAME`
+- `OAS_ALLOWED_PRIVATE_HOSTS`, `OAS_ALLOWED_DOMAINS`
 - `OAS_MCP_TOKEN`, `OAS_MCP_PORT`, `OAS_HOST_IP`
-- `TTYD_PORT`, `SUDO_PASSWORD`, `TERM`
+- `OAS_TTYD_PORT`, `OAS_SUDO_PASSWORD`, `TERM`
+- `MEMORY_FILE_PATH` — the env var the [memory MCP server](https://github.com/modelcontextprotocol/servers/tree/main/src/memory) reads. Not prefixed (external contract).
 
-`PKM_VAULT_PATH` is consumed only on the host side as the bind-mount source — it is not exposed inside the container. Use `verify.sh` from inside the container to see the full set with values.
+`OAS_VAULT_PATH` is consumed only on the host side as the bind-mount source — it is not exposed inside the container. Use `verify.sh` from inside the container to see the full set with values.
 
 The full list with values (inside a running container) comes from `verify.sh`.

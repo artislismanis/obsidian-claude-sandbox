@@ -18,9 +18,13 @@ on:
     # Weekly external-link sweep — catches upstream URL changes between
     # commits.
     - cron: "0 6 * * 1"
+  workflow_dispatch: {}
+
+# Top-level least-privilege fail-safe.
+permissions: {}
 
 concurrency:
-  group: links-${{ github.workflow }}-${{ github.ref }}
+  group: links-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -32,16 +36,22 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: lychee
-        uses: lycheeverse/lychee-action@v2
+        # SHA-pinned (third-party action).
+        uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411  # v2.8.0
         with:
-          # Skip the noisy categories: rate-limited public APIs and
-          # GitHub's own anchor-only links (lychee handles those poorly).
+          # Only exclude api.github.com (rate-limited) and a couple of
+          # hosts that consistently fail lychee's anchor checks. Repo
+          # links under github.com/<owner>/<repo> remain checkable so we
+          # catch the typical doc-drift bug. Drop 429 from --accept — a
+          # 429 means "couldn't tell", which silently passes broken
+          # links if rate limits hit.
           args: >-
             --no-progress
-            --max-concurrency 8
-            --exclude '^https?://(api\.)?github\.com/'
+            --max-concurrency 4
+            --exclude '^https?://api\.github\.com/'
+            --exclude '^https?://github\.com/[^/]+/[^/]+/(issues|pull|discussions|commit)/'
             --exclude '^https?://anthropic\.com/'
             --exclude 'https?://claude\.ai/'
-            --accept 200,206,429
+            --accept 200,206
             **/*.md
           fail: true

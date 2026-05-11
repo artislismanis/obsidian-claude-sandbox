@@ -21,7 +21,7 @@ Obsidian (host)
   │    ├── Review modals, status bar, skills
   │    └── docker compose up/down, firewall ctl
   └── Vault files
-        └── ro mount in container, except $PKM_WRITE_DIR (rw)
+        └── ro mount in container, except $OAS_VAULT_WRITE_DIR (rw)
 
 Container (oas-sandbox)
   ├── Claude Code CLI + skills + hooks
@@ -111,7 +111,7 @@ The pre-commit hook runs `lint-staged` on staged files. CI runs `check` on every
 
 ### Trust model
 
-The `claude` user inside the container has narrow sudo for `apt-get` / `apt` only, gated by a password set at container start from `SUDO_PASSWORD` (sourced from the plugin's "Sudo password" setting or `container/.env`). `entrypoint.sh` unsets the variable before dropping privileges, so the password is never visible inside session shells. The narrow sudo is a *human-intent gate* — it forces deliberate, password-typed installs in interactive sessions while preventing the agent from making unattended system changes. If a tool proves useful, promote it to `container/Dockerfile` in a reviewable PR rather than re-installing on every restart.
+The `claude` user inside the container has narrow sudo for `apt-get` / `apt` only, gated by a password set at container start from `OAS_SUDO_PASSWORD` (sourced from the plugin's "Sudo password" setting or `container/.env`). `entrypoint.sh` unsets the variable before dropping privileges, so the password is never visible inside session shells. The narrow sudo is a *human-intent gate* — it forces deliberate, password-typed installs in interactive sessions while preventing the agent from making unattended system changes. If a tool proves useful, promote it to `container/Dockerfile` in a reviewable PR rather than re-installing on every restart.
 
 `container/` is **not mounted into the container** — Dockerfile, compose config, scripts, and `firewall-extras.txt` are invisible from inside, so an agent session cannot mutate the build contract. The single exception is `verify.sh`, which is COPY'd into the image so Claude can introspect runtime state.
 

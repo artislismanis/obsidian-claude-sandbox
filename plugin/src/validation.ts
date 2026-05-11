@@ -24,6 +24,20 @@ export function isValidWriteDir(dir: string): boolean {
 	return !pathHasParentSegment(dir) && !dir.startsWith("/") && dir !== ".";
 }
 
+const VALID_SESSION_NAME = /^[\w.-]+$/;
+
+/**
+ * Validate a tmux session name: letters, digits, underscore, dot, hyphen
+ * only. Used both for direct tmux exec (kill/rename) and for the initial
+ * `session <name>` command injected over the ttyd WebSocket on attach —
+ * rejecting shell metacharacters before injection is the only thing
+ * preventing a hand-edited persisted view-state from re-executing a
+ * malicious name on every Obsidian start.
+ */
+export function isValidSessionName(name: string): boolean {
+	return VALID_SESSION_NAME.test(name);
+}
+
 /**
  * Validate a memory-file name: bare filename only (no slashes, no path
  * traversal, no leading dot to avoid hidden files). Empty rejected.

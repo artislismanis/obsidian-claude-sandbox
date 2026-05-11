@@ -16,16 +16,14 @@ export default tseslint.config(
 			},
 		},
 		rules: {
-			// Floating promises silently swallow errors. Set to "warn" rather
-			// than "error" for the initial rollout — flips to "error" once any
-			// remaining unmarked sites are either awaited or explicitly voided.
-			"@typescript-eslint/no-floating-promises": "warn",
-			// Catches the related class of bug where an async fn is passed
-			// where a sync callback is expected (e.g. setTimeout(asyncFn))
-			// and the returned promise floats. `checksVoidReturn: false`
-			// keeps it permissive for DOM event handlers (which return void)
-			// — we only want the genuine async-misuse cases flagged.
-			"@typescript-eslint/no-misused-promises": ["warn", { checksVoidReturn: false }],
+			// Floating promises silently swallow errors. Every async call site
+			// must be awaited, .catch()'d, or explicitly `void`'d.
+			"@typescript-eslint/no-floating-promises": "error",
+			// Async fn passed where a sync callback is expected (e.g.
+			// setTimeout(asyncFn)) — the returned promise floats.
+			// `checksVoidReturn: false` keeps it permissive for DOM event
+			// handlers (which return void) — only flag genuine async misuse.
+			"@typescript-eslint/no-misused-promises": ["error", { checksVoidReturn: false }],
 		},
 	},
 	{

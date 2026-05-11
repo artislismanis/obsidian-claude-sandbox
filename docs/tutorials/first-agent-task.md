@@ -49,13 +49,13 @@ Observe the `⚙ Session: work` / idle prefix on your terminal tab as Claude tra
 
 > Based on those two notes, create a summary at `agent-workspace/consensus-summary.md` linking to both.
 
-Claude uses `vault_create(path="agent-workspace/consensus-summary.md", content=...)`. The path is inside `$PKM_WRITE_DIR`, so it succeeds without any review modal — that's the `writeScoped` tier doing its job.
+Claude uses `vault_create(path="agent-workspace/consensus-summary.md", content=...)`. The path is inside `$OAS_VAULT_WRITE_DIR`, so it succeeds without any review modal — that's the `writeScoped` tier doing its job.
 
 Check the file appeared. Obsidian also shows a debounced, rate-limited Notice summarising recent agent output (e.g. `Agent output: 1 created`). The notification rolls multiple writes inside the rate-limit window into one Notice rather than firing per-file — see the "Notify on agent output" setting to tune.
 
 ## Task 3: enable reviewed writes
 
-So far Claude hasn't been able to touch the original `notes/raft.md` or `notes/paxos.md` — they're read-only at the filesystem level outside `$PKM_WRITE_DIR`. To allow edits there with your approval:
+So far Claude hasn't been able to touch the original `notes/raft.md` or `notes/paxos.md` — they're read-only at the filesystem level outside `$OAS_VAULT_WRITE_DIR`. To allow edits there with your approval:
 
 **Settings → Agent Sandbox → MCP → Escalations → Write (reviewed)** → on. Restart the MCP server (prompt appears).
 

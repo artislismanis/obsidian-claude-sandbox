@@ -38,7 +38,7 @@ UI labels in the table below match exactly what the plugin renders, so a setting
 | Auto-enable firewall on start | off | Invokes `init-firewall.sh` after `docker compose up -d`. |
 | Allowed private hosts | `""` | Comma-separated IPs/CIDRs allowed through the firewall (e.g. `192.168.1.100, 10.0.0.0/8`). The Docker bridge gateway is always allowed regardless of this setting (otherwise the container couldn't reach `host.docker.internal`). *(requires restart)* |
 | Additional firewall domains | `""` | Comma-separated domain names. Surfaces with `[plugin]` tag in `--list-sources`. *(requires restart)* |
-| Sudo password | `""` | For the narrow apt-get/apt sudoers entry inside the container. Empty (default) = sudo disabled — set explicitly to enable test-installs in interactive sessions. When set, this plugin setting overrides the `SUDO_PASSWORD` value in `container/.env` (the plugin passes its setting through as `SUDO_PASSWORD` on `docker compose up`). *(requires restart)* |
+| Sudo password | `""` | For the narrow apt-get/apt sudoers entry inside the container. Empty (default) = sudo disabled — set explicitly to enable test-installs in interactive sessions. When set, this plugin setting overrides the `OAS_SUDO_PASSWORD` value in `container/.env` (the plugin passes its setting through as `OAS_SUDO_PASSWORD` on `docker compose up`). *(requires restart)* |
 | Log level | `info` | Levelled console logging from the plugin (`error` / `warn` / `info` / `debug`). Higher = more chatter in the developer console. |
 
 ## MCP

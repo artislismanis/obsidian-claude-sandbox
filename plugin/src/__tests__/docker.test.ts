@@ -48,7 +48,7 @@ describe("DockerManager", () => {
 
 	describe("parseIsRunning", () => {
 		it("returns true when output contains running state", () => {
-			const output = '{"Name":"pkm-1","State":"running","Status":"Up 2 minutes"}';
+			const output = '{"Name":"oas-sandbox-1","State":"running","Status":"Up 2 minutes"}';
 			expect(DockerManager.parseIsRunning(output)).toBe(true);
 		});
 
@@ -57,20 +57,21 @@ describe("DockerManager", () => {
 		});
 
 		it("returns false when container is exited", () => {
-			const output = '{"Name":"pkm-1","State":"exited","Status":"Exited (0) 2 minutes ago"}';
+			const output =
+				'{"Name":"oas-sandbox-1","State":"exited","Status":"Exited (0) 2 minutes ago"}';
 			expect(DockerManager.parseIsRunning(output)).toBe(false);
 		});
 
 		it("returns true when any service is running in multi-line output", () => {
 			const output = [
 				'{"Name":"db-1","State":"exited","Status":"Exited"}',
-				'{"Name":"pkm-1","State":"running","Status":"Up"}',
+				'{"Name":"oas-sandbox-1","State":"running","Status":"Up"}',
 			].join("\n");
 			expect(DockerManager.parseIsRunning(output)).toBe(true);
 		});
 
 		it("returns true for JSON-array form emitted by newer compose", () => {
-			const output = '[{"Name":"pkm-1","State":"running","Status":"Up"}]';
+			const output = '[{"Name":"oas-sandbox-1","State":"running","Status":"Up"}]';
 			expect(DockerManager.parseIsRunning(output)).toBe(true);
 		});
 

@@ -148,24 +148,24 @@ describe("buildWslCommand", () => {
 
 	it("includes env vars in the command", () => {
 		const cmd = buildWslCommand("/home/user/project", "Ubuntu", "docker compose up -d", {
-			PKM_VAULT_PATH: "/mnt/c/Users/foo/vault",
+			OAS_VAULT_PATH: "/mnt/c/Users/foo/vault",
 		});
-		expect(cmd).toContain("export PKM_VAULT_PATH='/mnt/c/Users/foo/vault'");
+		expect(cmd).toContain("export OAS_VAULT_PATH='/mnt/c/Users/foo/vault'");
 		expect(cmd).toContain("&& cd '/home/user/project'");
 	});
 
 	it("escapes single quotes in env var values", () => {
 		const cmd = buildWslCommand("/home/user/project", "Ubuntu", "docker compose up -d", {
-			PKM_VAULT_PATH: "/mnt/c/Users/it's me/vault",
+			OAS_VAULT_PATH: "/mnt/c/Users/it's me/vault",
 		});
-		expect(cmd).toContain("PKM_VAULT_PATH='/mnt/c/Users/it'\\\\''s me/vault'");
+		expect(cmd).toContain("OAS_VAULT_PATH='/mnt/c/Users/it'\\\\''s me/vault'");
 	});
 
 	it("handles env var values with spaces", () => {
 		const cmd = buildWslCommand("/home/user/project", "Ubuntu", "docker compose up -d", {
-			PKM_VAULT_PATH: "/mnt/c/Users/My User/vault",
+			OAS_VAULT_PATH: "/mnt/c/Users/My User/vault",
 		});
-		expect(cmd).toContain("PKM_VAULT_PATH='/mnt/c/Users/My User/vault'");
+		expect(cmd).toContain("OAS_VAULT_PATH='/mnt/c/Users/My User/vault'");
 	});
 
 	it("omits env prefix when no env vars provided", () => {
@@ -175,47 +175,47 @@ describe("buildWslCommand", () => {
 
 	it("includes multiple env vars in the command", () => {
 		const cmd = buildWslCommand("/home/user/project", "Ubuntu", "docker compose up -d", {
-			PKM_VAULT_PATH: "/mnt/c/Users/foo/vault",
-			PKM_WRITE_DIR: "agent-workspace",
+			OAS_VAULT_PATH: "/mnt/c/Users/foo/vault",
+			OAS_VAULT_WRITE_DIR: "agent-workspace",
 		});
-		expect(cmd).toContain("PKM_VAULT_PATH=");
-		expect(cmd).toContain("PKM_WRITE_DIR='agent-workspace'");
+		expect(cmd).toContain("OAS_VAULT_PATH=");
+		expect(cmd).toContain("OAS_VAULT_WRITE_DIR='agent-workspace'");
 	});
 
-	it("includes MEMORY_FILE_NAME env var", () => {
+	it("includes OAS_MEMORY_FILE_NAME env var", () => {
 		const cmd = buildWslCommand("/home/user/project", "Ubuntu", "docker compose up -d", {
-			MEMORY_FILE_NAME: "memory.json",
+			OAS_MEMORY_FILE_NAME: "memory.json",
 		});
-		expect(cmd).toContain("MEMORY_FILE_NAME='memory.json'");
+		expect(cmd).toContain("OAS_MEMORY_FILE_NAME='memory.json'");
 	});
 
-	it("includes SUDO_PASSWORD env var when provided", () => {
+	it("includes OAS_SUDO_PASSWORD env var when provided", () => {
 		const cmd = buildWslCommand("/home/user/project", "Ubuntu", "docker compose up -d", {
-			SUDO_PASSWORD: "sandbox",
+			OAS_SUDO_PASSWORD: "sandbox",
 		});
-		expect(cmd).toContain("SUDO_PASSWORD='sandbox'");
+		expect(cmd).toContain("OAS_SUDO_PASSWORD='sandbox'");
 	});
 
-	it("escapes single quotes in SUDO_PASSWORD values", () => {
+	it("escapes single quotes in OAS_SUDO_PASSWORD values", () => {
 		const cmd = buildWslCommand("/home/user/project", "Ubuntu", "docker compose up -d", {
-			SUDO_PASSWORD: "pa's'swd",
+			OAS_SUDO_PASSWORD: "pa's'swd",
 		});
-		expect(cmd).toContain("SUDO_PASSWORD='pa'\\\\''s'\\\\''swd'");
+		expect(cmd).toContain("OAS_SUDO_PASSWORD='pa'\\\\''s'\\\\''swd'");
 	});
 
 	it("escapes $ in env var values to prevent outer-shell expansion", () => {
 		const cmd = buildWslCommand("/home/user/project", "Ubuntu", "docker compose up -d", {
-			SUDO_PASSWORD: "pa$ssword",
+			OAS_SUDO_PASSWORD: "pa$ssword",
 		});
 		// Outer bash -c "..." would expand $s otherwise.
-		expect(cmd).toContain("SUDO_PASSWORD='pa\\$ssword'");
+		expect(cmd).toContain("OAS_SUDO_PASSWORD='pa\\$ssword'");
 	});
 
 	it("escapes backtick in env var values", () => {
 		const cmd = buildWslCommand("/home/user/project", "Ubuntu", "docker compose up -d", {
-			SUDO_PASSWORD: "pa`whoami`",
+			OAS_SUDO_PASSWORD: "pa`whoami`",
 		});
-		expect(cmd).toContain("SUDO_PASSWORD='pa\\`whoami\\`'");
+		expect(cmd).toContain("OAS_SUDO_PASSWORD='pa\\`whoami\\`'");
 	});
 
 	it("escapes $ in path to prevent outer-shell expansion", () => {
@@ -233,9 +233,9 @@ describe("buildLocalCommand", () => {
 
 	it("includes env vars", () => {
 		const cmd = buildLocalCommand("/opt/project", "docker compose up -d", {
-			PKM_VAULT_PATH: "/home/user/vault",
+			OAS_VAULT_PATH: "/home/user/vault",
 		});
-		expect(cmd).toContain("export PKM_VAULT_PATH='/home/user/vault'");
+		expect(cmd).toContain("export OAS_VAULT_PATH='/home/user/vault'");
 		expect(cmd).toContain("&& cd '/opt/project'");
 	});
 
@@ -246,9 +246,9 @@ describe("buildLocalCommand", () => {
 
 	it("escapes $ in env var values to prevent outer-shell expansion", () => {
 		const cmd = buildLocalCommand("/opt/project", "docker compose up -d", {
-			SUDO_PASSWORD: "pa$ssword",
+			OAS_SUDO_PASSWORD: "pa$ssword",
 		});
-		expect(cmd).toContain("SUDO_PASSWORD='pa\\$ssword'");
+		expect(cmd).toContain("OAS_SUDO_PASSWORD='pa\\$ssword'");
 	});
 
 	it("omits env prefix when no env vars provided", () => {
@@ -288,21 +288,21 @@ describe("buildLocalWindowsCommand", () => {
 
 	it("includes env vars using set command", () => {
 		const cmd = buildLocalWindowsCommand("C:\\project", "docker compose up -d", {
-			PKM_VAULT_PATH: "C:\\Users\\foo\\vault",
+			OAS_VAULT_PATH: "C:\\Users\\foo\\vault",
 		});
-		expect(cmd).toContain('set "PKM_VAULT_PATH=C:\\Users\\foo\\vault"');
+		expect(cmd).toContain('set "OAS_VAULT_PATH=C:\\Users\\foo\\vault"');
 		expect(cmd).toContain("&& cd /d");
 	});
 
 	it("handles multiple env vars", () => {
 		const cmd = buildLocalWindowsCommand("C:\\project", "docker compose up -d", {
-			PKM_VAULT_PATH: "C:\\Users\\foo\\vault",
-			PKM_WRITE_DIR: "agent-workspace",
-			TTYD_PORT: "7681",
+			OAS_VAULT_PATH: "C:\\Users\\foo\\vault",
+			OAS_VAULT_WRITE_DIR: "agent-workspace",
+			OAS_TTYD_PORT: "7681",
 		});
-		expect(cmd).toContain('set "PKM_VAULT_PATH=C:\\Users\\foo\\vault"');
-		expect(cmd).toContain('set "PKM_WRITE_DIR=agent-workspace"');
-		expect(cmd).toContain('set "TTYD_PORT=7681"');
+		expect(cmd).toContain('set "OAS_VAULT_PATH=C:\\Users\\foo\\vault"');
+		expect(cmd).toContain('set "OAS_VAULT_WRITE_DIR=agent-workspace"');
+		expect(cmd).toContain('set "OAS_TTYD_PORT=7681"');
 		expect(cmd).toContain(" && cd /d ");
 	});
 

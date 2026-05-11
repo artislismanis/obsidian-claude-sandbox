@@ -10,6 +10,12 @@ updates:
     commit-message:
       prefix: "ci"
       include: scope
+    # Wait before opening a PR on a fresh release — buys time for the
+    # community to spot a compromised action republish (cf. tj-actions /
+    # changed-files, July 2025). Patches still flow promptly.
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
 
   - package-ecosystem: npm
     directory: "/plugin"
@@ -23,39 +29,78 @@ updates:
       prefix: "deps"
       include: scope
     open-pull-requests-limit: 10
+    # Same rationale as the github-actions cooldown above. npm has a
+    # measurable rate of "supply-chain"-class incidents (eslint-config-
+    # prettier 2024, chalk 2024); a 3-day patch / 7-day major delay lets
+    # upstream yank or detect before we auto-merge.
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
     # Group related ecosystems into single PRs so reviewers see one
     # coherent bump set instead of N separate PRs that all touch the
     # lockfile. Patterns are evaluated in order; first match wins.
+    #
+    # `update-types: [minor, patch]` on each named group keeps major
+    # bumps as separate PRs — a major usually has migration notes the
+    # reviewer should read separately from a routine patch sweep.
     groups:
       typescript:
         patterns:
           - "typescript"
           - "@typescript-eslint/*"
           - "tslib"
+        update-types:
+          - "minor"
+          - "patch"
       eslint:
         patterns:
           - "eslint"
           - "eslint-*"
           - "@eslint/*"
           - "prettier"
+        update-types:
+          - "minor"
+          - "patch"
       vitest:
         patterns:
           - "vitest"
           - "@vitest/*"
           - "@vitest-*"
+        update-types:
+          - "minor"
+          - "patch"
       wdio:
         patterns:
           - "@wdio/*"
           - "webdriverio"
           - "wdio-*"
+        update-types:
+          - "minor"
+          - "patch"
       mcp:
         patterns:
           - "@modelcontextprotocol/*"
+        update-types:
+          - "minor"
+          - "patch"
       obsidian:
         patterns:
           - "obsidian"
           - "@codemirror/*"
           - "@lezer/*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Catch-all for ungrouped deps (esbuild, husky, lint-staged, mocha,
+      # tsx, zod, @xterm/*, builtin-modules, etc.). Without this, each
+      # opens its own PR and reviewer fatigue kicks in. Place last so
+      # named groups still match first.
+      other:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
   # Watch the Dockerfile base image and any FROM pins for upstream tag bumps.
   - package-ecosystem: docker
@@ -68,3 +113,6 @@ updates:
     commit-message:
       prefix: "container"
       include: scope
+    cooldown:
+      default-days: 3
+      semver-major-days: 14

@@ -1,24 +1,33 @@
 name: lint infra
 
 # Static checks for the parts that the plugin's eslint/tsc don't cover:
-# shell scripts in container/, the Dockerfile itself, and the GitHub
-# Actions workflows. Bugs in these files are security-relevant (firewall
-# rules, entrypoint privilege drop, release flow) and the plugin's CI
-# would never catch them.
+# shell scripts in container/ and workspace/.claude/, the Dockerfile itself,
+# and the GitHub Actions workflows. Bugs in these files are security-relevant
+# (firewall rules, entrypoint privilege drop, release flow) and the plugin's
+# CI would never catch them.
 
 on:
   pull_request:
     paths:
       - "container/**"
+      - "workspace/.claude/hooks/**"
+      - "workspace/.claude/scripts/**"
       - ".github/workflows/**"
   push:
     branches: [main]
     paths:
       - "container/**"
+      - "workspace/.claude/hooks/**"
+      - "workspace/.claude/scripts/**"
       - ".github/workflows/**"
+  workflow_dispatch: {}
+
+# Top-level least-privilege fail-safe — any future job without an explicit
+# permissions block inherits this rather than the repo default.
+permissions: {}
 
 concurrency:
-  group: lint-infra-${{ github.workflow }}-${{ github.ref }}
+  group: lint-infra-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -45,7 +54,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: hadolint
-        uses: hadolint/hadolint-action@v3.1.0
+        # SHA-pinned for supply-chain integrity (third-party action).
+        uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf  # v3.1.0
         with:
           dockerfile: container/Dockerfile
           config: container/.hadolint.yaml
@@ -61,7 +71,17 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: actionlint
+        # Pinned release + SHA256 verification. Replaces the previous
+        # `curl | bash` install of actionlint's download script from a
+        # moving `main` branch, which had no checksum and was a
+        # supply-chain risk. When bumping ACTIONLINT_VERSION, recompute
+        # the SHA256 from the release's asset digest.
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
         run: |
-          curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash \
-            | bash
+          curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            -o actionlint.tar.gz
+          echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum -c -
+          tar xzf actionlint.tar.gz actionlint
           ./actionlint -color
