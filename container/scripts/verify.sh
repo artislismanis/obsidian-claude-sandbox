@@ -20,14 +20,29 @@ set -uo pipefail
 
 # Counter fed by tool_version / tool_present; checked at exit.
 MISSING_TOOLS=0
+# Counter fed by tool_version when an optional minimum-major arg is given
+# and the installed major is older. A version regression is just as
+# user-impacting as a missing tool (MCP SDKs assume Node 24+, jq 1.7
+# behaves differently from 1.6, etc.) — surface it loudly.
+TOOL_VERSION_REGRESSIONS=0
+
+# Parse the first integer component from a version string. "v24.5.0" → 24,
+# "1.7.1-rc1" → 1, "jq-1.7.1" → 1. Returns empty if no digit found.
+extract_major() {
+  echo "$1" | grep -oE '[0-9]+' | head -1
+}
 
 # Print a "Label:   <first-line-of version output>" row. If the binary
-# isn't on PATH, prints "not found" and increments MISSING_TOOLS.
-# Optional third arg overrides the default --version flag (e.g. "-V").
+# isn't on PATH, prints "not found" and increments MISSING_TOOLS. Optional
+# third arg overrides the default --version flag (e.g. "-V"). Optional
+# fourth arg is the minimum major version: when set, a lower installed
+# major is flagged with "(below floor: N)" and increments
+# TOOL_VERSION_REGRESSIONS so verify.sh exits non-zero on regression.
 tool_version() {
   local label="$1"
   local binary="$2"
   local flag="${3:---version}"
+  local min_major="${4:-}"
   if ! command -v "$binary" >/dev/null 2>&1; then
     printf "%-9s%s\n" "${label}:" "not found"
     MISSING_TOOLS=$((MISSING_TOOLS + 1))
@@ -35,7 +50,16 @@ tool_version() {
   fi
   local output
   output=$("$binary" "$flag" 2>&1 | head -1)
-  printf "%-9s%s\n" "${label}:" "${output:-(empty)}"
+  local suffix=""
+  if [ -n "$min_major" ]; then
+    local installed_major
+    installed_major=$(extract_major "$output")
+    if [ -n "$installed_major" ] && [ "$installed_major" -lt "$min_major" ]; then
+      suffix=" (below floor: ${min_major})"
+      TOOL_VERSION_REGRESSIONS=$((TOOL_VERSION_REGRESSIONS + 1))
+    fi
+  fi
+  printf "%-9s%s%s\n" "${label}:" "${output:-(empty)}" "${suffix}"
 }
 
 # Print a "Label:   installed" row if the binary exists, else "not found".
@@ -55,7 +79,11 @@ echo "=== Agent Sandbox — Environment Verification ==="
 
 echo ""
 echo "── Tool versions ──────────────────────────────────"
-tool_version "Node"    "node"
+# Floors track Dockerfile-pinned versions: Node 24 (LTS), Python 3.12.
+# A drift below the floor breaks Claude Code (Node 22-only APIs), uv
+# (Py 3.12+ syntax), and certain MCP SDK features. Bump alongside the
+# Dockerfile when raising the floor.
+tool_version "Node"    "node"    "--version" "24"
 tool_version "npm"     "npm"
 tool_version "git"     "git"
 tool_version "ttyd"    "ttyd"
@@ -68,7 +96,7 @@ tool_version "tmux"    "tmux" "-V"
 tool_version "rg"      "rg"
 tool_version "fd"      "fd"
 tool_version "uv"      "uv"
-tool_version "Python"  "python3"
+tool_version "Python"  "python3" "--version" "3"
 tool_version "gosu"    "gosu"
 tool_version "sudo"    "sudo"
 
@@ -225,7 +253,11 @@ else
   echo "    Set OAS_VAULT_PATH in container/.env and restart the container"
 fi
 
-if curl -sf "http://localhost:${OAS_TTYD_PORT:-7681}/" > /dev/null 2>&1; then
+# Probe ttyd with the same curl flags as Dockerfile HEALTHCHECK and
+# docker-compose.yml healthcheck so all three layers report the same liveness
+# signal. -L follows redirects (tolerates a future ttyd 301/302) and -S
+# surfaces errors for readable postmortem output.
+if curl -fsSL -o /dev/null "http://localhost:${OAS_TTYD_PORT:-7681}/" 2>/dev/null; then
   echo "  ttyd:  listening on port ${OAS_TTYD_PORT:-7681}"
 else
   echo "  ttyd:  not yet listening (normal during build or exec)"
@@ -237,6 +269,11 @@ echo "=== Done ==="
 if [ "$MISSING_TOOLS" -gt 0 ]; then
   echo "" >&2
   echo "⚠  ${MISSING_TOOLS} tool(s) reported 'not found' under Tool versions — see above." >&2
+  exit 1
+fi
+if [ "$TOOL_VERSION_REGRESSIONS" -gt 0 ]; then
+  echo "" >&2
+  echo "⚠  ${TOOL_VERSION_REGRESSIONS} tool(s) below their version floor — see (below floor: N) markers above." >&2
   exit 1
 fi
 exit 0

@@ -13,8 +13,15 @@ import {
 	type McpSession,
 } from "./helpers";
 
+// Mock the symbols imported by code-under-test. FileSystemAdapter is the
+// load-bearing one — obsidian-internals.ts does `adapter instanceof
+// FileSystemAdapter` to decide whether to read basePath, and without the
+// export every write-path tool throws on import. prepareFuzzySearch is used
+// by vault_suggest_links; both `prepare*` returns no-match-iterator stubs.
 vi.mock("obsidian", () => ({
 	prepareSimpleSearch: () => () => null,
+	prepareFuzzySearch: () => () => null,
+	FileSystemAdapter: class {},
 }));
 
 const SKIP = !isDockerAvailable() || !isImageBuilt();
@@ -95,6 +102,12 @@ describe.skipIf(SKIP)("MCP HTTP server (standalone, no Obsidian)", () => {
 				getFirstLinkpathDest: () => null,
 				resolvedLinks: {},
 				unresolvedLinks: {},
+				// VaultCache (mcp-cache.ts) wires a `resolved` listener via on()
+				// and unregisters via offref() — mock the trio so server.start
+				// doesn't TypeError when constructing the cache.
+				on: () => ({}),
+				off: () => {},
+				offref: () => {},
 			},
 			fileManager: {
 				renameFile: async () => {},
@@ -183,6 +196,11 @@ function makeMockApp() {
 			getFirstLinkpathDest: () => null,
 			resolvedLinks: {},
 			unresolvedLinks: {},
+			// VaultCache wires a `resolved` listener via on() and unregisters
+			// via offref() — mock the trio so server.start doesn't TypeError.
+			on: () => ({}),
+			off: () => {},
+			offref: () => {},
 		},
 		fileManager: {
 			renameFile: async () => {},
@@ -368,7 +386,12 @@ describe.skipIf(SKIP)("MCP tool invocation (HTTP end-to-end)", () => {
 			arguments: { path: "../escape.md", content: "evil" },
 		})) as { result: { content: { text: string }[]; isError: boolean } };
 		expect(res.result.isError).toBe(true);
-		expect(res.result.content[0].text).toContain("write directory");
+		// Two layers reject this path: the upfront `..`/leading-slash defence in
+		// the create handler fires first for `../escape.md`, so we see the
+		// path-shape message rather than the write-dir scope message. Either
+		// kind of rejection satisfies this test — we just care the agent can't
+		// escape the write directory.
+		expect(res.result.content[0].text).toMatch(/\.\.|write directory/);
 	});
 
 	it("vault_create succeeds for path inside write directory", async () => {

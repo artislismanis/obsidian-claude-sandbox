@@ -26,6 +26,7 @@ import { ObsidianMcpServer, generateToken } from "./mcp-server";
 import { reviewsRequired } from "./permission-tiers";
 import { ActivityUi, AgentOutputNotifier } from "./activity";
 import { showSessionCleanup, showSessionPicker } from "./session-ui";
+import { resetTemplaterSuppression } from "./templater-adapter";
 
 const TOOLTIP_STOPPED = "Container is not running\nClick for options";
 const HEALTH_POLL_INTERVAL = 30_000;
@@ -64,10 +65,13 @@ export default class AgentSandboxPlugin extends Plugin {
 
 	async onload() {
 		// Module-level state in terminal-view.ts (the ring buffer + instance
-		// counter) survives plugin disable/enable since Obsidian caches the
+		// counter) and templater-adapter.ts (the Templater hook-suppression
+		// refcount) survive plugin disable/enable since Obsidian caches the
 		// module. Reset on each load so postmortems don't include events from
-		// a previous lifecycle.
+		// a previous lifecycle, and so a previous unload mid-write doesn't
+		// leave Templater's trigger_on_file_creation pinned to false.
 		resetTerminalConnectionLog();
+		resetTemplaterSuppression();
 		await this.loadSettings();
 		this.addSettingTab(new AgentSandboxSettingTab(this.app, this));
 

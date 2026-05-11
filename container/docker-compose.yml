@@ -14,17 +14,38 @@ services:
         CLAUDE_UID: "${CLAUDE_UID:-1000}"
         CLAUDE_GID: "${CLAUDE_GID:-1000}"
     container_name: oas-sandbox
-    # Drop the full default cap set, then re-add only what we need:
-    # NET_ADMIN — iptables/ipset rules in init-firewall.sh
-    # NET_RAW   — required by iptables to open raw sockets when loading
-    #             the OUTPUT/filter chains; without it `iptables -A OUTPUT`
-    #             fails with "Permission denied (you must be root)" even
-    #             though uid 0 is in effect.
+    # Drop the full default cap set, then re-add only what we need.
+    # Network:
+    #   NET_ADMIN     — iptables/ipset rules in init-firewall.sh
+    #   NET_RAW       — required by iptables to open raw sockets when
+    #                   loading the OUTPUT/filter chains; without it
+    #                   `iptables -A OUTPUT` fails with "Permission
+    #                   denied (you must be root)" even though uid 0
+    #                   is in effect.
+    # Entrypoint needs these to fix bind-mount ownership on first start
+    # when the host's vault subdir UID doesn't match CLAUDE_UID — and to
+    # drop privileges from root to claude. Without them, root inside the
+    # container is powerless to chown/install/setuid:
+    #   CHOWN         — chown -R on vault subdirs; install -o on memory.json
+    #   FOWNER        — chmod fallback on non-Linux-native mounts
+    #   DAC_OVERRIDE  — write to bind-mount dirs the runtime UID doesn't own
+    #   SETUID/SETGID — gosu drop-to-claude + entrypoint `sudo -u "#uid"`
+    #                   write-check (NB: `no-new-privileges:true` blocks
+    #                   gain-of-privileges via setuid binaries; the syscall
+    #                   itself still needs SETUID/SETGID caps to fire from
+    #                   root, which is the legitimate priv-drop direction).
+    #   FSETID        — preserve setgid bit on dirs during chmod -R fallback
     cap_drop:
       - ALL
     cap_add:
       - NET_ADMIN
       - NET_RAW
+      - CHOWN
+      - FOWNER
+      - DAC_OVERRIDE
+      - SETUID
+      - SETGID
+      - FSETID
     # Defence in depth: prevent setuid/setgid binaries inside the container
     # from gaining privileges (e.g. via a future image bump that adds one).
     # Has no effect on the existing sudo+gosu flow since those run via the
@@ -80,6 +101,9 @@ services:
       - MEMORY_FILE_PATH=/workspace/vault/.oas/${OAS_MEMORY_FILE_NAME:-memory.json}
       - OAS_SUDO_PASSWORD=${OAS_SUDO_PASSWORD:-}
       - OAS_TTYD_PORT=${OAS_TTYD_PORT:-7681}
+      # ttyd verbosity (1=err … 7=debug). Read by entrypoint.sh when
+      # launching ttyd. Defaults to 6 (info) inside entrypoint when unset.
+      - OAS_TTYD_DEBUG=${OAS_TTYD_DEBUG:-}
       - OAS_MCP_TOKEN=${OAS_MCP_TOKEN:-}
       - OAS_MCP_PORT=${OAS_MCP_PORT:-28080}
       - OAS_HOST_IP=${OAS_HOST_IP:-}

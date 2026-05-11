@@ -37,6 +37,16 @@ let lastProbeResult = false;
 
 let sessionId = null;
 
+// Promise that resolves once the in-flight `initialize` request has produced
+// a sessionId. We need this because Claude Code emits `initialize` followed
+// immediately by `notifications/initialized` on consecutive stdin lines, and
+// since handleMessage runs without awaiting (so unrelated slow tool calls
+// don't block other requests), the notification's httpPost would otherwise
+// fire while sessionId is still null — losing the Mcp-Session-Id header that
+// the upstream server uses to route the notification to the right session.
+// Held only until the first initialize resolves.
+let pendingInitialize = null;
+
 function probePort() {
 	return new Promise((resolve) => {
 		const s = net.createConnection({ host: HOST, port: PORT });
@@ -202,7 +212,17 @@ async function handleMessage(msg) {
 	// them upstream (fire-and-forget) when the server is reachable —
 	// dropping them would prevent the upstream session from leaving init.
 	if (msg.id === undefined) {
-		if (available) httpPost(msg).catch(() => undefined);
+		if (available) {
+			// If an `initialize` is in flight, hold the notification until it
+			// resolves so sessionId is set before we POST. See pendingInitialize
+			// declaration above for the full rationale.
+			const pending = pendingInitialize;
+			if (pending) {
+				pending.then(() => httpPost(msg).catch(() => undefined));
+			} else {
+				httpPost(msg).catch(() => undefined);
+			}
+		}
 		return;
 	}
 
@@ -212,6 +232,17 @@ async function handleMessage(msg) {
 	}
 
 	const t0 = Date.now();
+	// Track in-flight initialize so concurrent notifications can wait for the
+	// sessionId. We resolve on first response regardless of outcome — even a
+	// failed initialize is "done" from the queuing perspective; pending
+	// notifications will see whatever sessionId got assigned (or null) and
+	// proceed (their httpPost catch swallows errors).
+	let initializeResolve;
+	if (msg.method === "initialize") {
+		pendingInitialize = new Promise((resolve) => {
+			initializeResolve = resolve;
+		});
+	}
 	try {
 		const responses = await httpPost(msg);
 		if (DEBUG) {
@@ -231,11 +262,26 @@ async function handleMessage(msg) {
 			id: msg.id,
 			error: { code: -32603, message: err.message || "Obsidian MCP server unavailable" },
 		});
+	} finally {
+		if (initializeResolve) {
+			// Release any notifications waiting on the initialize. Clear the
+			// module-level pending pointer too so subsequent notifications skip
+			// the wait. Done in finally so an error path still unblocks waiters.
+			pendingInitialize = null;
+			initializeResolve();
+		}
 	}
 }
 
 function main() {
 	const rl = readline.createInterface({ input: process.stdin, terminal: false });
+
+	// Track in-flight handler promises so we can drain on shutdown — a 100ms
+	// fixed wait was dropping mid-flight tool calls when Claude Code closed
+	// stdin during a session exit. Drain budget is HTTP_TIMEOUT_MS + 1s so we
+	// give every outstanding request a chance to finish before exit.
+	const inFlight = new Set();
+	const SHUTDOWN_DRAIN_MS = HTTP_TIMEOUT_MS + 1000;
 
 	// Dispatch messages without awaiting — a slow tool call no longer blocks
 	// other in-flight requests. handleMessage drives writes through the
@@ -245,7 +291,7 @@ function main() {
 		if (!trimmed) return;
 		let msg;
 		try { msg = JSON.parse(trimmed); } catch { return; }
-		handleMessage(msg).catch((err) => {
+		const p = handleMessage(msg).catch((err) => {
 			process.stderr.write(`obsidian-mcp-proxy: handler error: ${err.message}\n`);
 			// handleMessage's inner try/catch normally produces an error
 			// frame. This fallback covers the rare path where it throws
@@ -265,11 +311,19 @@ function main() {
 				}
 			}
 		});
+		inFlight.add(p);
+		p.finally(() => inFlight.delete(p));
 	});
 
 	rl.on("close", () => {
-		// stdin EOF — let in-flight handlers finish, then exit.
-		setTimeout(() => process.exit(0), 100);
+		// stdin EOF — drain in-flight handlers with a bounded budget so we
+		// don't abandon pending HTTP requests mid-flight (response would never
+		// reach Claude; upstream may still mutate vault state).
+		const deadline = Promise.race([
+			Promise.allSettled(Array.from(inFlight)),
+			new Promise((resolve) => setTimeout(resolve, SHUTDOWN_DRAIN_MS)),
+		]);
+		deadline.then(() => process.exit(0));
 	});
 }
 

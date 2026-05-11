@@ -164,8 +164,16 @@ if [ -n "${OAS_ALLOWED_DOMAINS:-}" ]; then
   done
 fi
 
-# Host-managed file (read-only mount, invisible to Claude)
-if [ -f "$EXTRAS_FILE" ]; then
+# Host-managed file (read-only mount, invisible to Claude). Defensive:
+# if the host deleted firewall-extras.txt before `docker compose up`,
+# Docker auto-creates the mount target as a *directory* (the bind source
+# doesn't exist, so Docker treats it as a folder), and a -f test silently
+# returns false — extras are dropped without any user-visible signal.
+# Flag the directory case so the operator notices, but still proceed so
+# the firewall comes up.
+if [ -d "$EXTRAS_FILE" ]; then
+  echo "init-firewall: WARNING: $EXTRAS_FILE is a directory (host file missing — Docker auto-created the mount target). File-tier extras skipped. Restore container/firewall-extras.txt on the host and 'docker compose down && up -d' to re-bind." >&2
+elif [ -f "$EXTRAS_FILE" ]; then
   while IFS= read -r line || [ -n "$line" ]; do
     # Strip comments and trim
     line="${line%%#*}"

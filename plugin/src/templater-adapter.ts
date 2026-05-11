@@ -131,6 +131,21 @@ export async function applyTemplaterFolderTemplate(app: App, file: TFile): Promi
  */
 let templaterSuppressDepth = 0;
 let templaterSuppressPrev: boolean | undefined;
+
+/**
+ * Reset the suppression counter on plugin load. The depth/prev state lives at
+ * module scope and survives across Obsidian's plugin enable/disable cycles
+ * (modules are cached). Without this, a plugin unload that races a mid-flight
+ * vault_create_with_template leaves `trigger_on_file_creation = false` on
+ * Templater's settings until next Obsidian restart — the user's hook is
+ * permanently disabled. main.ts calls this on every onload, parallel to
+ * resetTerminalConnectionLog().
+ */
+export function resetTemplaterSuppression(): void {
+	templaterSuppressDepth = 0;
+	templaterSuppressPrev = undefined;
+}
+
 export async function withTemplaterHookSuppressed<T>(app: App, fn: () => Promise<T>): Promise<T> {
 	const tp = getTemplaterPlugin(app);
 	if (!tp?.settings) return fn();

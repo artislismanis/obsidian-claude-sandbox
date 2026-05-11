@@ -12,7 +12,7 @@ Obsidian tabs can be tiled horizontally or vertically — right-click a tab → 
 
 ## Tracking activity
 
-With the `agent` tier on (default), each Claude Code session reports its state via the `notify-status.sh` hook. Each tab's title updates:
+Each Claude Code session reports its state via the `notify-status.sh` hook (always-on, not gated by a tier — see [security model](../explanation/security-model.md)). Each tab's title updates:
 
 - `Session: work` — idle
 - `⚙ Session: work` — Claude is working
@@ -34,4 +34,4 @@ Bind it to a hotkey for one-keystroke context switching: **Settings → Hotkeys*
 
 ## Detaching / reattaching without killing
 
-Inside a tmux-attached tab, press `Ctrl-\` to detach. The tab goes blank; you can close it. Next time you open that session name, you reattach to the same running process. (The container's `tmux.conf` rebinds the prefix to `Ctrl-\`; the default `Ctrl+B` prefix is unbound.)
+Inside a tmux-attached tab, press `Ctrl-\` to detach. The tab goes blank; you can close it. Next time you open that session name, you reattach to the same running process. (The container's `tmux.conf` unbinds the default `Ctrl+B` prefix entirely and binds `Ctrl-\` directly to `detach-client` — no prefix needed, just press `Ctrl-\`.)
