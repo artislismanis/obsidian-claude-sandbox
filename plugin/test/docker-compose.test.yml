@@ -1,11 +1,39 @@
 name: oas-test
 
+# Test compose mirrors prod (container/docker-compose.yml) security and
+# resource posture so integration tests catch regressions that would only
+# manifest in production. Differences from prod are minimal and explicit:
+#   - container_name + project name use the `oas-test` prefix so the test
+#     stack runs alongside a live `oas-sandbox` without colliding
+#   - ports bind a high port (17681) to avoid clashing with prod's 7681
+#   - volumes are scoped to oas-test-* so test state doesn't pollute the
+#     real `oas_oas-claude-config` volume
+#   - restart policy is "no" so failed tests don't loop the container
+#   - healthcheck interval is tighter (10s vs 30s) so tests don't wait long
+# Anything related to capabilities, sysctls, init, ulimits, pids, logging,
+# firewall-extras, security_opt is identical to prod by design.
+
 services:
     sandbox:
         image: oas-sandbox:latest
         container_name: oas-test-sandbox
+        cap_drop:
+            - ALL
         cap_add:
             - NET_ADMIN
+            - NET_RAW
+        security_opt:
+            - no-new-privileges:true
+        init: true
+        ulimits:
+            nofile:
+                soft: 4096
+                hard: 4096
+        logging:
+            driver: json-file
+            options:
+                max-size: "10m"
+                max-file: "3"
         ports:
             - "127.0.0.1:${TEST_HOST_TTYD_PORT:-17681}:7681"
         volumes:
@@ -13,11 +41,15 @@ services:
             - ${OAS_VAULT_PATH}:/workspace/vault:ro
             - ${OAS_VAULT_PATH}/${OAS_VAULT_WRITE_DIR:-agent-workspace}:/workspace/vault/${OAS_VAULT_WRITE_DIR:-agent-workspace}:rw
             - ${OAS_VAULT_PATH}/.oas:/workspace/vault/.oas:rw
+            # Same firewall-extras path mounted in prod, sourced from the
+            # container/ folder so test exercises the file-tier extras path.
+            - ../../container/firewall-extras.txt:/etc/oas/firewall-extras.txt:ro
             - oas-test-claude-config:/home/claude/.claude
             - oas-test-shell-history:/home/claude/.shell-history
         environment:
             - TERM=xterm-256color
             - OAS_TTYD_PORT=7681
+            - OAS_TTYD_DEBUG=${OAS_TTYD_DEBUG:-}
             - OAS_ALLOWED_PRIVATE_HOSTS=${OAS_ALLOWED_PRIVATE_HOSTS:-}
             - OAS_VAULT_WRITE_DIR=${OAS_VAULT_WRITE_DIR:-agent-workspace}
             - OAS_MEMORY_FILE_NAME=${OAS_MEMORY_FILE_NAME:-memory.json}
@@ -26,6 +58,8 @@ services:
             - OAS_SUDO_PASSWORD=${OAS_SUDO_PASSWORD:-}
             - OAS_MCP_TOKEN=${OAS_MCP_TOKEN:-}
             - OAS_MCP_PORT=${OAS_MCP_PORT:-28080}
+            - OAS_HOST_IP=${OAS_HOST_IP:-}
+            - OAS_ALLOWED_DOMAINS=${OAS_ALLOWED_DOMAINS:-}
         sysctls:
             - net.ipv6.conf.all.disable_ipv6=1
         extra_hosts:
@@ -35,10 +69,8 @@ services:
         healthcheck:
             test:
                 [
-                    "CMD",
-                    "bash",
-                    "-c",
-                    "curl -so /dev/null -w '%{http_code}' http://localhost:7681/ | grep -q '200'",
+                    "CMD-SHELL",
+                    "curl -fsSL -o /dev/null \"http://localhost:$$OAS_TTYD_PORT/\"",
                 ]
             interval: 10s
             timeout: 3s
@@ -50,6 +82,13 @@ services:
                 limits:
                     memory: ${OAS_CONTAINER_MEMORY:-4G}
                     cpus: "${OAS_CONTAINER_CPUS:-2}"
+                    pids: 512
+
+networks:
+    default:
+        driver: bridge
+        driver_opts:
+            com.docker.network.bridge.enable_ip_masquerade: "${OAS_IP_MASQ:-true}"
 
 volumes:
     oas-test-claude-config:

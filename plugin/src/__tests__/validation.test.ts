@@ -7,6 +7,7 @@ import {
 	isValidBindAddress,
 	isValidMemoryFileName,
 	isValidPathPrefixList,
+	isValidSessionName,
 	isPathAllowed,
 	isPathWithinDir,
 } from "../validation";
@@ -24,6 +25,38 @@ describe("isValidWriteDir", () => {
 	it("accepts 'subfolder'", () => expect(isValidWriteDir("subfolder")).toBe(true));
 	it("accepts 'my-dir'", () => expect(isValidWriteDir("my-dir")).toBe(true));
 	it("accepts nested 'a/b/c'", () => expect(isValidWriteDir("a/b/c")).toBe(true));
+});
+
+describe("isValidSessionName", () => {
+	// Used in two places: direct tmux exec (kill/rename) and the `session <name>\n`
+	// command injected over the ttyd WebSocket on attach. Both reach a bash shell,
+	// so rejecting metacharacters here is load-bearing — a hand-edited persisted
+	// view-state could otherwise inject arbitrary commands on every Obsidian start.
+	it("accepts simple ASCII names", () => expect(isValidSessionName("work")).toBe(true));
+	it("accepts digits", () => expect(isValidSessionName("session-1")).toBe(true));
+	it("accepts dot", () => expect(isValidSessionName("work.foo")).toBe(true));
+	it("accepts underscore", () => expect(isValidSessionName("my_session")).toBe(true));
+	it("accepts hyphen", () => expect(isValidSessionName("my-session")).toBe(true));
+	it("accepts mixed", () => expect(isValidSessionName("work_1.foo-bar")).toBe(true));
+	it("rejects empty", () => expect(isValidSessionName("")).toBe(false));
+	it("rejects whitespace", () => expect(isValidSessionName("work session")).toBe(false));
+	it("rejects newline (terminal injection)", () =>
+		expect(isValidSessionName("work\nrm -rf /")).toBe(false));
+	it("rejects semicolon (command separator)", () =>
+		expect(isValidSessionName("work; rm -rf $HOME")).toBe(false));
+	it("rejects pipe", () => expect(isValidSessionName("work|cat")).toBe(false));
+	it("rejects backtick (command substitution)", () =>
+		expect(isValidSessionName("work`whoami`")).toBe(false));
+	it("rejects dollar (variable expansion)", () =>
+		expect(isValidSessionName("work$PATH")).toBe(false));
+	it("rejects ampersand (backgrounding)", () =>
+		expect(isValidSessionName("work && evil")).toBe(false));
+	it("rejects redirect", () => expect(isValidSessionName("work>out")).toBe(false));
+	it("rejects glob star", () => expect(isValidSessionName("work*")).toBe(false));
+	it("rejects single quote", () => expect(isValidSessionName("work'")).toBe(false));
+	it("rejects double quote", () => expect(isValidSessionName('work"')).toBe(false));
+	it("rejects slash (path)", () => expect(isValidSessionName("work/foo")).toBe(false));
+	it("rejects backslash", () => expect(isValidSessionName("work\\foo")).toBe(false));
 });
 
 describe("isValidPrivateHosts", () => {
@@ -135,6 +168,10 @@ describe("DockerManager.isBusy()", () => {
 });
 
 describe("isPathWithinDir", () => {
+	// isPathWithinDir is the sole gate keeping writeScoped MCP tools inside
+	// the configured write directory — see the function comment for the
+	// fail-closed rationale on empty dir. These cases catch every published
+	// bypass shape we know about.
 	it("returns false for empty dir (fail-closed)", () => {
 		expect(isPathWithinDir("anything", "")).toBe(false);
 		expect(isPathWithinDir("foo/bar.md", "  ")).toBe(false);
@@ -142,12 +179,50 @@ describe("isPathWithinDir", () => {
 	it("matches path under dir", () => {
 		expect(isPathWithinDir("notes/x.md", "notes")).toBe(true);
 		expect(isPathWithinDir("notes/sub/x.md", "notes")).toBe(true);
-	});
-	it("rejects sibling-prefix attack", () => {
-		expect(isPathWithinDir("notes-evil/x.md", "notes")).toBe(false);
+		expect(isPathWithinDir("agent-workspace/file.md", "agent-workspace")).toBe(true);
+		expect(isPathWithinDir("agent-workspace/sub/file.md", "agent-workspace")).toBe(true);
 	});
 	it("matches the dir itself", () => {
 		expect(isPathWithinDir("notes", "notes")).toBe(true);
+		expect(isPathWithinDir("agent-workspace", "agent-workspace")).toBe(true);
+	});
+	it("rejects paths outside the dir", () => {
+		expect(isPathWithinDir("other-folder/file.md", "agent-workspace")).toBe(false);
+		expect(isPathWithinDir("file.md", "agent-workspace")).toBe(false);
+	});
+	it("rejects sibling-prefix attack", () => {
+		expect(isPathWithinDir("notes-evil/x.md", "notes")).toBe(false);
+		expect(isPathWithinDir("agent-workspace-evil/file.md", "agent-workspace")).toBe(false);
+		expect(isPathWithinDir("agent-workspacex/file.md", "agent-workspace")).toBe(false);
+	});
+	it("rejects path traversal with ..", () => {
+		expect(isPathWithinDir("agent-workspace/../secret.md", "agent-workspace")).toBe(false);
+		expect(isPathWithinDir("agent-workspace/sub/../../secret.md", "agent-workspace")).toBe(
+			false,
+		);
+		expect(isPathWithinDir("agent-workspace/../../../etc/passwd", "agent-workspace")).toBe(
+			false,
+		);
+	});
+	it("rejects path traversal in nested paths", () => {
+		expect(
+			isPathWithinDir("agent-workspace/notes/../../../config.json", "agent-workspace"),
+		).toBe(false);
+	});
+	it("handles leading slash", () => {
+		expect(isPathWithinDir("/agent-workspace/file.md", "agent-workspace")).toBe(true);
+		expect(isPathWithinDir("/agent-workspace/../secret.md", "agent-workspace")).toBe(false);
+	});
+	it("handles empty and edge-case paths", () => {
+		expect(isPathWithinDir("", "agent-workspace")).toBe(false);
+		expect(isPathWithinDir("/", "agent-workspace")).toBe(false);
+		expect(isPathWithinDir(".", "agent-workspace")).toBe(false);
+		expect(isPathWithinDir("..", "agent-workspace")).toBe(false);
+	});
+	it("normalises redundant separators and dots", () => {
+		expect(isPathWithinDir("agent-workspace/./file.md", "agent-workspace")).toBe(true);
+		expect(isPathWithinDir("agent-workspace//file.md", "agent-workspace")).toBe(true);
+		expect(isPathWithinDir("./agent-workspace/file.md", "agent-workspace")).toBe(true);
 	});
 });
 

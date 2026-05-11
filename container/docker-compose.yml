@@ -80,6 +80,9 @@ services:
       - MEMORY_FILE_PATH=/workspace/vault/.oas/${OAS_MEMORY_FILE_NAME:-memory.json}
       - OAS_SUDO_PASSWORD=${OAS_SUDO_PASSWORD:-}
       - OAS_TTYD_PORT=${OAS_TTYD_PORT:-7681}
+      # ttyd verbosity (1=err … 7=debug). Read by entrypoint.sh when
+      # launching ttyd. Defaults to 6 (info) inside entrypoint when unset.
+      - OAS_TTYD_DEBUG=${OAS_TTYD_DEBUG:-}
       - OAS_MCP_TOKEN=${OAS_MCP_TOKEN:-}
       - OAS_MCP_PORT=${OAS_MCP_PORT:-28080}
       - OAS_HOST_IP=${OAS_HOST_IP:-}

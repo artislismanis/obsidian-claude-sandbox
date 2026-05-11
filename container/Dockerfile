@@ -272,7 +272,14 @@ EXPOSE 7681
 # expands at runtime. CMD-SHELL is a docker-compose healthcheck.test
 # keyword, not a Dockerfile keyword — using it here makes Docker treat
 # "CMD-SHELL" as the binary name and the healthcheck fails permanently.
+#
+# Flags MUST match docker-compose.yml's healthcheck and verify.sh's runtime
+# probe so all three layers report the same liveness signal:
+#   -f  fail on non-2xx (after redirect)
+#   -s  silent (no progress bar)
+#   -S  show errors even with -s, for postmortem readability
+#   -L  follow redirects — tolerates a future ttyd 301/302
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -fsS "http://localhost:${OAS_TTYD_PORT:-7681}/" >/dev/null || exit 1
+    CMD curl -fsSL -o /dev/null "http://localhost:${OAS_TTYD_PORT:-7681}/" || exit 1
 
 CMD ["/usr/local/bin/entrypoint.sh"]

@@ -59,7 +59,7 @@ When a drop happens, gather both ends of the timeline before doing anything else
 ## If reconnects don't help
 
 - **Check port conflicts.** `ss -ltn '( sport = :7681 )'` (Linux) or the Obsidian status-bar tooltip — another process listening on `ttydPort` will make new ttyd connections fail.
-- **Check the host firewall.** Especially on Windows + WSL2 with mirrored networking; see [Configure the firewall](configure-firewall.md).
+- **Check the host firewall** (your OS firewall, not the container's outbound firewall). Especially on Windows + WSL2 with mirrored networking — Windows Defender Firewall can block loopback traffic to the container's published port. The [container outbound firewall doc](configure-firewall.md) covers a different layer (container → internet); host-firewall issues block the plugin's WebSocket from reaching ttyd in the first place.
 - **Restart the container.** **Sandbox: Restart Container** in the command palette. This forces a clean `down` + `up -d`.
 - **File a report.** Attach the copied connection log and the matching `docker logs --tail 200 oas-sandbox` excerpt to the issue.
 

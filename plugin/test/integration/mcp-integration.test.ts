@@ -95,6 +95,12 @@ describe.skipIf(SKIP)("MCP HTTP server (standalone, no Obsidian)", () => {
 				getFirstLinkpathDest: () => null,
 				resolvedLinks: {},
 				unresolvedLinks: {},
+				// VaultCache (mcp-cache.ts) wires a `resolved` listener via on()
+				// and unregisters via offref() — mock the trio so server.start
+				// doesn't TypeError when constructing the cache.
+				on: () => ({}),
+				off: () => {},
+				offref: () => {},
 			},
 			fileManager: {
 				renameFile: async () => {},
@@ -183,6 +189,11 @@ function makeMockApp() {
 			getFirstLinkpathDest: () => null,
 			resolvedLinks: {},
 			unresolvedLinks: {},
+			// VaultCache wires a `resolved` listener via on() and unregisters
+			// via offref() — mock the trio so server.start doesn't TypeError.
+			on: () => ({}),
+			off: () => {},
+			offref: () => {},
 		},
 		fileManager: {
 			renameFile: async () => {},

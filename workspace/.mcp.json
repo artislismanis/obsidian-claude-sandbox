@@ -1,13 +1,11 @@
 {
 	"mcpServers": {
 		"memory": {
-			"command": "mcp-server-memory",
-			"instructions": "Use this for cross-session notes Claude wants to remember about this user/project. Storage is per-vault (the plugin sets MEMORY_FILE_PATH to vault/.oas/memory.json). See workspace/CLAUDE.md \"Memory — MCP knowledge graph\" for entity-type and observation conventions."
+			"command": "mcp-server-memory"
 		},
 		"obsidian": {
 			"command": "node",
-			"args": ["/workspace/.claude/scripts/obsidian-mcp-proxy.js"],
-			"instructions": "Obsidian vault tools: search notes, read content and frontmatter, query tags/links/backlinks, find orphaned notes, create and modify notes, manage vault structure. Use when interacting with the user's knowledge base or Obsidian vault."
+			"args": ["/workspace/.claude/scripts/obsidian-mcp-proxy.js"]
 		}
 	}
 }

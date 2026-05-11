@@ -42,6 +42,11 @@ The Obsidian plugin exposes vault access via MCP. Tool *names* appear in the def
 - Call `mcp__obsidian__mcp_capabilities` once at the start of any session that will touch the vault, and again after a permission error.
 - Work within what that response surfaces. Don't assume a tool is available or a path is writable just because the tool name exists — enabled tiers and the write directory change per-vault and per-user.
 
+### MCP servers wired in this workspace
+
+- **`obsidian`** (stdio proxy → plugin's HTTP server): vault tools — search, read content and frontmatter, query tags/links/backlinks, find orphaned notes, create and modify notes, manage vault structure. Use when interacting with the user's knowledge base.
+- **`memory`** (`@modelcontextprotocol/server-memory`): persistent knowledge graph for cross-session notes about this user / project. Storage is per-vault (see "Memory — MCP knowledge graph" below).
+
 ## Vault write rules
 
 The vault at `/workspace/vault/` is **read-only** at the filesystem level. The only writable path inside the vault is `/workspace/vault/$OAS_VAULT_WRITE_DIR/` (the `OAS_VAULT_WRITE_DIR` env var is set by the plugin; run `echo $OAS_VAULT_WRITE_DIR` or `verify.sh` to see the current value).
@@ -69,7 +74,7 @@ When editing an existing vault note, copy it to `vault/$OAS_VAULT_WRITE_DIR/` fi
 
 **Override the built-in file-based auto memory system.** Do NOT write memory files under `/home/claude/.claude/projects/-workspace/`. Use the MCP memory server (`mcp__memory__*` tools) for all persistent memory.
 
-Storage is automatically per-vault — the plugin injects `MEMORY_FILE_PATH` (the env var the memory MCP server reads) pointing to `/workspace/vault/.oas/memory.json`, so each mounted vault gets its own isolated knowledge graph. No manual configuration needed.
+Storage is automatically per-vault — the plugin injects `MEMORY_FILE_PATH` (the env var the memory MCP server reads) pointing to `/workspace/vault/.oas/${OAS_MEMORY_FILE_NAME}` (default `memory.json`, configurable via the plugin's "Memory file name" setting), so each mounted vault gets its own isolated knowledge graph. No manual configuration needed. Run `echo $MEMORY_FILE_PATH` to see the current path.
 
 ### When to save
 
