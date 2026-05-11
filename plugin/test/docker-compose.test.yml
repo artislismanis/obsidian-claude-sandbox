@@ -22,6 +22,12 @@ services:
         cap_add:
             - NET_ADMIN
             - NET_RAW
+            - CHOWN
+            - FOWNER
+            - DAC_OVERRIDE
+            - SETUID
+            - SETGID
+            - FSETID
         security_opt:
             - no-new-privileges:true
         init: true
