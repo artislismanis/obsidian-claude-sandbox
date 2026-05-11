@@ -52,6 +52,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Capture the runner's UID/GID so the built image's `claude` user
+      # matches the bind-mount ownership. Without this, the test compose
+      # (which mirrors prod's `cap_drop: ALL` + `NET_ADMIN/NET_RAW`-only
+      # cap_add) cannot CHOWN/FOWNER the bind-mounted vault subdirs from
+      # uid 1001 (runner) to 1000 (default CLAUDE_UID) — the dropped
+      # caps make root-inside-container powerless to rewrite ownership.
+      # Aligning at build time sidesteps the entrypoint chown path
+      # entirely.
+      - name: Capture runner UID/GID
+        id: runner_ids
+        working-directory: ${{ github.workspace }}
+        run: |
+          echo "uid=$(id -u)" >> "$GITHUB_OUTPUT"
+          echo "gid=$(id -g)" >> "$GITHUB_OUTPUT"
+
       # Buildx with GHA cache so we don't re-download Node, ttyd, atuin,
       # apt mirrors etc. on every PR run. Cold build is ~5 min; warm cache
       # cuts that to ~30s when the Dockerfile is unchanged. The base images
@@ -66,6 +81,8 @@ jobs:
       # missing; we want the suite to run, not skip. `load: true` is
       # required so the image is available to `docker compose up` later
       # (buildx defaults to the build cache, not the local image store).
+      # Cache scope is keyed on UID so distinct runner UIDs don't share
+      # an image (the `claude` user is baked into the image).
       - name: Build sandbox image
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
@@ -73,8 +90,11 @@ jobs:
           file: container/Dockerfile
           tags: oas-sandbox:latest
           load: true
-          cache-from: type=gha,scope=oas-sandbox
-          cache-to: type=gha,mode=max,scope=oas-sandbox
+          build-args: |
+            CLAUDE_UID=${{ steps.runner_ids.outputs.uid }}
+            CLAUDE_GID=${{ steps.runner_ids.outputs.gid }}
+          cache-from: type=gha,scope=oas-sandbox-uid${{ steps.runner_ids.outputs.uid }}
+          cache-to: type=gha,mode=max,scope=oas-sandbox-uid${{ steps.runner_ids.outputs.uid }}
 
       - name: Integration tests
         # The Claude-Code subsuite auto-skips here — `globalSetup.ts`
