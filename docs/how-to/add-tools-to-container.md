@@ -11,7 +11,7 @@ sudo apt-get update
 sudo apt-get install -y <package>
 ```
 
-The container's sudoers entry permits `apt-get` and `apt` only, password-gated on the `sudoPassword` plugin setting (default empty — sudo is disabled until you set a password explicitly in **Settings → Agent Sandbox → Advanced → Sudo password**, or via `SUDO_PASSWORD` in `container/.env`). You can't `sudo su` or run arbitrary commands.
+The container's sudoers entry permits `apt-get` and `apt` only, password-gated on the `sudoPassword` plugin setting (default empty — sudo is disabled until you set a password explicitly in **Settings → Agent Sandbox → Advanced → Sudo password**, or via `OAS_SUDO_PASSWORD` in `container/.env`). You can't `sudo su` or run arbitrary commands.
 
 The install sticks until the next container rebuild. Good for trying out a tool; not good for permanent additions.
 

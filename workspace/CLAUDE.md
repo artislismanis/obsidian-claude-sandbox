@@ -17,7 +17,7 @@ This is Claude's configurable workspace inside the Agent Sandbox container. Ever
 | `.mcp.json` | MCP server configuration (memory, etc.) |
 | `CLAUDE.md` | This file — workspace rules |
 | `vault/` | Obsidian vault overlay (read-only, see below) |
-| `vault/$PKM_WRITE_DIR/` | Writable vault subfolder (see `$PKM_WRITE_DIR` env var, default `agent-workspace`) |
+| `vault/$OAS_VAULT_WRITE_DIR/` | Writable vault subfolder (see `$OAS_VAULT_WRITE_DIR` env var, default `agent-workspace`) |
 | `vault/.oas/` | Vault infrastructure — memory file, writable (independent of write dir) |
 
 ## Extensibility tiers — inline reference
@@ -44,32 +44,32 @@ The Obsidian plugin exposes vault access via MCP. Tool *names* appear in the def
 
 ## Vault write rules
 
-The vault at `/workspace/vault/` is **read-only** at the filesystem level. The only writable path inside the vault is `/workspace/vault/$PKM_WRITE_DIR/` (the `PKM_WRITE_DIR` env var is set by the plugin; run `echo $PKM_WRITE_DIR` or `verify.sh` to see the current value).
+The vault at `/workspace/vault/` is **read-only** at the filesystem level. The only writable path inside the vault is `/workspace/vault/$OAS_VAULT_WRITE_DIR/` (the `OAS_VAULT_WRITE_DIR` env var is set by the plugin; run `echo $OAS_VAULT_WRITE_DIR` or `verify.sh` to see the current value).
 
 - Read vault files freely from anywhere under `vault/`
 - Writes to `vault/` outside the write directory will fail with "Read-only file system" — this is by design
-- Create/edit/delete files only inside `vault/$PKM_WRITE_DIR/`
+- Create/edit/delete files only inside `vault/$OAS_VAULT_WRITE_DIR/`
 - Never delete vault files without explicit user confirmation
 - Prefer non-destructive operations: create new files or append rather than overwriting
 - For bulk operations, describe scope and show a sample (3-5 files) before executing
 
 ## Agent write workflow
 
-You can only create or edit files inside `vault/$PKM_WRITE_DIR/`. If you are unsure where this points, run `verify.sh` and look for the writable vault subfolder mount.
+You can only create or edit files inside `vault/$OAS_VAULT_WRITE_DIR/`. If you are unsure where this points, run `verify.sh` and look for the writable vault subfolder mount.
 
 All vault work — inbox processing, content creation, note editing — follows the same pattern:
 
 1. **Read** the source file(s) anywhere in the vault
-2. **Write** new or modified content into `vault/$PKM_WRITE_DIR/`
+2. **Write** new or modified content into `vault/$OAS_VAULT_WRITE_DIR/`
 3. **Describe** where the file should ultimately live (target folder, filename) so the user can move it into place on the host
 
-When editing an existing vault note, copy it to `vault/$PKM_WRITE_DIR/` first, make changes there, and tell the user which original file it replaces. Never assume a previous session's files still exist in the write directory — check first.
+When editing an existing vault note, copy it to `vault/$OAS_VAULT_WRITE_DIR/` first, make changes there, and tell the user which original file it replaces. Never assume a previous session's files still exist in the write directory — check first.
 
 ## Memory — MCP knowledge graph
 
 **Override the built-in file-based auto memory system.** Do NOT write memory files under `/home/claude/.claude/projects/-workspace/`. Use the MCP memory server (`mcp__memory__*` tools) for all persistent memory.
 
-Storage is automatically per-vault — the plugin injects `MEMORY_FILE_PATH` pointing to `/workspace/vault/.oas/memory.json`, so each mounted vault gets its own isolated knowledge graph. No manual configuration needed.
+Storage is automatically per-vault — the plugin injects `MEMORY_FILE_PATH` (the env var the memory MCP server reads) pointing to `/workspace/vault/.oas/memory.json`, so each mounted vault gets its own isolated knowledge graph. No manual configuration needed.
 
 ### When to save
 

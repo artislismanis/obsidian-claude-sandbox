@@ -247,6 +247,23 @@ function main() {
 		try { msg = JSON.parse(trimmed); } catch { return; }
 		handleMessage(msg).catch((err) => {
 			process.stderr.write(`obsidian-mcp-proxy: handler error: ${err.message}\n`);
+			// handleMessage's inner try/catch normally produces an error
+			// frame. This fallback covers the rare path where it throws
+			// before reaching that catch (e.g. a malformed `msg` that
+			// passed JSON.parse but tripped a property access) — without
+			// it, Claude would hang waiting for a response that never
+			// comes until the request times out.
+			if (msg && typeof msg === "object" && msg.id !== undefined) {
+				try {
+					writeFrame({
+						jsonrpc: "2.0",
+						id: msg.id,
+						error: { code: -32603, message: err.message || "Internal proxy error" },
+					});
+				} catch {
+					/* writeFrame should not throw; ignore if it does */
+				}
+			}
 		});
 	});
 

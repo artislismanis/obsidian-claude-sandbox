@@ -1,6 +1,6 @@
 ---
 name: reviewed-edit
-description: Make safe edits to vault files outside the writable workspace directory using human-in-the-loop review. Use when the user asks to edit an existing note that lives outside $PKM_WRITE_DIR, or explicitly says "review before applying".
+description: Make safe edits to vault files outside the writable workspace directory using human-in-the-loop review. Use when the user asks to edit an existing note that lives outside $OAS_VAULT_WRITE_DIR, or explicitly says "review before applying".
 ---
 
 # reviewed-edit
@@ -9,14 +9,14 @@ Out-of-workspace writes require the `writeReviewed` tier — each change trigger
 
 ## When to use
 
-- User asks you to modify a file that isn't under `$PKM_WRITE_DIR`.
+- User asks you to modify a file that isn't under `$OAS_VAULT_WRITE_DIR`.
 - User says "ask me before writing" or similar.
 - You're doing a rename/move/delete (always high-risk).
 
 ## Prerequisites
 
 - `writeReviewed` tier enabled in Obsidian plugin settings. If not enabled, the `_reviewed` tools won't be registered — offer to proceed in the workspace dir instead, or ask the user to enable the tier.
-- Look up `$PKM_WRITE_DIR` via the shell (`echo $PKM_WRITE_DIR`) before deciding whether a path is in-scope.
+- Look up `$OAS_VAULT_WRITE_DIR` via the shell (`echo $OAS_VAULT_WRITE_DIR`) before deciding whether a path is in-scope.
 
 ## Tool selection
 

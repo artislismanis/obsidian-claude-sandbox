@@ -1,0 +1,55 @@
+name: codeql
+
+# Free SAST for public repos. Covers the JavaScript/TypeScript surface
+# of the plugin (untrusted vault input, MCP HTTP server, WSL command
+# building). Triggers on PR, weekly schedule, and manual.
+
+on:
+  pull_request:
+    paths:
+      - "plugin/**"
+      - ".github/workflows/codeql.yml"
+  push:
+    branches: [main]
+    paths:
+      - "plugin/**"
+      - ".github/workflows/codeql.yml"
+  schedule:
+    # Weekly Monday 06:00 UTC — same slot as the links sweep so off-peak
+    # quota usage clusters.
+    - cron: "0 6 * * 1"
+  workflow_dispatch: {}
+
+# Top-level least-privilege fail-safe.
+permissions: {}
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        # First-party GitHub action — major-tag pin per GitHub guidance.
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended,security-and-quality
+
+      - name: Perform analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

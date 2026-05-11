@@ -10,19 +10,20 @@ services:
             - "127.0.0.1:${TEST_HOST_TTYD_PORT:-17681}:7681"
         volumes:
             - ../../workspace:/workspace:rw
-            - ${PKM_VAULT_PATH}:/workspace/vault:ro
-            - ${PKM_VAULT_PATH}/${PKM_WRITE_DIR:-agent-workspace}:/workspace/vault/${PKM_WRITE_DIR:-agent-workspace}:rw
-            - ${PKM_VAULT_PATH}/.oas:/workspace/vault/.oas:rw
+            - ${OAS_VAULT_PATH}:/workspace/vault:ro
+            - ${OAS_VAULT_PATH}/${OAS_VAULT_WRITE_DIR:-agent-workspace}:/workspace/vault/${OAS_VAULT_WRITE_DIR:-agent-workspace}:rw
+            - ${OAS_VAULT_PATH}/.oas:/workspace/vault/.oas:rw
             - oas-test-claude-config:/home/claude/.claude
             - oas-test-shell-history:/home/claude/.shell-history
         environment:
             - TERM=xterm-256color
-            - TTYD_PORT=7681
-            - ALLOWED_PRIVATE_HOSTS=${ALLOWED_PRIVATE_HOSTS:-}
-            - PKM_WRITE_DIR=${PKM_WRITE_DIR:-agent-workspace}
-            - MEMORY_FILE_NAME=${MEMORY_FILE_NAME:-memory.json}
-            - MEMORY_FILE_PATH=/workspace/vault/.oas/${MEMORY_FILE_NAME:-memory.json}
-            - SUDO_PASSWORD=${SUDO_PASSWORD:-}
+            - OAS_TTYD_PORT=7681
+            - OAS_ALLOWED_PRIVATE_HOSTS=${OAS_ALLOWED_PRIVATE_HOSTS:-}
+            - OAS_VAULT_WRITE_DIR=${OAS_VAULT_WRITE_DIR:-agent-workspace}
+            - OAS_MEMORY_FILE_NAME=${OAS_MEMORY_FILE_NAME:-memory.json}
+            # MEMORY_FILE_PATH is the contract with mcp-server-memory.
+            - MEMORY_FILE_PATH=/workspace/vault/.oas/${OAS_MEMORY_FILE_NAME:-memory.json}
+            - OAS_SUDO_PASSWORD=${OAS_SUDO_PASSWORD:-}
             - OAS_MCP_TOKEN=${OAS_MCP_TOKEN:-}
             - OAS_MCP_PORT=${OAS_MCP_PORT:-28080}
         sysctls:
@@ -47,8 +48,8 @@ services:
         deploy:
             resources:
                 limits:
-                    memory: ${CONTAINER_MEMORY:-4G}
-                    cpus: "${CONTAINER_CPUS:-2}"
+                    memory: ${OAS_CONTAINER_MEMORY:-4G}
+                    cpus: "${OAS_CONTAINER_CPUS:-2}"
 
 volumes:
     oas-test-claude-config:

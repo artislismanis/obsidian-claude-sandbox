@@ -7,7 +7,6 @@ import { logger, errMsg } from "./logger";
 const exec = promisify(execCb);
 
 const VALID_DISTRO_NAME = /^[\w][\w.-]*$/;
-const VALID_SESSION_NAME = /^[\w.-]+$/;
 
 function assertValidDistro(name: string): void {
 	if (!VALID_DISTRO_NAME.test(name)) {
@@ -18,7 +17,7 @@ function assertValidDistro(name: string): void {
 }
 
 function assertSafeSessionName(name: string): void {
-	if (!VALID_SESSION_NAME.test(name)) {
+	if (!isValidSessionName(name)) {
 		throw new Error(
 			`Invalid tmux session name '${name}'. Only letters, digits, '_', '.', and '-' are allowed.`,
 		);
@@ -35,6 +34,7 @@ import {
 	isValidDomainList,
 	isValidMemory,
 	isValidCpus,
+	isValidSessionName,
 } from "./validation";
 
 export interface DockerManagerSettings {
@@ -72,7 +72,7 @@ export function windowsToWslPath(windowsPath: string): string {
  *  extra command into the bash export prefix (e.g. `'\nrm -rf /\n'`). The
  *  shell-escape pass quotes single-quotes but happily passes through newlines,
  *  which `bash -c` treats as command separators. We reject early instead. */
-const SENSITIVE_ENV_KEYS = new Set(["SUDO_PASSWORD", "OAS_MCP_TOKEN"]);
+const SENSITIVE_ENV_KEYS = new Set(["OAS_SUDO_PASSWORD", "OAS_MCP_TOKEN"]);
 
 function assertNoCrlf(key: string, value: string): void {
 	if (value.includes("\n") || value.includes("\r")) {
@@ -297,7 +297,7 @@ export class DockerManager {
 			invalidMsg?: string;
 		}[] = [
 			{
-				key: "PKM_VAULT_PATH",
+				key: "OAS_VAULT_PATH",
 				value: vaultPath
 					? dockerMode === "wsl"
 						? windowsToWslPath(vaultPath)
@@ -305,17 +305,17 @@ export class DockerManager {
 					: "",
 			},
 			{
-				key: "PKM_WRITE_DIR",
+				key: "OAS_VAULT_WRITE_DIR",
 				value: writeDir,
 				validate: isValidWriteDir,
 				invalidMsg:
 					"Invalid vault write directory. Must be a relative path without '..' components.",
 			},
-			{ key: "TTYD_PORT", value: ttydPort ? String(ttydPort) : "" },
-			{ key: "TTYD_BIND", value: ttydBindAddress },
-			{ key: "MEMORY_FILE_NAME", value: memoryFileName },
+			{ key: "OAS_TTYD_PORT", value: ttydPort ? String(ttydPort) : "" },
+			{ key: "OAS_TTYD_BIND", value: ttydBindAddress },
+			{ key: "OAS_MEMORY_FILE_NAME", value: memoryFileName },
 			{
-				key: "ALLOWED_PRIVATE_HOSTS",
+				key: "OAS_ALLOWED_PRIVATE_HOSTS",
 				value: allowedPrivateHosts,
 				validate: isValidPrivateHosts,
 				invalidMsg:
@@ -329,21 +329,21 @@ export class DockerManager {
 					"Invalid additional firewall domains. Use comma-separated domain names (e.g. api.atlassian.com, slack.com).",
 			},
 			{
-				key: "CONTAINER_MEMORY",
+				key: "OAS_CONTAINER_MEMORY",
 				value: containerMemory,
 				validate: isValidMemory,
 				invalidMsg:
 					"Invalid memory limit. Use a number with unit suffix (e.g. 4G, 512M, 1T).",
 			},
 			{
-				key: "CONTAINER_CPUS",
+				key: "OAS_CONTAINER_CPUS",
 				value: containerCpus,
 				validate: isValidCpus,
 				invalidMsg: "Invalid CPU limit. Use a number (e.g. 4, 2.5).",
 			},
-			// SUDO_PASSWORD and OAS_MCP_TOKEN are validated for CR/LF in
+			// OAS_SUDO_PASSWORD and OAS_MCP_TOKEN are validated for CR/LF in
 			// buildInnerCommand (SENSITIVE_ENV_KEYS). Caveat: these values
-			// appear on the bash command line as `export SUDO_PASSWORD='…'`,
+			// appear on the bash command line as `export OAS_SUDO_PASSWORD='…'`,
 			// which is briefly visible to other host users via `ps -ef` while
 			// docker compose is invoked. Switching to stdin / `--env-file` for
 			// these would require splitting the WSL / local-Windows / local
@@ -351,7 +351,7 @@ export class DockerManager {
 			// as a known limitation. Mitigations: (a) MCP token rotation via
 			// settings, (b) sudoPassword is the user's own password on their
 			// own machine, (c) the validator above prevents shell injection.
-			{ key: "SUDO_PASSWORD", value: sudoPassword },
+			{ key: "OAS_SUDO_PASSWORD", value: sudoPassword },
 			{ key: "OAS_MCP_TOKEN", value: mcpToken },
 			{ key: "OAS_MCP_PORT", value: mcpPort ? String(mcpPort) : "" },
 		];
@@ -478,18 +478,18 @@ export class DockerManager {
 		const { dockerMode, composePath, wslDistro } = settings;
 		if (!composePath) return;
 
-		// docker-compose down doesn't need PKM_VAULT_PATH/PKM_WRITE_DIR to find
-		// the project (the `name: oas` field pins it), but compose still
-		// substitutes ${VAR} in the YAML and warns to stderr when unset. The
-		// detached spawn discards stderr, but providing the values keeps
-		// behaviour symmetric with run() for any compose feature that does
-		// require them at down time.
+		// docker-compose down doesn't need OAS_VAULT_PATH/OAS_VAULT_WRITE_DIR
+		// to find the project (the `name: oas` field pins it), but compose
+		// still substitutes ${VAR} in the YAML and warns to stderr when
+		// unset. The detached spawn discards stderr, but providing the
+		// values keeps behaviour symmetric with run() for any compose
+		// feature that does require them at down time.
 		const downEnv: Record<string, string> = {};
 		if (settings.vaultPath) {
-			downEnv.PKM_VAULT_PATH =
+			downEnv.OAS_VAULT_PATH =
 				dockerMode === "wsl" ? windowsToWslPath(settings.vaultPath) : settings.vaultPath;
 		}
-		if (settings.writeDir) downEnv.PKM_WRITE_DIR = settings.writeDir;
+		if (settings.writeDir) downEnv.OAS_VAULT_WRITE_DIR = settings.writeDir;
 
 		let shell: string;
 		let args: string[];

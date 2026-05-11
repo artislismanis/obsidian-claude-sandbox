@@ -6,6 +6,7 @@ import type { TerminalSettings, TerminalThemeMode } from "./settings";
 import { logger } from "./logger";
 import { refreshLeafHeader } from "./obsidian-internals";
 import { pollUntilReady, buildWsUrl, exponentialBackoff } from "./ttyd-client";
+import { isValidSessionName } from "./validation";
 
 import { VIEW_TYPE_TERMINAL } from "./view-types";
 export { VIEW_TYPE_TERMINAL };
@@ -583,7 +584,13 @@ export class TerminalView extends ItemView {
 
 			// Inject `session <name>` command to attach to a tmux session.
 			// The 300ms delay gives bash time to render the prompt.
-			if (this.sessionName) {
+			//
+			// Defence-in-depth: validate the session name against the same
+			// regex used for direct tmux exec (kill/rename) before sending
+			// it down the wire. The name is typically user-typed and safe,
+			// but a hand-edited persisted view-state could carry shell
+			// metacharacters that would otherwise execute verbatim in bash.
+			if (this.sessionName && isValidSessionName(this.sessionName)) {
 				const cmd = `session ${this.sessionName}\n`;
 				const id = window.setTimeout(() => {
 					if (gen === this.generation) {
@@ -591,6 +598,11 @@ export class TerminalView extends ItemView {
 					}
 				}, 300);
 				this.injectionTimers.push(id);
+			} else if (this.sessionName) {
+				logger.warn(
+					"Terminal",
+					`Skipping session attach for invalid name '${this.sessionName}' — letters/digits/_/./-only.`,
+				);
 			}
 
 			// Inject an initial Claude prompt (from "Analyze in Sandbox" / URI handler).

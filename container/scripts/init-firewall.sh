@@ -351,13 +351,13 @@ OAS_HOST=$(getent hosts host.docker.internal 2>/dev/null | awk '{print $1; exit}
 
   # Configurable private hosts. IPv4 / IPv4-CIDR only; hostnames rejected
   # (we can't safely resolve them inside the firewall apply path).
-  if [ -n "${ALLOWED_PRIVATE_HOSTS:-}" ]; then
-    IFS=',' read -ra HOSTS <<< "$ALLOWED_PRIVATE_HOSTS"
+  if [ -n "${OAS_ALLOWED_PRIVATE_HOSTS:-}" ]; then
+    IFS=',' read -ra HOSTS <<< "$OAS_ALLOWED_PRIVATE_HOSTS"
     for host in "${HOSTS[@]}"; do
       host="$(_trim "$host")"
       [ -z "$host" ] && continue
       if ! _is_ipv4_or_cidr "$host"; then
-        echo "ERROR: ALLOWED_PRIVATE_HOSTS entry '$host' is not a valid IPv4 address or CIDR — hostnames are not accepted here. Skipping." >&2
+        echo "ERROR: OAS_ALLOWED_PRIVATE_HOSTS entry '$host' is not a valid IPv4 address or CIDR — hostnames are not accepted here. Skipping." >&2
         continue
       fi
       echo "-A OUTPUT -d $host -p tcp --dport 80 -j ACCEPT"

@@ -1,0 +1,67 @@
+name: integration tests
+
+# Runs the plugin's integration tests (vitest, hits a real container).
+# These cover container behaviour + MCP integration that the unit suite
+# can only mock. Heavier than `check.yml` because it builds the image,
+# so it runs on PRs that touch the plugin or container only.
+#
+# The Claude-Code subsuite is skipped in CI — it requires authenticating
+# Claude inside the container, which needs interactive setup. See
+# `docs/testing.md` for the local-dev path.
+
+on:
+  pull_request:
+    paths:
+      - "plugin/**"
+      - "container/**"
+      - ".github/workflows/integration.yml"
+  push:
+    branches: [main]
+    paths:
+      - "plugin/**"
+      - "container/**"
+      - ".github/workflows/integration.yml"
+  workflow_dispatch: {}
+
+# Top-level least-privilege fail-safe.
+permissions: {}
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: plugin
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: plugin/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Build the sandbox image that integration tests run against.
+      # `globalSetup.ts` checks for `oas-sandbox:latest` and skips if
+      # missing; we want the suite to run, not skip.
+      - name: Build sandbox image
+        working-directory: container
+        run: docker compose build
+
+      - name: Integration tests
+        # The Claude-Code subsuite auto-skips here — `globalSetup.ts`
+        # only runs it when there's auth in the test volume, which CI
+        # doesn't have. Other suites (container, container-advanced,
+        # mcp-integration) run against the built image.
+        run: npm run test:integration

@@ -94,8 +94,8 @@ describe.skipIf(SKIP_NO_IMAGE)("Container", () => {
 		expect(output).not.toContain("NOPASSWD");
 	});
 
-	it("SUDO_PASSWORD env var is unset after entrypoint drops privileges", () => {
-		expect(containerExec("bash -c 'echo -n ${SUDO_PASSWORD:-UNSET}'")).toBe("UNSET");
+	it("OAS_SUDO_PASSWORD env var is unset after entrypoint drops privileges", () => {
+		expect(containerExec("bash -c 'echo -n ${OAS_SUDO_PASSWORD:-UNSET}'")).toBe("UNSET");
 	});
 
 	// ── Docker resource naming ──
