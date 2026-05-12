@@ -56,7 +56,7 @@ uv pip install <package>     # into the active uv-managed env
 pipx install <package>       # for standalone CLI tools
 ```
 
-Node globals persist across container rebuilds via the `oas-claude-config` named volume (`~/.npm`/`~/.config/npm` are inside it). Python installs depend on the target environment — `uv pip install` writes to the uv-managed env that does **not** survive a rebuild, so for permanent Python tools add them to the Dockerfile (uv install in Phase 2). For permanent Node globals, also add to the Dockerfile's `RUN npm install -g ...` block.
+Runtime installs do **not** persist across a container rebuild. Node globals live under `~/.nvm/default/lib/node_modules` and Python tools under `~/.local` — neither path is on a named volume, so a rebuild wipes them. (The `oas-claude-config` volume holds Claude Code auth, project settings, and chat history only — not language package globals.) For tools you want permanently, add them to the Dockerfile's `RUN npm install -g ...` / uv install block and rebuild.
 
 ## Safety note
 

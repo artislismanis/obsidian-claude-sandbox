@@ -42,9 +42,24 @@ jobs:
         run: |
           # ubuntu-latest ships shellcheck. Run on every shell file we
           # control; fail on errors only (warnings are advisory).
-          find container/scripts container/configs workspace/.claude/hooks workspace/.claude/scripts \
-            -type f \( -name '*.sh' -o -name '*.bash' \) -print0 | \
-            xargs -0 -r shellcheck -S error
+          #
+          # Match by extension OR shebang so extension-less entrypoints
+          # don't silently skip. Use `-exec head -n1` to inspect the first
+          # line; gathering by both criteria into a unique list.
+          {
+            find container/scripts container/configs \
+                 workspace/.claude/hooks workspace/.claude/scripts \
+              -type f \( -name '*.sh' -o -name '*.bash' \) -print
+            find container/scripts container/configs \
+                 workspace/.claude/hooks workspace/.claude/scripts \
+              -type f ! -name '*.sh' ! -name '*.bash' \
+              -exec sh -c 'head -1 "$1" | grep -qE "^#!.*\b(sh|bash)\b" && echo "$1"' _ {} \;
+          } | sort -u | tee /tmp/shell-files
+          if [ ! -s /tmp/shell-files ]; then
+            echo "ERROR: shellcheck job found no shell files to check — paths or globs must have changed." >&2
+            exit 1
+          fi
+          xargs -r -a /tmp/shell-files shellcheck -S error
 
   hadolint:
     runs-on: ubuntu-latest

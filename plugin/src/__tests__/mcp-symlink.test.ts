@@ -29,14 +29,22 @@ describe("isRealPathWithinBase", () => {
 	});
 
 	it("walks up to the longest existing ancestor for missing target", () => {
+		// Multi-level walk-up: file doesn't exist, immediate parent doesn't
+		// exist, but the next-level-up ancestor does. The earlier version of
+		// this test had a duplicate `if (p === "/vault")` branch that masked
+		// whether the walker actually traversed past the first missing rung.
 		const realpath = (p: string) => {
 			if (p === "/vault") return "/vault";
-			if (p === "/vault/new-note.md") throw new Error("ENOENT");
-			if (p === "/vault") return "/vault";
+			if (p === "/vault/folder") throw new Error("ENOENT");
+			if (p === "/vault/folder/new-note.md") throw new Error("ENOENT");
 			throw new Error(`unexpected ${p}`);
 		};
 		expect(
-			isRealPathWithinBase("/vault", "/vault/new-note.md", realpath as (p: string) => string),
+			isRealPathWithinBase(
+				"/vault",
+				"/vault/folder/new-note.md",
+				realpath as (p: string) => string,
+			),
 		).toBe(true);
 	});
 

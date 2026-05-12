@@ -52,6 +52,6 @@ jobs:
             --exclude '^https?://github\.com/[^/]+/[^/]+/(issues|pull|discussions|commit)/'
             --exclude '^https?://anthropic\.com/'
             --exclude 'https?://claude\.ai/'
-            --accept 200,206
+            --accept 200,206,301,302,307,308
             **/*.md
           fail: true

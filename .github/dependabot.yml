@@ -10,6 +10,12 @@ updates:
     commit-message:
       prefix: "ci"
       include: scope
+    # Route dependabot PRs to the maintainer so they don't sit unassigned
+    # while the cooldown window elapses. Without this, the cooldown's
+    # supply-chain-risk justification is undercut — the PR may auto-pass
+    # checks and merge timing depends entirely on incidental review.
+    reviewers:
+      - artislismanis
     # Wait before opening a PR on a fresh release — buys time for the
     # community to spot a compromised action republish (cf. tj-actions /
     # changed-files, July 2025). Patches still flow promptly.
@@ -39,6 +45,8 @@ updates:
     commit-message:
       prefix: "deps"
       include: scope
+    reviewers:
+      - artislismanis
     open-pull-requests-limit: 10
     # Same rationale as the github-actions cooldown above. npm has a
     # measurable rate of "supply-chain"-class incidents (eslint-config-
@@ -124,6 +132,8 @@ updates:
     commit-message:
       prefix: "container"
       include: scope
+    reviewers:
+      - artislismanis
     cooldown:
       default-days: 3
       semver-major-days: 14

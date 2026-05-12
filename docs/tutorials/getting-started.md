@@ -41,7 +41,7 @@ Either way: restart Obsidian → **Settings → Community plugins → Agent Sand
 **Settings → Agent Sandbox → General**:
 
 - **Docker mode**: `WSL` (Windows) or `Local` (macOS/Linux).
-- **Compose file path**: the absolute path to `~/code/obsidian-agent-sandbox/container/`.
+- **Docker Compose path**: the absolute path to `~/code/obsidian-agent-sandbox/container/`.
 - **WSL distro name**: only matters in WSL mode — default `Ubuntu`.
 
 The settings tab validates the path on input — a green tick means Obsidian can see `docker-compose.yml`.

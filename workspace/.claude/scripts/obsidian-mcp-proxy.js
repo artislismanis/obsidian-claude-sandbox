@@ -23,10 +23,21 @@ const http = require("http");
 const net = require("net");
 const readline = require("readline");
 
-const PORT = parseInt(process.env.OAS_MCP_PORT || "28080", 10);
+// Guard parseInt against non-numeric env values. Without finite-check, a typo
+// like OAS_MCP_PORT=foo collapses to NaN and silently flows into
+// net.createConnection({port: NaN}) / http.request({timeout: NaN}) where it
+// either fails with an opaque error or disables the timeout entirely.
+function envInt(name, fallback) {
+	const raw = process.env[name];
+	if (raw === undefined || raw === "") return fallback;
+	const n = parseInt(raw, 10);
+	return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+const PORT = envInt("OAS_MCP_PORT", 28080);
 const TOKEN = process.env.OAS_MCP_TOKEN || "";
 const HOST = "host.docker.internal";
-const HTTP_TIMEOUT_MS = parseInt(process.env.OAS_MCP_TIMEOUT_MS || "15000", 10);
+const HTTP_TIMEOUT_MS = envInt("OAS_MCP_TIMEOUT_MS", 15000);
 const DEBUG = process.env.OAS_MCP_DEBUG === "1";
 
 // Cache: re-probe at most once every PROBE_TTL_MS when available,
@@ -93,17 +104,16 @@ function drainWrite() {
 	const next = writeQueue.shift();
 	if (next === undefined) return;
 	writing = true;
-	const ok = process.stdout.write(next, () => {
+	// process.stdout.write fires its callback on flush regardless of whether
+	// the synchronous return was true (kernel buffer accepted) or false
+	// (queued; will emit 'drain' later). Relying solely on the callback
+	// avoids the previous double-fire where both the callback and a manual
+	// 'drain' listener reset `writing` and called drainWrite again — which
+	// could write the next frame twice under sustained backpressure.
+	process.stdout.write(next, () => {
 		writing = false;
 		drainWrite();
 	});
-	if (!ok) {
-		// Backpressure: wait for drain before flushing the next frame.
-		process.stdout.once("drain", () => {
-			writing = false;
-			drainWrite();
-		});
-	}
 }
 
 function httpPost(message) {
@@ -120,8 +130,12 @@ function httpPost(message) {
 		const req = http.request(
 			{ hostname: HOST, port: PORT, path: "/mcp", method: "POST", headers, timeout: HTTP_TIMEOUT_MS },
 			(res) => {
+				// Adopt the session id only on success. Two concurrent requests
+				// can each receive an mcp-session-id header; without this guard a
+				// late 4xx/5xx response with a stale id could overwrite the live
+				// session id and break subsequent routing.
 				const sid = res.headers["mcp-session-id"];
-				if (sid) sessionId = sid;
+				if (sid && res.statusCode && res.statusCode < 300) sessionId = sid;
 
 				const ct = res.headers["content-type"] || "";
 				let buf = "";
@@ -151,11 +165,28 @@ function httpPost(message) {
 				});
 
 				res.on("end", () => {
+					// Reject on non-2xx so callers get a clean error frame back
+					// to Claude instead of an indefinite hang. Previously a 401
+					// HTML body (or empty response) fell through JSON.parse and
+					// resolved as [] — handleMessage then wrote zero frames and
+					// Claude waited forever on that request id.
+					const status = res.statusCode || 0;
+					if (status < 200 || status >= 300) {
+						lastProbeResult = false;
+						reject(
+							new Error(
+								`Obsidian MCP returned HTTP ${status} (${(buf || "").slice(0, 200) || "no body"})`,
+							),
+						);
+						return;
+					}
 					if (ct.includes("text/event-stream")) {
 						if (buf) flushEvent(buf);
 						resolve(messages);
 					} else {
-						try { resolve([JSON.parse(buf)]); } catch { resolve([]); }
+						try { resolve([JSON.parse(buf)]); } catch {
+							reject(new Error("Obsidian MCP returned a non-JSON body on a 2xx response."));
+						}
 					}
 				});
 
@@ -205,6 +236,17 @@ function unavailableResult(id, method) {
 }
 
 async function handleMessage(msg) {
+	// Set pendingInitialize SYNCHRONOUSLY before any await so a notification
+	// arriving on the very next stdin tick can't observe `pendingInitialize ===
+	// null` while the initialize handler is still in `await isAvailable()`.
+	// We resolve in finally so failed initializes still unblock waiters.
+	let initializeResolve;
+	if (msg.method === "initialize") {
+		pendingInitialize = new Promise((resolve) => {
+			initializeResolve = resolve;
+		});
+	}
+
 	const available = await isAvailable();
 
 	// Notifications have no id and need no response. The MCP spec requires
@@ -214,8 +256,7 @@ async function handleMessage(msg) {
 	if (msg.id === undefined) {
 		if (available) {
 			// If an `initialize` is in flight, hold the notification until it
-			// resolves so sessionId is set before we POST. See pendingInitialize
-			// declaration above for the full rationale.
+			// resolves so sessionId is set before we POST.
 			const pending = pendingInitialize;
 			if (pending) {
 				pending.then(() => httpPost(msg).catch(() => undefined));
@@ -228,21 +269,16 @@ async function handleMessage(msg) {
 
 	if (!available) {
 		writeFrame(unavailableResult(msg.id, msg.method));
+		// Release waiters even on the unavailable path so notifications waiting
+		// on init don't queue forever.
+		if (initializeResolve) {
+			pendingInitialize = null;
+			initializeResolve();
+		}
 		return;
 	}
 
 	const t0 = Date.now();
-	// Track in-flight initialize so concurrent notifications can wait for the
-	// sessionId. We resolve on first response regardless of outcome — even a
-	// failed initialize is "done" from the queuing perspective; pending
-	// notifications will see whatever sessionId got assigned (or null) and
-	// proceed (their httpPost catch swallows errors).
-	let initializeResolve;
-	if (msg.method === "initialize") {
-		pendingInitialize = new Promise((resolve) => {
-			initializeResolve = resolve;
-		});
-	}
 	try {
 		const responses = await httpPost(msg);
 		if (DEBUG) {

@@ -224,9 +224,25 @@ export async function waitForHealth(
 	throw new Error(`Health check timeout for ${url} after ${timeoutMs}ms${diag}`);
 }
 
-export function httpGet(url: string): Promise<number> {
+export function httpGet(url: string, headers: Record<string, string> = {}): Promise<number> {
 	return new Promise((resolve, reject) => {
-		http.get(url, (res) => resolve(res.statusCode ?? 0)).on("error", reject);
+		const u = new URL(url);
+		const req = http.request(
+			{
+				hostname: u.hostname,
+				port: u.port,
+				path: `${u.pathname}${u.search}`,
+				method: "GET",
+				headers,
+			},
+			(res) => {
+				// Drain body so the socket can be released; status is all we want.
+				res.resume();
+				resolve(res.statusCode ?? 0);
+			},
+		);
+		req.on("error", reject);
+		req.end();
 	});
 }
 
@@ -304,8 +320,7 @@ export function httpPostFull(
 				let buf = "";
 				const resHeaders: Record<string, string> = {};
 				for (const [k, v] of Object.entries(res.headers)) {
-					if (v !== undefined)
-						resHeaders[k.toLowerCase()] = Array.isArray(v) ? v[0] : v;
+					if (v !== undefined) resHeaders[k.toLowerCase()] = Array.isArray(v) ? v[0] : v;
 				}
 				res.on("data", (chunk: Buffer) => (buf += chunk.toString()));
 				res.on("end", () =>

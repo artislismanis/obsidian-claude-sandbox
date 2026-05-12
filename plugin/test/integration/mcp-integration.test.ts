@@ -33,20 +33,18 @@ describe.skipIf(SKIP)("MCP server integration with container", () => {
 		expect(output).toMatch(/\d+\.\d+\.\d+\.\d+/);
 	});
 
-	it("container can reach MCP port on host (when server is running)", async () => {
-		// This test validates network connectivity, not the MCP server itself.
-		// The MCP server runs inside Obsidian on the host.
-		// Here we verify the container CAN reach the host port.
-		// When no server is running, the connection is refused — that's expected.
-		try {
-			const output = containerExec(
-				`curl -s -o /dev/null -w "%{http_code}" http://host.docker.internal:${MCP_PORT}/mcp 2>/dev/null || echo "refused"`,
-			);
-			// Either "refused" (no server) or a status code (server running)
-			expect(["refused", "401", "000"]).toContain(output);
-		} catch {
-			// curl not finding host is also acceptable in some Docker network configs
-		}
+	it("container can resolve host.docker.internal", () => {
+		// Previously this test piped curl through `|| echo refused` and
+		// accepted `["refused", "401", "000"]` — i.e. "any outcome whatsoever".
+		// That covers neither name resolution nor reachability since curl
+		// failures all collapsed into "refused". Assert what we can actually
+		// guarantee in the integration harness: host.docker.internal resolves
+		// to an IP from inside the container. The reachability of the host's
+		// MCP port is environment-dependent and out of scope here.
+		const ip = containerExec(
+			`getent hosts host.docker.internal | awk '{print $1; exit}'`,
+		).trim();
+		expect(ip).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
 	});
 
 	it("MCP token env var matches expected value inside container", () => {
@@ -160,17 +158,36 @@ describe.skipIf(SKIP)("MCP HTTP server (standalone, no Obsidian)", () => {
 		expect(body.result).toBeDefined();
 	});
 
-	it("returns 404 for wrong path", async () => {
+	it("rejects unauthenticated requests with 401", async () => {
+		// Previously this was named "returns 404 for wrong path" but the
+		// assertion (and the actual response) was 401 — auth runs before
+		// path routing, so the wrong-path code path is never exercised here.
+		// Renamed to match what's actually verified.
 		const status = await httpGet(`http://127.0.0.1:${MCP_PORT}/wrong`);
-		// GET to wrong path with no auth → 401 (auth checked before path)
 		expect(status).toBe(401);
 	});
 
-	it("CORS preflight works", async () => {
-		const status = await httpGet(`http://127.0.0.1:${MCP_PORT}/mcp`);
-		// GET without session → after auth, returns 400
-		// But without auth header → 401
-		expect([400, 401]).toContain(status);
+	it("returns 404 for unknown path when authenticated", async () => {
+		// Now exercise the wrong-path code path with valid auth.
+		const status = await httpGet(`http://127.0.0.1:${MCP_PORT}/wrong`, {
+			Authorization: `Bearer ${MCP_TOKEN}`,
+		});
+		expect(status).toBe(404);
+	});
+
+	it("returns 405 for GET /mcp without session id", async () => {
+		// Authenticated GET on /mcp without a session is not a valid SSE
+		// stream open and the server should reject it cleanly. Previously
+		// this test was named "CORS preflight works" but it issued a GET (not
+		// OPTIONS) and accepted [400, 401] — so it asserted nothing about
+		// CORS. Tightened to the actual contract.
+		const status = await httpGet(`http://127.0.0.1:${MCP_PORT}/mcp`, {
+			Authorization: `Bearer ${MCP_TOKEN}`,
+		});
+		// Accept the 4xx range — the SDK has historically returned 400/405/404
+		// for "GET without session" depending on the transport version.
+		expect(status).toBeGreaterThanOrEqual(400);
+		expect(status).toBeLessThan(500);
 	});
 });
 
@@ -380,18 +397,31 @@ describe.skipIf(SKIP)("MCP tool invocation (HTTP end-to-end)", () => {
 		expect(res.result.content[0].text).toBe("File not found.");
 	});
 
-	it("vault_create rejects path outside write directory", async () => {
+	it("vault_create rejects '..' segments up-front (first layer)", async () => {
+		// Exercise the upfront path-shape guard. `../escape.md` should be
+		// rejected with the "may not contain a '..'" message BEFORE reaching
+		// the write-dir gate. Previously this test accepted EITHER message
+		// via a regex disjunction — if the upfront check were removed, the
+		// second-layer "write directory" wording would still satisfy the
+		// assertion and the regression would go undetected.
 		const res = (await mcpRequest(session, "tools/call", {
 			name: "vault_create",
 			arguments: { path: "../escape.md", content: "evil" },
 		})) as { result: { content: { text: string }[]; isError: boolean } };
 		expect(res.result.isError).toBe(true);
-		// Two layers reject this path: the upfront `..`/leading-slash defence in
-		// the create handler fires first for `../escape.md`, so we see the
-		// path-shape message rather than the write-dir scope message. Either
-		// kind of rejection satisfies this test — we just care the agent can't
-		// escape the write directory.
-		expect(res.result.content[0].text).toMatch(/\.\.|write directory/);
+		expect(res.result.content[0].text).toMatch(/may not contain a '\.\.'/i);
+	});
+
+	it("vault_create rejects writes outside the write dir (second layer)", async () => {
+		// Use a non-traversal path that's still outside the write directory
+		// so we exercise the write-dir gate specifically (the upfront check
+		// passes — no `..` segment, no leading slash).
+		const res = (await mcpRequest(session, "tools/call", {
+			name: "vault_create",
+			arguments: { path: "elsewhere/escape.md", content: "evil" },
+		})) as { result: { content: { text: string }[]; isError: boolean } };
+		expect(res.result.isError).toBe(true);
+		expect(res.result.content[0].text).toMatch(/write directory/i);
 	});
 
 	it("vault_create succeeds for path inside write directory", async () => {

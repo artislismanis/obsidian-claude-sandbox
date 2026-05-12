@@ -174,7 +174,16 @@ fi
 if [ -d "$EXTRAS_FILE" ]; then
   echo "init-firewall: WARNING: $EXTRAS_FILE is a directory (host file missing — Docker auto-created the mount target). File-tier extras skipped. Restore container/firewall-extras.txt on the host and 'docker compose down && up -d' to re-bind." >&2
 elif [ -f "$EXTRAS_FILE" ]; then
+  first_line=1
   while IFS= read -r line || [ -n "$line" ]; do
+    # Strip UTF-8 BOM on the first line — Windows editors often save with
+    # one and the resulting `﻿host.example.com` fails IPv4 routing,
+    # gets passed to dig, returns no records, and is logged as a generic
+    # resolution failure with no hint at the real cause.
+    if [ "$first_line" = "1" ]; then
+      line="${line#$'\xEF\xBB\xBF'}"
+      first_line=0
+    fi
     # Strip comments and trim
     line="${line%%#*}"
     add_entry file "$line"
@@ -313,6 +322,17 @@ MCP_PORT="${OAS_MCP_PORT:-28080}"
 GATEWAY=$(ip route | awk '/default/ {print $3}')
 OAS_HOST=$(getent hosts host.docker.internal 2>/dev/null | awk '{print $1; exit}')
 
+# Collect IPv4 nameservers BEFORE building the rule heredoc. If there are no
+# IPv4 nameservers in resolv.conf (IPv6-only Docker network, unusual host
+# config), DNS would be silently dropped under the OUTPUT DROP policy below.
+# Bail loudly here so the operator sees the cause instead of a "firewall
+# active" message followed by inexplicable resolution failures.
+mapfile -t NAMESERVERS < <(grep -oP 'nameserver \K[\d.]+' /etc/resolv.conf)
+if [ "${#NAMESERVERS[@]}" -eq 0 ]; then
+  echo "init-firewall: ERROR: no IPv4 nameservers found in /etc/resolv.conf — DNS would be unreachable under the planned OUTPUT DROP policy. Aborting before applying any rules." >&2
+  exit 1
+fi
+
 # Collect nameservers up-front; assemble rules into a heredoc; pipe to
 # iptables-restore -n (no-flush of *other* tables) with a single commit.
 {
@@ -328,8 +348,9 @@ OAS_HOST=$(getent hosts host.docker.internal 2>/dev/null | awk '{print $1; exit}
   echo "-A OUTPUT -o lo -j ACCEPT"
   echo "-A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT"
 
-  # DNS — restrict to configured resolvers only (prevents DNS tunneling)
-  for ns in $(grep -oP 'nameserver \K[\d.]+' /etc/resolv.conf); do
+  # DNS — restrict to configured resolvers only (prevents DNS tunneling).
+  # IPv4-only by design; presence of at least one resolver was checked above.
+  for ns in "${NAMESERVERS[@]}"; do
     echo "-A OUTPUT -d $ns -p udp --dport 53 -j ACCEPT"
     echo "-A OUTPUT -d $ns -p tcp --dport 53 -j ACCEPT"
   done

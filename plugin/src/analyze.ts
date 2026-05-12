@@ -7,6 +7,7 @@ import * as fs from "fs/promises";
 import { join as pathJoin } from "path";
 import { getVaultBasePath, tryOpenSubmenu } from "./obsidian-internals";
 import { parsePromptTemplate, substituteFilePlaceholder } from "./prompt-template";
+import { logger, errMsg } from "./logger";
 
 export interface PromptTemplate {
 	name: string;
@@ -142,23 +143,37 @@ export class AnalyzeManager {
 			void this.readTemplatesFromDisk().then((fresh) => (this.cachedTemplates = fresh));
 		}
 
+		// Wrap menu callbacks so a rejected runAnalyze/runAnalyzeCustom promise
+		// becomes a Notice + log entry instead of an unhandled rejection.
+		const runCustomSafe = (path: string): void => {
+			void this.runAnalyzeCustom(path).catch((err) => {
+				logger.error("Analyze", "runAnalyzeCustom failed", err);
+				new Notice(`Analyze failed: ${errMsg(err)}`);
+			});
+		};
+		const runTemplateSafe = (path: string, name: string): void => {
+			void this.runAnalyze(path, name).catch((err) => {
+				logger.error("Analyze", `runAnalyze '${name}' failed`, err);
+				new Notice(`Analyze failed: ${errMsg(err)}`);
+			});
+		};
 		menu.addItem((item) => {
 			item.setTitle("Analyze in Sandbox").setIcon("bot");
 			const submenu = tryOpenSubmenu(item);
 			const container: Pick<Menu, "addItem"> = submenu ?? menu;
 			if (templates.length === 0) {
 				container.addItem((sub) =>
-					sub.setTitle("Custom prompt…").onClick(() => this.runAnalyzeCustom(file.path)),
+					sub.setTitle("Custom prompt…").onClick(() => runCustomSafe(file.path)),
 				);
 				return;
 			}
 			for (const t of templates) {
 				container.addItem((sub) =>
-					sub.setTitle(t.label).onClick(() => void this.runAnalyze(file.path, t.name)),
+					sub.setTitle(t.label).onClick(() => runTemplateSafe(file.path, t.name)),
 				);
 			}
 			container.addItem((sub) =>
-				sub.setTitle("Custom prompt…").onClick(() => this.runAnalyzeCustom(file.path)),
+				sub.setTitle("Custom prompt…").onClick(() => runCustomSafe(file.path)),
 			);
 		});
 	}

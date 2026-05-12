@@ -31,7 +31,7 @@ Answer discovery questions over the vault by chaining MCP tools — not by grepp
 
 - Cite note paths inline (e.g. `notes/foo.md`) so the user can jump to them.
 - If hits disagree, surface the disagreement — don't silently pick one.
-- If the search returns nothing, do not fabricate. Say "no notes matched" and offer `vault_suggest_links` or ask for adjacent terms.
+- If the search returns nothing, do not fabricate. Say "no notes matched" and ask the user for adjacent terms — `vault_suggest_links` requires a starting `file` so it can't help here.
 
 ## Example
 

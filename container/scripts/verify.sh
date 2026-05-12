@@ -32,6 +32,25 @@ extract_major() {
   echo "$1" | grep -oE '[0-9]+' | head -1
 }
 
+# Parse the first major.minor pair from a version string. "v24.5.0" → "24.5",
+# "Python 3.12.4" → "3.12". Falls back to extract_major when no minor present.
+# Used by tool_version when the floor is supplied as a MAJOR.MINOR string so
+# floors like "3.12" actually enforce against drift down to 3.10.
+extract_major_minor() {
+  echo "$1" | grep -oE '[0-9]+\.[0-9]+' | head -1
+}
+
+# Compare two MAJOR.MINOR strings. Returns 0 if $1 < $2, 1 otherwise.
+# Pure shell so we don't need bc/awk for the comparison.
+ver_lt() {
+  local a_maj a_min b_maj b_min
+  a_maj="${1%%.*}"; a_min="${1#*.}"; a_min="${a_min%%.*}"
+  b_maj="${2%%.*}"; b_min="${2#*.}"; b_min="${b_min%%.*}"
+  if [ "$a_maj" -lt "$b_maj" ]; then return 0; fi
+  if [ "$a_maj" -eq "$b_maj" ] && [ "$a_min" -lt "$b_min" ]; then return 0; fi
+  return 1
+}
+
 # Print a "Label:   <first-line-of version output>" row. If the binary
 # isn't on PATH, prints "not found" and increments MISSING_TOOLS. Optional
 # third arg overrides the default --version flag (e.g. "-V"). Optional
@@ -52,11 +71,22 @@ tool_version() {
   output=$("$binary" "$flag" 2>&1 | head -1)
   local suffix=""
   if [ -n "$min_major" ]; then
-    local installed_major
-    installed_major=$(extract_major "$output")
-    if [ -n "$installed_major" ] && [ "$installed_major" -lt "$min_major" ]; then
-      suffix=" (below floor: ${min_major})"
-      TOOL_VERSION_REGRESSIONS=$((TOOL_VERSION_REGRESSIONS + 1))
+    if [[ "$min_major" == *.* ]]; then
+      # MAJOR.MINOR floor (e.g. "3.12"). Compare the installed major.minor.
+      local installed_mm
+      installed_mm=$(extract_major_minor "$output")
+      if [ -n "$installed_mm" ] && ver_lt "$installed_mm" "$min_major"; then
+        suffix=" (below floor: ${min_major})"
+        TOOL_VERSION_REGRESSIONS=$((TOOL_VERSION_REGRESSIONS + 1))
+      fi
+    else
+      # MAJOR-only floor.
+      local installed_major
+      installed_major=$(extract_major "$output")
+      if [ -n "$installed_major" ] && [ "$installed_major" -lt "$min_major" ]; then
+        suffix=" (below floor: ${min_major})"
+        TOOL_VERSION_REGRESSIONS=$((TOOL_VERSION_REGRESSIONS + 1))
+      fi
     fi
   fi
   printf "%-9s%s%s\n" "${label}:" "${output:-(empty)}" "${suffix}"
@@ -96,7 +126,7 @@ tool_version "tmux"    "tmux" "-V"
 tool_version "rg"      "rg"
 tool_version "fd"      "fd"
 tool_version "uv"      "uv"
-tool_version "Python"  "python3" "--version" "3"
+tool_version "Python"  "python3" "--version" "3.12"
 tool_version "gosu"    "gosu"
 tool_version "sudo"    "sudo"
 
@@ -266,14 +296,15 @@ fi
 echo ""
 echo "=== Done ==="
 
+had_failures=0
 if [ "$MISSING_TOOLS" -gt 0 ]; then
   echo "" >&2
   echo "⚠  ${MISSING_TOOLS} tool(s) reported 'not found' under Tool versions — see above." >&2
-  exit 1
+  had_failures=1
 fi
 if [ "$TOOL_VERSION_REGRESSIONS" -gt 0 ]; then
   echo "" >&2
   echo "⚠  ${TOOL_VERSION_REGRESSIONS} tool(s) below their version floor — see (below floor: N) markers above." >&2
-  exit 1
+  had_failures=1
 fi
-exit 0
+exit "$had_failures"
