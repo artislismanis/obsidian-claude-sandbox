@@ -41,13 +41,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify tag matches manifest.json and versions.json
+      - name: Verify tag matches manifest.json, versions.json, and package.json
         run: |
           TAG_VERSION="${GITHUB_REF_NAME}"
           MANIFEST_VERSION=$(node -p "require('./manifest.json').version")
           MANIFEST_MIN=$(node -p "require('./manifest.json').minAppVersion")
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
           if [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
             echo "Tag $TAG_VERSION does not match manifest.json version $MANIFEST_VERSION"
+            exit 1
+          fi
+          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "Tag $TAG_VERSION does not match package.json version $PACKAGE_VERSION"
+            echo "Run \`npm version $TAG_VERSION\` (or update package.json manually so version-bump can sync the rest)."
             exit 1
           fi
           if ! jq -e --arg v "$TAG_VERSION" 'has($v)' versions.json > /dev/null; then
@@ -84,7 +90,11 @@ jobs:
       # IS the signed root of trust). Verify with:
       #   gh attestation verify <file> --repo <owner>/<repo>
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v3
+        # SHA-pinned: a moving major-tag pin on the action that signs
+        # releases is a supply-chain liability — a tag re-push would
+        # compromise every future release signature with no rollback.
+        # SHA is v3.2.0 — keep comment in sync when bumping.
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f  # v3.2.0
         with:
           subject-path: |
             plugin/dist/main.js
@@ -97,12 +107,13 @@ jobs:
         with:
           name: ${{ github.ref_name }}
           draft: false
-          # Pre-release flag is repo-variable controlled. Set
-          # `RELEASE_PRERELEASE=false` (Settings → Secrets and variables →
-          # Actions → Variables) to ship a stable; any other value (or
-          # unset) leaves the Release marked pre-release. See
-          # docs/how-to/release.md.
-          prerelease: ${{ vars.RELEASE_PRERELEASE != 'false' }}
+          # Pre-release flag is repo-variable controlled. Default is STABLE:
+          # set `RELEASE_PRERELEASE=true` (Settings → Secrets and variables →
+          # Actions → Variables) to mark a release as pre-release. Previously
+          # the default was pre-release (only `=false` flipped it), which
+          # meant a missing/typo'd variable silently shipped every release as
+          # pre-release and hid them from BRAT's stable channel.
+          prerelease: ${{ vars.RELEASE_PRERELEASE == 'true' }}
           generate_release_notes: true
           files: |
             plugin/dist/main.js

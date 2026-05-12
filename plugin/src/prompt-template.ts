@@ -43,7 +43,11 @@ export function parsePromptTemplate(content: string, fallbackName: string): [str
 	return [firstLine.trim(), content.trim()];
 }
 
-/** Substitute `{{file}}` with the vault path (matches whitespace variants). */
+/** Substitute `{{file}}` with the vault path (matches whitespace variants).
+ *  Uses a function replacer so the path is never re-interpreted as a regex
+ *  back-reference (a literal `$1` / `$&` in the path would otherwise be
+ *  replaced by capture groups — vault paths rarely contain `$` but the bug
+ *  exists regardless). */
 export function substituteFilePlaceholder(body: string, vaultPath: string): string {
-	return body.replace(/\{\{\s*file\s*\}\}/g, vaultPath);
+	return body.replace(/\{\{\s*file\s*\}\}/g, () => vaultPath);
 }

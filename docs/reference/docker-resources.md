@@ -60,9 +60,17 @@ Injected into the container by the plugin at compose-up time (see `container/doc
 - `OAS_VAULT_WRITE_DIR`, `OAS_MEMORY_FILE_NAME`
 - `OAS_ALLOWED_PRIVATE_HOSTS`, `OAS_ALLOWED_DOMAINS`
 - `OAS_MCP_TOKEN`, `OAS_MCP_PORT`, `OAS_HOST_IP`
-- `OAS_TTYD_PORT`, `OAS_SUDO_PASSWORD`, `TERM`
+- `OAS_TTYD_PORT`, `OAS_TTYD_DEBUG`, `OAS_SUDO_PASSWORD`, `TERM`
 - `MEMORY_FILE_PATH` — the env var the [memory MCP server](https://github.com/modelcontextprotocol/servers/tree/main/src/memory) reads. Not prefixed (external contract).
 
-`OAS_VAULT_PATH` is consumed only on the host side as the bind-mount source — it is not exposed inside the container. Use `verify.sh` from inside the container to see the full set with values.
+Host-only (consumed by compose to shape the run, not visible inside the container):
+
+- `OAS_VAULT_PATH` — bind-mount source for the vault.
+- `OAS_TTYD_BIND` — host interface ttyd listens on (port mapping only).
+- `OAS_CONTAINER_MEMORY`, `OAS_CONTAINER_CPUS` — resource limits.
+- `OAS_IP_MASQ` — whether to enable NAT masquerading.
+- `CLAUDE_UID`, `CLAUDE_GID` — build-time UID/GID for the `claude` user.
+
+Use `verify.sh` from inside the container to see the full set of in-container values.
 
 The full list with values (inside a running container) comes from `verify.sh`.

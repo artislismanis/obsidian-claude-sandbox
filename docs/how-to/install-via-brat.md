@@ -25,6 +25,6 @@ To pin to a specific version: **BRAT: Switch a beta plugin to a different versio
 Installing the plugin does not install the container. You still need:
 - Docker running on the host.
 - This repo cloned, so `cd container && docker compose build` can produce `oas-sandbox:latest`.
-- The Compose file path set in the plugin settings.
+- The **Docker Compose path** setting in the plugin pointed at the cloned `container/` directory.
 
 See `tutorials/getting-started.md` for the full first-run flow.

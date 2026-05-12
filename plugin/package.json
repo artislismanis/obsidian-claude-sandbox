@@ -2,14 +2,13 @@
 	"name": "obsidian-agent-sandbox",
 	"version": "0.1.1",
 	"description": "Obsidian plugin for managing a Docker-based Claude Code environment",
-	"main": "dist/main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"lint": "eslint src/ *.mjs *.ts *.mts test/",
 		"lint:fix": "eslint src/ *.mjs *.ts *.mts test/ --fix",
-		"format": "prettier --write src/ *.ts *.mts *.mjs styles.css",
-		"format:check": "prettier --check src/ *.ts *.mts *.mjs styles.css",
+		"format": "prettier --write src/ test/ *.ts *.mts *.mjs styles.css",
+		"format:check": "prettier --check src/ test/ *.ts *.mts *.mjs styles.css",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
@@ -34,7 +33,6 @@
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
-		"@types/mocha": "^10.0.10",
 		"@types/node": "^24.0.0",
 		"@typescript-eslint/eslint-plugin": "^8.57.2",
 		"@typescript-eslint/parser": "^8.57.2",
@@ -53,9 +51,8 @@
 		"obsidian": "^1.7.2",
 		"obsidian-launcher": "^3.0.2",
 		"prettier": "^3.8.1",
-		"tslib": "2.6.2",
-		"tsx": "^4.21.0",
-		"typescript": "5.3.3",
+		"tslib": "^2.6.2",
+		"typescript": "^5.3.3",
 		"typescript-eslint": "^8.57.2",
 		"vitest": "^4.1.2",
 		"wdio-obsidian-reporter": "^3.0.2",
@@ -67,6 +64,14 @@
 	},
 	"lint-staged": {
 		"src/**/*.ts": [
+			"eslint --fix",
+			"prettier --write"
+		],
+		"test/**/*.{ts,mts}": [
+			"eslint --fix",
+			"prettier --write"
+		],
+		"*.{mjs,mts,ts}": [
 			"eslint --fix",
 			"prettier --write"
 		],

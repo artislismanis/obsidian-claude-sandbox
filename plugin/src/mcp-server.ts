@@ -26,6 +26,10 @@ export interface ActivityEntry {
 }
 
 const ACTIVITY_STALE_MS = 10 * 60_000;
+// Cap the activity map so a buggy/malicious agent calling agent_status_set
+// with random session names can't grow it unbounded. Map preserves insertion
+// order — when at cap, drop the oldest entry to make room for the new one.
+const MAX_ACTIVITY_ENTRIES = 200;
 
 export interface McpServerHooks {
 	/** Fired on writes when the reviewed tier is enabled — presents a diff modal. */
@@ -199,11 +203,14 @@ function createFileAuditSink(app: App): (entry: AuditEntry) => Promise<void> {
 					// would leave estimatedBytes stale forever. Re-stat on next
 					// invocation by clearing the cached value, so the next loop
 					// re-evaluates against actual file size.
-					estimatedBytes = -1;
+					// Rotation succeeded: the live file is now empty, so reset
+					// the counter to 0 rather than -1 (sentinel for re-stat).
+					// Using -1 here meant the post-append += landed one byte
+					// short forever — small drift but easy to avoid.
+					estimatedBytes = 0;
 				} catch {
-					// Rename failed — keep estimatedBytes as-is so we'll retry
-					// rotation on the next entry instead of growing past the cap
-					// silently. Re-stat next iteration to pick up the real size.
+					// Rename failed — re-stat next iteration to pick up the real
+					// size (the cap-check will retry rotation then).
 					estimatedBytes = -1;
 				}
 			}
@@ -220,6 +227,10 @@ function createFileAuditSink(app: App): (entry: AuditEntry) => Promise<void> {
 export class ObsidianMcpServer {
 	private httpServer: Server | null = null;
 	private transports = new Map<string, StreamableHTTPServerTransport>();
+	// Track per-session McpServer SDK instances so we can .close() them when the
+	// transport drops. Without this, every new session leaks an McpServer for the
+	// life of the plugin — small in absolute terms but unbounded over time.
+	private mcpServers = new Map<string, McpServer>();
 	private sessionTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 	private app: App;
 	private config: McpServerConfig;
@@ -362,6 +373,14 @@ export class ObsidianMcpServer {
 
 	private cleanupSession(sid: string): void {
 		this.transports.delete(sid);
+		const server = this.mcpServers.get(sid);
+		if (server) {
+			this.mcpServers.delete(sid);
+			// Fire-and-forget; SDK close errors shouldn't block transport cleanup.
+			void Promise.resolve(server.close?.()).catch((err) =>
+				logger.debug("MCP", `McpServer close error for session ${sid.slice(0, 8)}…`, err),
+			);
+		}
 		const timeout = this.sessionTimeouts.get(sid);
 		if (timeout) clearTimeout(timeout);
 		this.sessionTimeouts.delete(sid);
@@ -376,6 +395,14 @@ export class ObsidianMcpServer {
 		status: AgentStatus;
 		detail?: string;
 	}): void {
+		// LRU on update: delete-then-set so the entry moves to the tail in
+		// insertion order. When over cap, drop the head (oldest) entry.
+		if (this.activity.has(update.sessionName)) {
+			this.activity.delete(update.sessionName);
+		} else if (this.activity.size >= MAX_ACTIVITY_ENTRIES) {
+			const oldest = this.activity.keys().next().value;
+			if (oldest !== undefined) this.activity.delete(oldest);
+		}
 		this.activity.set(update.sessionName, {
 			status: update.status,
 			detail: update.detail,
@@ -668,7 +695,16 @@ export class ObsidianMcpServer {
 				timeoutMs,
 			);
 		});
-		const result = await Promise.race([tool.handler(args), timeout]).finally(() => {
+		// Attach a catch to the handler promise BEFORE racing so a late
+		// rejection (after timeout already won the race) doesn't surface as an
+		// unhandled rejection. Timeouts can't truly cancel an in-flight handler
+		// — apply() may complete after we returned a "failed" result. We log
+		// the late outcome so the audit trail isn't silent about it.
+		const handlerPromise = tool.handler(args);
+		handlerPromise.catch((err) => {
+			logger.warn("MCP", `Late rejection from '${tool.name}' (after timeout/return)`, err);
+		});
+		const result = await Promise.race([handlerPromise, timeout]).finally(() => {
 			if (timer) clearTimeout(timer);
 		});
 		// Truncate every text entry independently in the byte domain, then cap
@@ -790,9 +826,13 @@ export class ObsidianMcpServer {
 			// do here, but keep the branch explicit so future readers see it.
 		};
 
+		const server = this.createMcpServer();
 		try {
-			const server = this.createMcpServer();
 			await server.connect(transport);
+			// Register the server once the transport is initialized so cleanupSession
+			// can close it. If init fails, server.close() is called in the catch.
+			const sid = transport.sessionId;
+			if (sid) this.mcpServers.set(sid, server);
 			await transport.handleRequest(req, res, body);
 		} catch (err) {
 			logger.error("MCP", "Failed to initialize MCP session", err);
@@ -800,15 +840,24 @@ export class ObsidianMcpServer {
 			if (sid) {
 				this.cleanupSession(sid);
 			} else {
-				// Init failed before onsessioninitialized fired, so the transport
-				// isn't tracked in this.transports. Close it directly so we don't
-				// leak the underlying SDK resources / SSE keepalives.
+				// Init failed before onsessioninitialized fired, so neither the
+				// transport nor the McpServer is tracked yet. Close both directly
+				// so we don't leak SDK resources / SSE keepalives.
 				try {
 					await transport.close?.();
 				} catch (closeErr) {
 					logger.debug(
 						"MCP",
 						"Error closing untracked transport after init failure",
+						closeErr,
+					);
+				}
+				try {
+					await server.close?.();
+				} catch (closeErr) {
+					logger.debug(
+						"MCP",
+						"Error closing untracked McpServer after init failure",
 						closeErr,
 					);
 				}

@@ -29,13 +29,13 @@ Vault tags drift over time — the same concept ends up as `#project`, `#Project
 
 ### Phase 2 — Propose a merge plan
 
-For each variant cluster, write the plan as a table before doing anything:
+For each variant cluster, write the plan as a human-readable list before doing anything. `vault_tags` returns `#tag: N` per line — restate it in plan form:
 
 ```
 Merge plan:
-  #Project (12 uses) → #project  [canonical]
-  #projects (3 uses) → #project
-  #proj (1 use)      → #project
+  #Project: 12 → merge into #project  [canonical]
+  #projects: 3 → merge into #project
+  #proj: 1     → merge into #project
 ```
 
 Present to the user and wait for explicit approval. Don't apply silently.

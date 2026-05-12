@@ -668,12 +668,20 @@ export class TerminalView extends ItemView {
 			const sessionMs = opened ? now - this.wsOpenedAt : now - this.wsConnectStartedAt;
 			const idleMs = this.wsLastRxAt > 0 ? now - this.wsLastRxAt : -1;
 			const codeName = CLOSE_CODE_NAMES[event.code] ?? `code-${event.code}`;
+			// ttyd close.reason can contain quotes/control chars — JSON-encode so
+			// the surrounding log line isn't truncated by an embedded `"`.
+			const reasonField = JSON.stringify(event.reason || "");
 			const detail =
-				`code=${event.code} (${codeName}) reason="${event.reason || ""}" wasClean=${event.wasClean} ` +
+				`code=${event.code} (${codeName}) reason=${reasonField} wasClean=${event.wasClean} ` +
 				`opened=${opened} sessionMs=${sessionMs} idleMsBeforeClose=${idleMs} ` +
 				`rxBytes=${this.wsRxBytes} rxMsgs=${this.wsRxMsgs} txBytes=${this.wsTxBytes} ` +
 				`gen=${gen} instance=${this.instanceId}`;
-			const normal = event.code === 1000 || event.code === 1001 || event.code === 1005;
+			// 1000 = normal closure, 1001 = going away. 1005 ("no status received")
+			// is commonly emitted on abrupt drops (Wi-Fi switch, container kill -9)
+			// and SHOULD reconnect — previously treating it as normal stranded
+			// recoverable drops with a misleading "container may have stopped"
+			// banner and no reconnect attempt.
+			const normal = event.code === 1000 || event.code === 1001;
 			if (normal) {
 				logger.debug("Terminal", `WebSocket closed cleanly — ${detail}`);
 			} else {

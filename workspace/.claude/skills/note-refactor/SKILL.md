@@ -51,7 +51,7 @@ For any delete with backlinks, either:
 
 - **Rename:** `vault_rename` with `name: "new-name"`. Extension preserved if omitted.
 - **Move:** `vault_move` with `to: "destination/folder"`. Filename is preserved.
-- **Delete:** `vault_delete`. Files go to the system trash via `app.vault.trash`.
+- **Delete:** `vault_delete`. Sends to the user's configured trash via `app.vault.trash` — that's the system trash when the platform supports it, otherwise Obsidian's per-vault `.trash/` folder. Either way it is recoverable, but don't promise a specific destination.
 
 If `writeReviewed` is enabled, each call surfaces a review modal with the affected-links list. Expect the user to approve or reject per operation.
 

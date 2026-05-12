@@ -1185,4 +1185,181 @@ describe("MCP tool handlers", () => {
 			expect(names).not.toContain("vault_modify_reviewed");
 		});
 	});
+
+	describe("path-filter output gating (info-disclosure boundary)", () => {
+		// Build a separate app/tools where pathFilter restricts visibility to
+		// `notes/`. We then verify that link/graph/backlink outputs DO NOT
+		// surface paths under `secret/` — even when resolved-links metadata
+		// references them from an allowed file. Pre-fix, those tools leaked.
+		const filteredFiles = [
+			makeTFile("notes/visible.md"),
+			makeTFile("notes/sibling.md"),
+			makeTFile("secret/hidden.md"),
+		];
+		let localApp: ReturnType<typeof createMockApp>;
+		let filteredTools: McpToolDef[];
+
+		beforeEach(() => {
+			localApp = createMockApp(filteredFiles);
+			localApp.metadataCache.resolvedLinks = {
+				"notes/visible.md": { "notes/sibling.md": 1, "secret/hidden.md": 1 },
+				"notes/sibling.md": { "notes/visible.md": 1 },
+				"secret/hidden.md": { "notes/visible.md": 1 },
+			};
+			localApp.metadataCache.unresolvedLinks = {
+				"notes/visible.md": { "secret/missing": 1 },
+				"secret/hidden.md": { "secret/missing": 1 },
+			};
+			filteredTools = buildTools({
+				app: localApp as never,
+				getWriteDir: () => "agent-workspace",
+				pathFilter: { allowlist: ["notes/"], blocklist: [] },
+			});
+		});
+
+		it("vault_links omits targets outside the allowlist", async () => {
+			const r = getResult(
+				await getTool(filteredTools, "vault_links").handler({ path: "notes/visible.md" }),
+			);
+			expect(r.isError).toBe(false);
+			expect(r.text).toContain("notes/sibling.md");
+			expect(r.text).not.toContain("secret/hidden.md");
+		});
+
+		it("vault_backlinks omits sources outside the allowlist", async () => {
+			const r = getResult(
+				await getTool(filteredTools, "vault_backlinks").handler({
+					path: "notes/visible.md",
+				}),
+			);
+			expect(r.isError).toBe(false);
+			expect(r.text).not.toContain("secret/hidden.md");
+		});
+
+		it("vault_orphans omits files outside the allowlist", async () => {
+			const r = getResult(await getTool(filteredTools, "vault_orphans").handler({}));
+			expect(r.text).not.toContain("secret/");
+		});
+
+		it("vault_unresolved omits unresolved-links from blocked source files", async () => {
+			const r = getResult(await getTool(filteredTools, "vault_unresolved").handler({}));
+			expect(r.text).not.toContain("from secret/hidden.md");
+		});
+	});
+
+	describe("vault_create_folder traversal guards", () => {
+		it("rejects '..' path segments up-front", async () => {
+			const r = getResult(
+				await getTool(tools, "vault_create_folder").handler({ path: "../escape" }),
+			);
+			expect(r.isError).toBe(true);
+			expect(r.text).toMatch(/may not contain a '\.\.'/);
+		});
+
+		it("rejects leading-slash absolute paths up-front", async () => {
+			const r = getResult(
+				await getTool(tools, "vault_create_folder").handler({ path: "/etc" }),
+			);
+			expect(r.isError).toBe(true);
+			expect(r.text).toMatch(/may not contain a '\.\.'/);
+		});
+	});
+
+	describe("frontmatter property safety", () => {
+		it("vault_frontmatter_set rejects __proto__ property name", async () => {
+			const r = getResult(
+				await getTool(tools, "vault_frontmatter_set").handler({
+					path: "agent-workspace/draft.md",
+					property: "__proto__",
+					value: "evil",
+				}),
+			);
+			expect(r.isError).toBe(true);
+			expect(r.text).toMatch(/not allowed/i);
+		});
+
+		it("vault_frontmatter_delete rejects constructor property name", async () => {
+			const r = getResult(
+				await getTool(tools, "vault_frontmatter_delete").handler({
+					path: "agent-workspace/draft.md",
+					property: "constructor",
+				}),
+			);
+			expect(r.isError).toBe(true);
+			expect(r.text).toMatch(/not allowed/i);
+		});
+
+		it("vault_batch_frontmatter rejects prototype property name", async () => {
+			const r = getResult(
+				await getTool(tools, "vault_batch_frontmatter").handler({
+					query: "anything",
+					property: "prototype",
+					value: "x",
+				}),
+			);
+			expect(r.isError).toBe(true);
+			expect(r.text).toMatch(/not allowed/i);
+		});
+
+		it("vault_properties rejects __proto__ as the property to look up", async () => {
+			const r = getResult(
+				await getTool(tools, "vault_properties").handler({ property: "__proto__" }),
+			);
+			expect(r.isError).toBe(true);
+			expect(r.text).toMatch(/not allowed/i);
+		});
+	});
+
+	describe("vault_search_replace backref grammar", () => {
+		// Verify the regex backref parser matches String.replace semantics for
+		// $& / $` / $' and degrades safely on out-of-range $N references.
+		const sources: Record<string, string> = {
+			"agent-workspace/sample.md": "FOO bar BAZ",
+		};
+		let localApp: ReturnType<typeof createMockApp>;
+		let localTools: McpToolDef[];
+
+		beforeEach(() => {
+			const file = makeTFile(
+				"agent-workspace/sample.md",
+				sources["agent-workspace/sample.md"],
+			);
+			localApp = createMockApp([file], {
+				readBody: (f) => sources[f.path] ?? "",
+			});
+			localTools = buildTools({
+				app: localApp as never,
+				getWriteDir: () => "agent-workspace",
+			});
+		});
+
+		it("$& expands to the whole match", async () => {
+			const r = getResult(
+				await getTool(localTools, "vault_search_replace").handler({
+					path: "agent-workspace/sample.md",
+					search: "b\\w+",
+					replace: "[$&]",
+					regex: true,
+				}),
+			);
+			expect(r.isError).toBe(false);
+			expect(localApp.vault.modify).toHaveBeenCalledWith(expect.anything(), "FOO [bar] BAZ");
+		});
+
+		it("out-of-range numeric backref is passed through literally", async () => {
+			const r = getResult(
+				await getTool(localTools, "vault_search_replace").handler({
+					path: "agent-workspace/sample.md",
+					search: "(b)(a)(r)",
+					replace: "$1-$2-$3-$9",
+					regex: true,
+				}),
+			);
+			expect(r.isError).toBe(false);
+			expect(localApp.vault.modify).toHaveBeenCalledWith(
+				expect.anything(),
+				"FOO b-a-r-$9 BAZ",
+			);
+		});
+	});
 });

@@ -74,7 +74,7 @@ Vitest unit test files (`npm run test`) live in `src/__tests__/`:
 - `validation.test.ts` — All input validators
 - `settings-tiers.test.ts` — Tier-toggle wiring through settings into the MCP server config
 - `mcp-server.test.ts` — Transport/auth/rate-limit/timeout integration; `mcp-symlink.test.ts` — symlink-traversal guard
-- `mcp-tools.test.ts` / `mcp-tool-handlers.test.ts` — Tool registration + per-handler behaviour
+- `mcp-tool-handlers.test.ts` — Tool registration + per-handler behaviour
 - `mcp-review.test.ts` / `mcp-batch-review.test.ts` — Review-gating for writeReviewed and batch flows
 - `mcp-activity.test.ts` — `agent_status_set` and onActivity routing
 - `mcp-extensions.test.ts` — Dataview / Templater / Tasks / Canvas / Periodic Notes tools

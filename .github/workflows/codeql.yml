@@ -8,12 +8,14 @@ on:
   pull_request:
     paths:
       - "plugin/**"
-      - ".github/workflows/codeql.yml"
+      # The `actions` CodeQL language scans workflows themselves —
+      # any workflow change should re-run the analysis.
+      - ".github/workflows/**"
   push:
     branches: [main]
     paths:
       - "plugin/**"
-      - ".github/workflows/codeql.yml"
+      - ".github/workflows/**"
   schedule:
     # Weekly Monday 06:00 UTC — same slot as the links sweep so off-peak
     # quota usage clusters.
@@ -38,7 +40,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [javascript-typescript]
+        # `actions` covers GitHub Actions workflows (script injection,
+        # untrusted-input flows). Shell scripts under container/scripts are
+        # not in scope for CodeQL — shellcheck handles those via lint-infra.
+        language: [javascript-typescript, actions]
     steps:
       - uses: actions/checkout@v6
 

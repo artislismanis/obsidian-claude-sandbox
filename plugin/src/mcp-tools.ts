@@ -160,6 +160,28 @@ function resolveFile(
 }
 
 /**
+ * Drop target paths the agent cannot see. Without this, link/graph read tools
+ * leak the existence and names of out-of-allowlist files via outgoing-link
+ * metadata, backlinks, orphan/unresolved-link tables, and BFS frontiers.
+ */
+function filterPaths(paths: Iterable<string>, pathFilter?: PathFilter): string[] {
+	const arr = [...paths];
+	if (!pathFilter) return arr;
+	return arr.filter((p) => isPathAllowed(p, pathFilter.allowlist, pathFilter.blocklist));
+}
+
+/**
+ * Reject frontmatter property names that would mutate the prototype chain when
+ * assigned via `fm[name] = value`. Also rejects empty names so we don't write
+ * `''` into YAML. The denylist mirrors the standard prototype-pollution surface.
+ */
+const FORBIDDEN_FM_PROPS = new Set(["__proto__", "constructor", "prototype"]);
+function isSafeFrontmatterProperty(name: string): boolean {
+	if (typeof name !== "string" || name.length === 0) return false;
+	return !FORBIDDEN_FM_PROPS.has(name);
+}
+
+/**
  * Posix-segment check for `..` components. Replaces the coarse
  * `path.includes("..")` which would also reject legitimate names like
  * `notes/v1..2.md` or `..safe/foo.md`. We split on both `/` and `\` so callers
@@ -541,9 +563,10 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 				const f = resolveFile(app, { file, path }, pathFilter);
 				if (!f) return error("File not found.");
 				const resolved = app.metadataCache.resolvedLinks[f.path] ?? {};
-				const entries = Object.entries(resolved).map(
-					([target, count]) => `${target} (${count})`,
-				);
+				const allowed = new Set(filterPaths(Object.keys(resolved), pathFilter));
+				const entries = Object.entries(resolved)
+					.filter(([target]) => allowed.has(target))
+					.map(([target, count]) => `${target} (${count})`);
 				return text(entries.join("\n") || "(no outgoing links)");
 			},
 		}),
@@ -563,7 +586,7 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 			handler: async ({ file, path }) => {
 				const f = resolveFile(app, { file, path }, pathFilter);
 				if (!f) return error("File not found.");
-				const backlinks = collectBacklinks(f.path);
+				const backlinks = filterPaths(collectBacklinks(f.path), pathFilter);
 				return text(backlinks.join("\n") || "(no backlinks)");
 			},
 		}),
@@ -600,8 +623,11 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 
 			handler: async () => {
 				const linkedTo = buildLinkGraph().reverse;
-				const orphans = app.vault.getMarkdownFiles().filter((f) => !linkedTo.has(f.path));
-				return text(orphans.map((f) => f.path).join("\n") || "(no orphans)");
+				const orphans = app.vault
+					.getMarkdownFiles()
+					.filter((f) => !linkedTo.has(f.path))
+					.map((f) => f.path);
+				return text(filterPaths(orphans, pathFilter).join("\n") || "(no orphans)");
 			},
 		}),
 	);
@@ -616,6 +642,13 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 			handler: async () => {
 				const entries: string[] = [];
 				for (const [source, targets] of Object.entries(app.metadataCache.unresolvedLinks)) {
+					// Filter by source visibility: if the agent can't see the source
+					// file, don't reveal that it had unresolved links to anything.
+					if (
+						pathFilter &&
+						!isPathAllowed(source, pathFilter.allowlist, pathFilter.blocklist)
+					)
+						continue;
 					for (const [target, count] of Object.entries(targets)) {
 						entries.push(`${target} (from ${source}, ${count}x)`);
 					}
@@ -669,11 +702,19 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 
 			handler: async ({ property }) => {
 				if (property) {
+					// `property in fm` would match inherited keys like `toString` /
+					// `constructor` and let an agent get truthy counts for every
+					// note. Also reject prototype-mutating names up-front so the
+					// cache key can't be polluted with them.
+					if (!isSafeFrontmatterProperty(property))
+						return error(
+							`Property name '${property}' is not allowed (reserved or invalid).`,
+						);
 					const compute = (): Array<[string, number]> => {
 						const values: Record<string, number> = {};
 						for (const file of app.vault.getMarkdownFiles()) {
 							const fm = app.metadataCache.getFileCache(file)?.frontmatter;
-							if (fm && property in fm) {
+							if (fm && Object.prototype.hasOwnProperty.call(fm, property)) {
 								const val = JSON.stringify(fm[property]);
 								values[val] = (values[val] ?? 0) + 1;
 							}
@@ -754,7 +795,8 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 							}
 						}
 					}
-					if (nextFrontier.size > 0) levels.push([...nextFrontier].sort());
+					const visible = filterPaths(nextFrontier, pathFilter).sort();
+					if (visible.length > 0) levels.push(visible);
 					frontier = nextFrontier;
 				}
 				if (levels.length === 0) return text("(no linked notes)");
@@ -778,8 +820,14 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 			},
 
 			handler: async ({ source: sourcePath, target: targetPath }) => {
-				if (!app.vault.getFileByPath(sourcePath)) return error("Source file not found.");
-				if (!app.vault.getFileByPath(targetPath)) return error("Target file not found.");
+				// Honor pathFilter at both endpoints so a restricted agent can't
+				// probe whether out-of-allowlist files exist, and can't ride a
+				// trail through them as intermediate nodes (the BFS below
+				// filters intermediates too).
+				if (!resolveFile(app, { path: sourcePath }, pathFilter))
+					return error("Source file not found.");
+				if (!resolveFile(app, { path: targetPath }, pathFilter))
+					return error("Target file not found.");
 				if (sourcePath === targetPath) return text(sourcePath);
 
 				const graph = buildLinkGraph();
@@ -807,6 +855,15 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 					const current = queue[head++];
 					for (const neighbor of graph.forward.get(current) ?? []) {
 						if (visited.has(neighbor)) continue;
+						// Skip intermediate nodes the agent can't see. The target
+						// is the only node allowed to be filter-checked as endpoint
+						// above; everything between must also be visible.
+						if (
+							neighbor !== targetPath &&
+							pathFilter &&
+							!isPathAllowed(neighbor, pathFilter.allowlist, pathFilter.blocklist)
+						)
+							continue;
 						visited.add(neighbor);
 						parent.set(neighbor, current);
 						if (neighbor === targetPath) return text(reconstruct(neighbor));
@@ -876,6 +933,10 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 				}
 
 				const clusters = [...groups.values()]
+					// Drop members the agent can't see BEFORE applying minSize so
+					// a restricted view doesn't bleed through cluster membership
+					// counts. Re-apply minSize after filtering.
+					.map((g) => filterPaths(g, pathFilter))
 					.filter((g) => g.length >= minSize)
 					.sort((a, b) => b.length - a.length)
 					.slice(0, maxClusters);
@@ -918,8 +979,11 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 				const headings = (cache?.headings ?? []).map(
 					(h) => `${"#".repeat(h.level)} ${h.heading}`,
 				);
-				const outgoing = Object.keys(app.metadataCache.resolvedLinks[f.path] ?? {});
-				const backlinks = collectBacklinks(f.path);
+				const outgoing = filterPaths(
+					Object.keys(app.metadataCache.resolvedLinks[f.path] ?? {}),
+					pathFilter,
+				);
+				const backlinks = filterPaths(collectBacklinks(f.path), pathFilter);
 				const sections: string[] = [
 					`# ${f.path}\n`,
 					fm ? `## Frontmatter\n${JSON.stringify(fm, null, 2)}\n` : "",
@@ -993,7 +1057,14 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 				}, others);
 
 				candidates.sort((a, b) => b.score - a.score);
+				const allowedPaths = new Set(
+					filterPaths(
+						candidates.map((c) => c.path),
+						pathFilter,
+					),
+				);
 				const results = candidates
+					.filter((c) => allowedPaths.has(c.path))
 					.slice(0, limit)
 					.map((c) => `${c.path} (score: ${c.score})`);
 				return text(results.join("\n") || "(no suggestions)");
@@ -1222,6 +1293,10 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 				},
 
 				handler: async ({ file, path, property, value: raw }) => {
+					if (!isSafeFrontmatterProperty(property))
+						return error(
+							`Property name '${property}' is not allowed (reserved or invalid).`,
+						);
 					const result = resolveForWrite({ file, path });
 					if (!result.ok) return result.error;
 					const f = result.file;
@@ -1257,11 +1332,15 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 				},
 
 				handler: async ({ file, path, property }) => {
+					if (!isSafeFrontmatterProperty(property))
+						return error(
+							`Property name '${property}' is not allowed (reserved or invalid).`,
+						);
 					const result = resolveForWrite({ file, path });
 					if (!result.ok) return result.error;
 					const f = result.file;
 					const oldFm = frontmatterSnapshot(f);
-					if (!(property in oldFm))
+					if (!Object.prototype.hasOwnProperty.call(oldFm, property))
 						return error(`Property '${property}' not found in frontmatter.`);
 					const { [property]: _dropped, ...newFm } = oldFm;
 					return runWrite({
@@ -1357,12 +1436,40 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 						// mode the user's pattern has no groups, so `$N` should pass
 						// through unchanged.
 						if (!useRegex) return replacement;
-						return replacement.replace(/\$(\$|\d+)/g, (_, token) => {
-							if (token === "$") return "$";
-							const idx = parseInt(token, 10);
-							const grp = matchArgs[idx];
-							return typeof grp === "string" ? grp : "";
-						});
+						const groups = matchArgs.slice(0, -2); // strip offset + full string
+						const wholeMatch = String(groups[0] ?? "");
+						const groupCount = groups.length - 1;
+						return replacement.replace(
+							// Match $$ | $& | $` | $' | $1..$99. Mirrors String.replace's
+							// own grammar so authors don't get surprised by `$10` being
+							// silently treated as group 10 when only one capture exists.
+							/\$(\$|&|`|'|\d{1,2})/g,
+							(token, sym) => {
+								if (sym === "$") return "$";
+								if (sym === "&") return wholeMatch;
+								const matchOffset = matchArgs[matchArgs.length - 2] as number;
+								if (sym === "`") return content.slice(0, matchOffset);
+								if (sym === "'")
+									return content.slice(matchOffset + wholeMatch.length);
+								// Numeric backref. If $NN exceeds the group count and a
+								// single-digit prefix would be a valid backref, fall back
+								// to the single-digit form + literal next digit (matches
+								// String.replace behaviour).
+								const idx = parseInt(sym, 10);
+								if (idx > groupCount && sym.length === 2) {
+									const singleIdx = parseInt(sym[0], 10);
+									if (singleIdx >= 1 && singleIdx <= groupCount) {
+										const grp = groups[singleIdx];
+										return (typeof grp === "string" ? grp : "") + sym[1];
+									}
+									// No valid group at either length — pass through.
+									return token;
+								}
+								if (idx < 1 || idx > groupCount) return token;
+								const grp = groups[idx];
+								return typeof grp === "string" ? grp : "";
+							},
+						);
 					});
 					if (count === 0) return error("No matches found.");
 					return runWrite({
@@ -1471,50 +1578,46 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 							"Heading targets only support position='after'. Use a line target for before/replace.",
 						);
 
-					let targetLine: number;
-
 					if (headingArg) {
+						// Heading mode only supports position='after' (guarded
+						// above). Compute endLine directly from heading bounds.
 						const cache = app.metadataCache.getFileCache(f);
 						const headings = cache?.headings ?? [];
 						const match = headings.find(
 							(h) => h.heading === headingArg.replace(/^#+\s*/, ""),
 						);
 						if (!match) return error(`Heading '${headingArg}' not found.`);
-						targetLine = match.position.start.line;
-
-						if (position === "after") {
-							const matchLevel = match.level;
-							let endLine = lines.length;
-							const matchIdx = headings.indexOf(match);
-							const next = headings
-								.slice(matchIdx + 1)
-								.find((h) => h.level <= matchLevel);
-							if (next) endLine = next.position.start.line;
-							const updated = [
-								...lines.slice(0, endLine),
-								insertContent,
-								...lines.slice(endLine),
-							].join("\n");
-							return runWrite({
-								operation: "patch",
-								filePath: f.path,
-								oldContent: existing,
-								newContent: updated,
-								description: `Patch ${f.path} after heading '${headingArg}'`,
-								review,
-								apply: () => app.vault.modify(f, updated),
-								successMsg: `Patched ${f.path} after heading '${headingArg}'`,
-								recheckFile: f,
-							});
-						}
-					} else {
-						targetLine = lineArg! - 1;
-						// `replace` requires the line to actually exist; before/after
-						// can target the position past the last line for appending.
-						const upper = position === "replace" ? lines.length - 1 : lines.length;
-						if (targetLine < 0 || targetLine > upper)
-							return error(`Line ${lineArg} is out of range (1-${upper + 1}).`);
+						const matchLevel = match.level;
+						let endLine = lines.length;
+						const matchIdx = headings.indexOf(match);
+						const next = headings
+							.slice(matchIdx + 1)
+							.find((h) => h.level <= matchLevel);
+						if (next) endLine = next.position.start.line;
+						const updated = [
+							...lines.slice(0, endLine),
+							insertContent,
+							...lines.slice(endLine),
+						].join("\n");
+						return runWrite({
+							operation: "patch",
+							filePath: f.path,
+							oldContent: existing,
+							newContent: updated,
+							description: `Patch ${f.path} after heading '${headingArg}'`,
+							review,
+							apply: () => app.vault.modify(f, updated),
+							successMsg: `Patched ${f.path} after heading '${headingArg}'`,
+							recheckFile: f,
+						});
 					}
+
+					const targetLine = lineArg! - 1;
+					// `replace` requires the line to actually exist; before/after
+					// can target the position past the last line for appending.
+					const upper = position === "replace" ? lines.length - 1 : lines.length;
+					if (targetLine < 0 || targetLine > upper)
+						return error(`Line ${lineArg} is out of range (1-${upper + 1}).`);
 
 					if (position === "before") {
 						lines.splice(targetLine, 0, insertContent);
@@ -1761,6 +1864,11 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 			},
 
 			handler: async ({ path }) => {
+				// Mirror vault_create's defense-in-depth: reject traversal up-front
+				// instead of relying solely on isVaultPathSafe, whose realpath walk
+				// passes for entirely-new trees where no ancestor exists yet.
+				if (pathHasParentSegment(path) || path.startsWith("/") || path.startsWith("\\"))
+					return error("Path may not contain a '..' segment or start with '/' or '\\'.");
 				if (!isVaultPathSafe(app, path))
 					return error("Path resolves outside the vault (symlink).");
 				return gateVaultWrite({
@@ -1797,6 +1905,10 @@ export function buildTools(opts: BuildToolsOptions): McpToolDef[] {
 			},
 
 			handler: async ({ query, property, value: rawValue, dryRun = true }) => {
+				if (!isSafeFrontmatterProperty(property))
+					return error(
+						`Property name '${property}' is not allowed (reserved or invalid).`,
+					);
 				const search = prepareSimpleSearch(query);
 				// Cap matches so a broad query (`"the"`) doesn't load the entire
 				// vault into memory and synchronously rewrite every frontmatter

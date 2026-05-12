@@ -361,6 +361,11 @@ export default class AgentSandboxPlugin extends Plugin {
 		// 4. Detach terminal leaves last (TerminalView.onClose may want to
 		//    log a final activity event before the MCP server is gone).
 		// The 2s race inside mcpServer.stop() bounds worst-case wait.
+		// Drain any queued lifecycle op first so a toggle/restart enqueued
+		// just before unload can't construct a fresh server after stop()
+		// returns. queueMcpOp's tail catches both success and failure paths,
+		// so awaiting once flushes whatever is pending without throwing.
+		await this.mcpQueue.catch(() => {});
 		await this.mcpServer?.stop().catch(() => {});
 		this.agentOutput?.dispose();
 		// ActivityUi holds a setInterval for the stale-rolling tick — clear()

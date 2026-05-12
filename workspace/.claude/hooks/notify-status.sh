@@ -47,7 +47,7 @@ session="$(tmux display-message -p '#S' 2>/dev/null || true)"
 # only ever runs in-container, so we can rely on it.
 init_msg='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"notify-status","version":"1.0"}}}'
 init_notif='{"jsonrpc":"2.0","method":"notifications/initialized"}'
-call_msg=$(jq -n --arg s "$status" --arg n "$session" --arg d "$detail" '
+if ! call_msg=$(jq -n --arg s "$status" --arg n "$session" --arg d "$detail" '
   {
     jsonrpc: "2.0",
     id: 2,
@@ -58,7 +58,17 @@ call_msg=$(jq -n --arg s "$status" --arg n "$session" --arg d "$detail" '
         + (if $n == "" then {} else { sessionName: $n } end)
         + (if $d == "" then {} else { detail: $d } end))
     }
-  }')
+  }'); then
+  # jq failure here would have left $call_msg empty and silently sent a
+  # blank line to the proxy — the hook would log "success" while reporting
+  # nothing. Bail loudly so monitoring catches the regression instead.
+  echo "notify-status: jq failed to build call_msg" >&2
+  exit 0
+fi
+if [ -z "$call_msg" ]; then
+  echo "notify-status: empty call_msg from jq" >&2
+  exit 0
+fi
 
 proxy="$(dirname "$0")/../scripts/obsidian-mcp-proxy.js"
 if [ ! -f "$proxy" ]; then

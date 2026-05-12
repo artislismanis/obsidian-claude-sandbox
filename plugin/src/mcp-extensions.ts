@@ -313,7 +313,11 @@ const DATE_FIELDS: { key: "due" | "scheduled" | "start"; re: RegExp }[] = (
 }));
 
 function parseTaskLine(rawLine: string): Omit<TaskEntry, "path" | "line"> | null {
-	const m = /^\s*-\s*\[( |x|X)\]\s+(.*)$/.exec(rawLine);
+	// Strip trailing CR (CRLF files) so the body and downstream regex captures
+	// don't include the carriage return. Also accept zero whitespace after `]`
+	// so empty checklist items (`- [ ]`) without a body still parse.
+	const line = rawLine.replace(/\r$/, "");
+	const m = /^\s*-\s*\[( |x|X)\]\s*(.*)$/.exec(line);
 	if (!m) return null;
 	const status: "open" | "done" = m[1].toLowerCase() === "x" ? "done" : "open";
 	const body = m[2];
@@ -693,6 +697,28 @@ export function registerPeriodicNotesTools(app: App, push: ToolPusher, gate: Wri
 								noteName,
 								false,
 							);
+							// Mirror vault_templater_create's post-validate: a template
+							// that calls `tp.file.move(...)` from its script section can
+							// relocate the file outside the gated destPath. Detect the
+							// mismatch, trash the escaped file, and surface an error so
+							// no template can side-channel writes past the review gate.
+							const created = app.vault.getFileByPath(path);
+							if (!created) {
+								const actual = app.vault
+									.getMarkdownFiles()
+									.find((f) => f.basename === noteName);
+								if (actual) {
+									try {
+										await app.vault.trash(actual, true);
+									} catch {
+										/* surface the relocation error anyway */
+									}
+									throw new Error(
+										`Template relocated the periodic note from '${path}' to '${actual.path}' (likely via tp.file.move). Refusing to escape the gated path.`,
+									);
+								}
+								throw new Error(`Templater did not produce a file at '${path}'.`);
+							}
 						},
 						successMsg: `Created ${path} (Templater processed)`,
 					});

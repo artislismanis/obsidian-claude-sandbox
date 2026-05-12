@@ -9,8 +9,8 @@ This is Claude's configurable workspace inside the Agent Sandbox container. Ever
 | `.claude/settings.json` | Claude Code project settings (permission mode, env, experiments) |
 | `.claude/settings.local.json` | Per-machine overrides (gitignored) |
 | `.claude/skills/` | Project skills shipped with the workspace (see `ls .claude/skills/` for the current set). |
-| `.claude/agents/` | Sub-agents — *not shipped by default*; create files here if you want repo-managed sub-agents. |
-| `.claude/commands/` | Slash commands — *not shipped by default*; create files here for repo-managed commands. |
+| `.claude/agents/` | Sub-agents directory — *not present by default*; create this folder + files in it if you want repo-managed sub-agents. |
+| `.claude/commands/` | Slash-command directory — *not present by default*; create this folder + files in it for repo-managed commands. |
 | `.claude/hooks/` | Claude Code lifecycle hook scripts — currently: `notify-status.sh` (reports working/idle/awaiting_input to the Obsidian plugin via MCP) |
 | `.claude/scripts/` | Statusline and other helper scripts referenced from `.claude/settings.json` |
 | `.claude/prompts/` | "Analyze in Sandbox" prompt-template library (`summarize`, `extract-todos`, `critique`, `explain`) |

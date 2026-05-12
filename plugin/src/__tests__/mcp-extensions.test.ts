@@ -94,12 +94,29 @@ describe("Canvas tools", () => {
 
 	it("vault_canvas_read rejects non-canvas files", async () => {
 		const { app } = mockApp(initial);
-		app.vault.getFileByPath = vi.fn((_p: string) => null);
+		// Return an existing but non-canvas file so the handler reaches the
+		// extension check rather than the earlier file-not-found branch.
+		// Previously this test set getFileByPath to null and asserted isError
+		// — which trivially passed via "file not found", masking a regression
+		// in the canvas-extension guard.
+		const mdFile = {
+			path: "not.md",
+			name: "not.md",
+			basename: "not",
+			extension: "md",
+			stat: { ctime: 1, mtime: 2, size: 1 },
+			vault: {} as never,
+			parent: null as never,
+		} as unknown as TFile;
+		app.vault.getFileByPath = vi.fn((p: string) => (p === "not.md" ? mdFile : null));
 		const tools = buildTools({ app: app as never, getWriteDir: () => "agent-workspace" });
 		const result = await getTool(tools, "vault_canvas_read").handler({
 			path: "not.md",
 		});
 		expect(result.isError).toBe(true);
+		const errText = (result.content[0] as { text: string }).text;
+		// Must surface the extension mismatch, not a file-not-found wording.
+		expect(errText.toLowerCase()).toMatch(/canvas|extension/);
 	});
 
 	it("vault_canvas_modify adds and removes nodes + cascades edges", async () => {

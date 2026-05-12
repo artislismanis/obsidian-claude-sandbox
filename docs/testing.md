@@ -515,7 +515,7 @@ Manual because it involves container network state.
 
 #### --list-sources tags origins
 
-**Actions:** In a terminal: `sudo /usr/local/bin/init-firewall.sh --list-sources`
+**Actions:** From the host: `docker compose exec sandbox /usr/local/bin/init-firewall.sh --list-sources` (the in-container `claude` user can also run this directly — `--list-sources` is read-only and does not need root, unlike the apply path).
 
 **Expected:** Output lines prefixed with `[baseline]`, `[plugin]`, `[file]` matching the three configured sources. Settings tab's **Effective allowlist** (Refresh button) displays the same content.
 

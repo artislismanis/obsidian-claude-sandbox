@@ -73,11 +73,7 @@ services:
         stdin_open: true
         tty: true
         healthcheck:
-            test:
-                [
-                    "CMD-SHELL",
-                    "curl -fsSL -o /dev/null \"http://localhost:$$OAS_TTYD_PORT/\"",
-                ]
+            test: ["CMD-SHELL", 'curl -fsSL -o /dev/null "http://localhost:$$OAS_TTYD_PORT/"']
             interval: 10s
             timeout: 3s
             retries: 3
